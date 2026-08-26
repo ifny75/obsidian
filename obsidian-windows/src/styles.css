@@ -595,3 +595,20 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
 .chat-panel{height:auto;min-height:0;overflow:hidden}
 .composer-wrap{min-width:0}
 .composer textarea{min-width:0}
+
+/* Экран входа объясняет устройство защиты: человек решает, доверять ли, до
+   того как заведёт аккаунт, а не после. */
+/* Экран входа стал выше окна — значит, он обязан прокручиваться: обрезанная
+   карточка регистрации хуже, чем полоса прокрутки. */
+#screen-entry,#screen-recover{align-content:start;overflow-y:auto;padding-block:32px}
+
+.entry-explainer{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);text-align:left}
+.entry-explainer h2{margin:0 0 8px;font:600 11px "Unbounded",sans-serif;letter-spacing:-.02em}
+.entry-explainer h2+p,.entry-explainer ul{margin:0 0 14px}
+.entry-explainer ul{padding:0;list-style:none}
+.entry-explainer li{position:relative;padding:0 0 8px 14px;color:var(--muted);font-size:11px;line-height:1.6}
+.entry-explainer li::before{content:"";position:absolute;top:7px;left:0;width:5px;height:5px;
+  border-radius:50%;background:var(--success)}
+.entry-explainer li b{color:var(--text);font-weight:600}
+.entry-explainer p{color:var(--muted);font-size:11px;line-height:1.6}
+.entry-explainer a{color:var(--text);text-decoration:underline;text-underline-offset:3px}

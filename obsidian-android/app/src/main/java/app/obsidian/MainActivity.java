@@ -341,9 +341,9 @@ public final class MainActivity extends Activity implements Events.Listener {
         findViewById(R.id.open_appearance).setOnClickListener(v -> open(screenAppearance));
         findViewById(R.id.open_profile_row).setOnClickListener(v -> open(screenProfile));
         findViewById(R.id.chat_code_row).setOnClickListener(v -> copyChatCode());
-        findViewById(R.id.tab_chats).setOnClickListener(v -> switchTab(screenChat));
-        findViewById(R.id.tab_settings).setOnClickListener(v -> switchTab(screenSettings));
-        findViewById(R.id.tab_profile).setOnClickListener(v -> switchTab(screenProfile));
+        findViewById(R.id.nav_chats).setOnClickListener(v -> switchTab(screenChat));
+        findViewById(R.id.nav_settings).setOnClickListener(v -> switchTab(screenSettings));
+        findViewById(R.id.nav_profile).setOnClickListener(v -> switchTab(screenProfile));
         findViewById(R.id.username_back).setOnClickListener(v -> goBack());
         findViewById(R.id.security_back).setOnClickListener(v -> goBack());
         findViewById(R.id.admin_back).setOnClickListener(v -> goBack());
@@ -1868,13 +1868,13 @@ public final class MainActivity extends Activity implements Events.Listener {
         tabBar.setSource(screen);
         int accent = accentColor();
         for (int[] tab : new int[][]{
-                {R.id.tab_chats, R.id.tab_chats_icon, R.id.tab_chats_label},
-                {R.id.tab_settings, R.id.tab_settings_icon, R.id.tab_settings_label},
-                {R.id.tab_profile, R.id.tab_profile_icon, R.id.tab_profile_label},
+                {R.id.nav_chats, R.id.nav_chats_icon, R.id.nav_chats_label},
+                {R.id.nav_settings, R.id.nav_settings_icon, R.id.nav_settings_label},
+                {R.id.nav_profile, R.id.nav_profile_icon, R.id.nav_profile_label},
         }) {
-            boolean active = (tab[0] == R.id.tab_chats && screen == screenChat)
-                    || (tab[0] == R.id.tab_settings && screen == screenSettings)
-                    || (tab[0] == R.id.tab_profile && screen == screenProfile);
+            boolean active = (tab[0] == R.id.nav_chats && screen == screenChat)
+                    || (tab[0] == R.id.nav_settings && screen == screenSettings)
+                    || (tab[0] == R.id.nav_profile && screen == screenProfile);
             ((ImageView) findViewById(tab[1])).setImageTintList(
                     ColorStateList.valueOf(active ? accent : getColor(R.color.obsidian_muted)));
             ((TextView) findViewById(tab[2])).setTextColor(
