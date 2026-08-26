@@ -1,0 +1,597 @@
+@font-face{font-family:"Inter UI";src:url("assets/fonts/Inter-Regular.ttf") format("truetype");font-weight:400;font-display:swap}
+@font-face{font-family:"Inter UI";src:url("assets/fonts/Inter-Medium.ttf") format("truetype");font-weight:500;font-display:swap}
+@font-face{font-family:"Inter UI";src:url("assets/fonts/Inter-SemiBold.ttf") format("truetype");font-weight:600;font-display:swap}
+@font-face{font-family:"Unbounded";src:url("assets/fonts/Unbounded-Regular.ttf") format("truetype");font-weight:400;font-display:swap}
+@font-face{font-family:"Unbounded";src:url("assets/fonts/Unbounded-SemiBold.ttf") format("truetype");font-weight:600;font-display:swap}
+
+:root{
+  --bg:#070707;--panel:rgba(15,15,15,.82);--panel-solid:#101010;--surface:#171717;--surface-2:#202020;
+  --line:rgba(255,255,255,.09);--line-strong:rgba(255,255,255,.16);--text:#f4f4f4;--muted:#999;--faint:#666;
+  --accent:#f4f4f4;--accent-text:#080808;--danger:#ff7d8e;--success:#68d6a2;--warning:#edbd68;
+  --radius:13px;--bubble-radius:13px;--message-width:72%;--message-font-size:14px;--panel-opacity:82%;--blur:24px;
+  --shadow:0 28px 80px rgba(0,0,0,.42);font-family:"Inter UI","Segoe UI",sans-serif
+}
+:root[data-theme="black"]{--bg:#000;--panel:rgba(8,8,8,.82);--panel-solid:#080808;--surface:#111;--surface-2:#181818;--line:rgba(255,255,255,.1);--text:#f5f5f5;--muted:#8b8b8b;--faint:#5e5e5e}
+:root[data-theme="light"]{--bg:#f4f4f5;--panel:rgba(255,255,255,.82);--panel-solid:#fff;--surface:#ededf0;--surface-2:#e3e3e7;--line:rgba(0,0,0,.1);--line-strong:rgba(0,0,0,.17);--text:#18181b;--muted:#6f6f76;--faint:#9a9aa1;--shadow:0 28px 80px rgba(0,0,0,.14)}
+:root[data-accent="violet"]{--accent:#a98cff;--accent-text:#100b19}
+:root[data-accent="blue"]{--accent:#70a8ff;--accent-text:#07101d}
+:root[data-accent="green"]{--accent:#67d4a3;--accent-text:#07140e}
+:root[data-accent="coral"]{--accent:#ed8674;--accent-text:#1b0906}
+
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;background:var(--bg);color:var(--text)}
+body{overflow:hidden;font:14px/1.5 "Inter UI","Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+button,input,textarea{font:inherit;color:inherit}button{cursor:pointer}.hidden{display:none!important}::selection{background:color-mix(in srgb,var(--accent) 50%,transparent)}
+::-webkit-scrollbar{width:7px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border:2px solid transparent;background-clip:padding-box;border-radius:99px}
+.screen{position:fixed;inset:var(--titlebar) 0 0 0}.centered-screen{display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 42%,rgba(255,255,255,.035),transparent 34%),var(--bg)}
+.centered-screen::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(120deg,transparent,rgba(255,255,255,.012),transparent)}
+
+h1,h2,p{margin-top:0}.boot-card,.entry-card{position:relative;z-index:1;width:min(440px,100%);text-align:center}.boot-card h1,.entry-card h1{font-family:"Unbounded",sans-serif;letter-spacing:-.045em}.boot-card h1{font-size:25px;margin:19px 0 6px}.boot-card p{color:var(--muted);font-size:13px}.entry-card{padding:36px;border:1px solid var(--line);border-radius:24px;background:var(--panel);box-shadow:var(--shadow);backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);animation:card-in .32s ease both}.entry-card h1{font-size:21px;line-height:1.3;margin:8px 0 12px}.large-logo{width:78px;height:78px;margin:0 auto;display:grid;place-items:center;border:1px solid var(--line);border-radius:21px;background:var(--surface)}.large-logo img{width:56px;height:56px}.eyebrow{margin:20px 0 0;color:var(--faint);font-size:9px;font-weight:600;letter-spacing:.12em;text-transform:uppercase}.lead{margin-bottom:22px;color:var(--muted);font-size:12.5px;line-height:1.65}.loader{display:block;width:22px;height:22px;margin:18px auto 0;border:2px solid var(--line-strong);border-top-color:var(--text);border-radius:50%;animation:spin .8s linear infinite}
+.entry-form{text-align:left}.entry-form label{display:block;margin:12px 2px 7px;color:var(--muted);font-size:11px;font-weight:500}.entry-form input,.search-field input,.new-chat-form input,.composer textarea{width:100%;border:1px solid var(--line);outline:0;background:rgba(255,255,255,.035);transition:border-color .16s,background .16s,box-shadow .16s}.entry-form input{height:46px;padding:0 13px;border-radius:11px}.entry-form input:focus,.recovery-form input:focus,.search-field:focus-within,.new-chat-form:focus-within,.composer:focus-within{border-color:color-mix(in srgb,var(--accent) 62%,var(--line));box-shadow:0 0 0 2px var(--bg),0 0 0 4px color-mix(in srgb,var(--accent) 55%,transparent)}
+.primary-button{width:100%;height:45px;margin-top:18px;border:0;border-radius:11px;background:var(--accent);color:var(--accent-text);font-weight:600;transition:transform .16s,filter .16s}.primary-button:hover{filter:brightness(1.07)}.primary-button:active{transform:scale(.985)}.primary-button:disabled{opacity:.55;cursor:wait}.reset-button{width:100%;height:41px;margin-top:9px;border:1px solid color-mix(in srgb,var(--danger) 35%,var(--line));border-radius:11px;background:transparent;color:var(--danger);font-size:11px;transition:background .16s,border-color .16s}.reset-button:hover{border-color:var(--danger);background:color-mix(in srgb,var(--danger) 8%,transparent)}.reset-button:disabled{opacity:.5;cursor:wait}.reset-note{margin:11px 4px 0;color:var(--faint);font-size:9.5px;line-height:1.45;text-align:center}.form-error{min-height:18px;margin:12px 0 0;color:var(--danger);font-size:11.5px}.security-note{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:17px;color:var(--faint);font-size:10px}.security-note .ui-icon{width:14px;height:14px}
+
+.app-shell{display:grid;grid-template-columns:310px 1fr;background:var(--bg);animation:app-in .24s ease both}.sidebar{display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--line);background:var(--panel);backdrop-filter:blur(26px);-webkit-backdrop-filter:blur(26px)}.sidebar-top{padding:18px 15px 11px}.brand-row,.brand,.peer,.modal-header{display:flex;align-items:center}.brand-row{justify-content:space-between;gap:12px}.brand{gap:11px;min-width:0}.brand-logo{width:39px;height:39px;display:grid;place-items:center;flex:none;border:1px solid var(--line);border-radius:11px;background:var(--surface)}.brand-logo img{width:28px;height:28px}.brand-copy{min-width:0}.brand-copy strong{display:block;font:600 12.5px/1.3 "Unbounded",sans-serif;letter-spacing:-.04em}.brand-copy span{display:block;margin-top:2px;color:var(--muted);font-size:10px}.connection{display:flex;align-items:center;gap:7px;margin:14px 1px 0;color:var(--muted);font-size:10.5px}.connection i{width:7px;height:7px;border-radius:50%;background:var(--faint)}.connection.connecting i{background:var(--warning)}.connection.online i{background:var(--success);box-shadow:0 0 10px color-mix(in srgb,var(--success) 55%,transparent)}.connection.offline i{background:var(--danger)}
+.icon-button{width:37px;height:37px;padding:0;display:grid;place-items:center;flex:none;border:1px solid transparent;border-radius:10px;background:transparent;color:var(--muted);transition:background .16s,color .16s,border-color .16s,transform .16s}.icon-button:hover{background:var(--surface);color:var(--text)}.icon-button:active{transform:scale(.96)}.icon-button.solid{background:var(--accent);color:var(--accent-text)}.ui-icon{display:inline-block;width:17px;height:17px;flex:none;background:currentColor;-webkit-mask:var(--icon) center/contain no-repeat;mask:var(--icon) center/contain no-repeat}.icon-settings{--icon:url("assets/svg/settings.svg")}.icon-search{--icon:url("assets/svg/password-magnifying-glass.svg")}.icon-pencil{--icon:url("assets/svg/pencil.svg")}.icon-fingerprint{--icon:url("assets/svg/fingerprint.svg")}.icon-shield{--icon:url("assets/svg/vpn-shield.svg")}.icon-cross{--icon:url("assets/svg/cross.svg")}.icon-discussion{--icon:url("assets/svg/confidential-discussion.svg")}.icon-lock{--icon:url("assets/svg/lock-hashtag.svg")}.icon-check{--icon:url("assets/svg/check.svg")}
+.search-field,.new-chat-form{display:flex;align-items:center;gap:9px;margin-top:13px;border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.025);transition:border-color .16s,box-shadow .16s}.search-field{height:41px;padding:0 11px}.search-field .ui-icon{width:15px;height:15px;color:var(--faint)}.search-field input,.new-chat-form input{height:100%;min-width:0;padding:0;border:0;background:transparent;box-shadow:none!important;font-size:11.5px}.new-chat-form{height:41px;padding:2px 2px 2px 11px}.new-chat-form .icon-button{width:35px;height:35px}.section-label{padding:10px 16px 7px;color:var(--faint);font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.conversation-list{min-height:0;margin:0;padding:0 8px 12px;overflow:auto;list-style:none}.conversation-list li{margin:2px 0}.conversation-button{width:100%;display:grid;grid-template-columns:41px 1fr auto;align-items:center;gap:11px;padding:10px;border:1px solid transparent;border-radius:11px;background:transparent;text-align:left;transition:background .16s,border-color .16s}.conversation-button:hover,.conversation-list li.active .conversation-button{background:var(--surface)}.conversation-list li.active .conversation-button{border-color:var(--line)}.conversation-avatar,.peer-avatar,.profile-avatar{display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;background:var(--surface-2);font-size:11px;font-weight:600}.conversation-avatar{width:41px;height:41px}.conversation-copy{min-width:0}.conversation-copy b{display:block;overflow:hidden;text-overflow:ellipsis;font-size:12.5px;white-space:nowrap}.conversation-copy span{display:block;margin-top:3px;overflow:hidden;color:var(--muted);font-size:10.5px;text-overflow:ellipsis;white-space:nowrap}.badge{min-width:19px;height:19px;display:grid;place-items:center;padding:0 5px;border-radius:99px;background:var(--accent);color:var(--accent-text);font-size:9px;font-weight:600}.empty-list{padding:18px 10px;color:var(--faint);font-size:11px;text-align:center}
+.sidebar-bottom{margin-top:auto;padding:9px;border-top:1px solid var(--line)}.identity-row,.profile-row{width:100%;border:0;background:transparent;text-align:left}.identity-row{display:grid;grid-template-columns:36px 1fr;align-items:center;gap:10px;padding:8px 9px;border-radius:10px}.identity-row:hover,.profile-row:hover{background:var(--surface)}.identity-icon{width:36px;height:36px;display:grid;place-items:center;border:1px solid var(--line);border-radius:10px;color:var(--muted)}.identity-row small,.profile-copy small{display:block;color:var(--muted);font-size:9.5px}.identity-row code{display:block;max-width:205px;margin-top:2px;overflow:hidden;color:var(--text);font:10.5px/1.4 "Inter UI",sans-serif;text-overflow:ellipsis;white-space:nowrap}.profile-row{display:grid;grid-template-columns:39px 1fr auto;align-items:center;gap:10px;margin-top:3px;padding:8px 9px;border-radius:10px}.profile-avatar{width:39px;height:39px}.profile-copy{min-width:0}.profile-copy b{display:block;font-size:11.5px}.profile-copy small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.owner-dot{padding:3px 5px;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:8px}
+
+.chat-panel{position:relative;display:grid;grid-template-rows:70px auto auto 1fr auto;min-width:0;min-height:0;background:var(--bg)}.chat-header{display:flex;align-items:center;justify-content:space-between;padding:0 22px;border-bottom:1px solid var(--line);background:rgba(10,10,10,.72);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);z-index:2}.peer{gap:11px;min-width:0}.peer-avatar{width:41px;height:41px;flex:none}.peer-copy{min-width:0}.peer-copy b{display:block;max-width:min(50vw,520px);overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.peer-copy span{display:block;margin-top:3px;color:var(--muted);font-size:10.5px}.ghost-button{height:36px;display:flex;align-items:center;gap:8px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--muted);font-size:11px}.ghost-button:hover:not(:disabled){background:var(--surface);color:var(--text)}.ghost-button:disabled{opacity:.42;cursor:default}
+.anomaly{padding:10px 18px;background:var(--danger);color:#19090c;font-size:12px;font-weight:600;text-align:center;cursor:pointer}.verification{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:12px 22px;padding:16px 54px 16px 20px;border-bottom:1px solid var(--line);background:var(--panel-solid)}.verification>div span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase}.verification code{display:block;margin-top:5px;font:12px/1.45 "Inter UI",sans-serif;word-break:break-all}.verification p{grid-column:1/-1;margin:0;color:var(--faint);font-size:10px}.verification>.icon-button{position:absolute;top:9px;right:10px}
+.chat-empty{display:grid;place-content:center;justify-items:center;padding:30px;text-align:center}.empty-icon{width:62px;height:62px;display:grid;place-items:center;border:1px solid var(--line);border-radius:18px;color:var(--muted);background:var(--surface)}.empty-icon .ui-icon{width:25px;height:25px}.chat-empty h2{margin:15px 0 5px;font:500 15px/1.4 "Unbounded",sans-serif;letter-spacing:-.035em}.chat-empty p{max-width:360px;margin:0;color:var(--muted);font-size:11.5px}
+.message-list{display:flex;flex-direction:column;min-height:0;margin:0;padding:26px max(24px,calc((100% - 690px)/2));overflow:auto;list-style:none}.message-list::before{content:"";margin-top:auto}.message-list li{max-width:min(72%,520px);margin:5px 0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);animation:message-in .2s ease both}.message-list li.out{align-self:flex-end;border-color:transparent;background:var(--accent);color:var(--accent-text)}.message-list .body{font-size:13.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word}.message-list time{display:block;margin-top:5px;opacity:.58;font-size:9.5px;text-align:right}
+.composer-wrap{padding:10px max(18px,calc((100% - 730px)/2)) 12px;border-top:1px solid var(--line);background:rgba(10,10,10,.74);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}.session-note{display:flex;align-items:center;gap:6px;margin:0 4px 7px;color:var(--faint);font-size:9.5px}.session-note .ui-icon{width:12px;height:12px}.composer{display:grid;grid-template-columns:1fr 40px;align-items:end;gap:7px;padding:5px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}.composer textarea{min-height:40px;max-height:130px;margin:0;padding:10px 8px 8px;resize:none;border:0;background:transparent;box-shadow:none!important;font-size:13px;line-height:1.45}.send-button{width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:10px;background:var(--accent);color:var(--accent-text)}.send-button:disabled{opacity:.35;cursor:default}.send-button:not(:disabled):active{transform:scale(.96)}.send-button .ui-icon{width:15px;height:15px}
+
+.modal{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:22px;background:rgba(0,0,0,.66);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}.modal-card{width:min(390px,100%);padding:20px;border:1px solid var(--line);border-radius:18px;background:var(--panel-solid);box-shadow:var(--shadow);animation:card-in .2s ease both}.modal-header{justify-content:space-between}.modal-header .eyebrow{margin:0 0 5px}.modal-header h2{margin:0;font:500 15px/1.4 "Unbounded",sans-serif}.modal-copy{margin:15px 0;color:var(--muted);font-size:11.5px;line-height:1.6}.accent-grid{display:flex;gap:10px}.accent-swatch{width:32px;height:32px;padding:0;border:3px solid var(--panel-solid);outline:1px solid var(--line);border-radius:50%;background:#f4f4f4}.accent-swatch.violet{background:#a98cff}.accent-swatch.blue{background:#70a8ff}.accent-swatch.green{background:#67d4a3}.accent-swatch.coral{background:#ed8674}.accent-swatch.active{outline:2px solid var(--text)}
+/* Надёжные grid-позиции: скрытые баннеры больше не поднимают composer. */
+.chat-panel{grid-template-rows:70px auto auto minmax(0,1fr) auto}.chat-header{grid-row:1}.anomaly{grid-row:2}.verification{grid-row:3}.chat-empty,.message-list{grid-row:4}.composer-wrap{grid-row:5;align-self:end;width:100%}
+.sidebar,.chat-header,.composer-wrap{background:color-mix(in srgb,var(--panel-solid) var(--panel-opacity),transparent);backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur))}.message-list li{max-width:min(var(--message-width),520px);border-radius:var(--bubble-radius)}.message-list .body{font-size:var(--message-font-size)}
+body.compact .sidebar-top{padding-top:12px}body.compact .conversation-button{padding:7px 9px}body.compact .message-list li{padding:7px 9px;margin:3px 0}body.square-avatars .conversation-avatar,body.square-avatars .peer-avatar,body.square-avatars .profile-avatar{border-radius:10px}
+
+/* Полноэкранные настройки по структуре prototype/index (2).html. */
+.settings-page{position:fixed;inset:var(--titlebar) 0 0;z-index:30;overflow:auto;background:var(--bg);animation:app-in .18s ease both}.settings-header{position:sticky;top:0;z-index:2;height:62px;display:grid;grid-template-columns:44px 1fr 44px;align-items:center;padding:0 14px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--panel-solid) var(--panel-opacity),transparent);backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur))}.settings-header h2{margin:0;font:500 13px/1.4 "Unbounded",sans-serif;text-align:center}.settings-content{width:min(660px,100%);margin:0 auto;padding:27px 18px 52px}.settings-content>h1{margin:0;font:500 20px/1.35 "Unbounded",sans-serif;letter-spacing:-.04em}.settings-sub{margin:7px 0 20px;color:var(--muted);font-size:11px;line-height:1.55}
+.settings-preview{min-height:264px;margin-bottom:14px;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);background:var(--bg)}.preview-header{height:50px;display:flex;align-items:center;gap:9px;padding:0 12px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--panel-solid) var(--panel-opacity),transparent);backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur))}.preview-avatar{width:31px;height:31px;display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;background:var(--surface-2);font-size:9px;font-weight:600}.preview-header b{display:block;font-size:10.5px}.preview-header small{display:block;margin-top:2px;color:var(--muted);font-size:8.5px}.preview-messages{min-height:169px;display:flex;flex-direction:column;gap:7px;padding:18px 14px}.preview-messages span{max-width:var(--message-width);padding:8px 10px;border:1px solid var(--line);border-radius:var(--bubble-radius);background:var(--surface);font-size:10px}.preview-messages .mine{align-self:flex-end;border-color:transparent;background:var(--accent);color:var(--accent-text)}.preview-composer{height:45px;margin:0;padding:13px 16px;border-top:1px solid var(--line);background:color-mix(in srgb,var(--panel-solid) var(--panel-opacity),transparent);color:var(--muted);font-size:9px;backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur))}
+.settings-card{margin-bottom:14px;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);background:color-mix(in srgb,var(--panel-solid) 74%,transparent)}.setting-block,.setting-range,.setting-row{border-bottom:1px solid var(--line)}.setting-block:last-child,.setting-range:last-child,.setting-row:last-child{border-bottom:0}.setting-block{display:block;padding:14px}.setting-block>b,.setting-range b,.setting-row b{display:block;font-size:11.5px}.setting-block>small,.setting-range small,.setting-row small{display:block;margin-top:3px;color:var(--muted);font-size:9.5px;line-height:1.4}.setting-segment{display:grid;grid-template-columns:repeat(3,1fr);margin-top:10px;overflow:hidden;border:1px solid var(--line);border-radius:9px}.setting-segment button{height:34px;border:0;border-right:1px solid var(--line);background:transparent;color:var(--muted);font-size:9.5px}.setting-segment button:last-child{border-right:0}.setting-segment button.active{background:var(--surface-2);color:var(--text)}
+.settings-colors{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:11px}.settings-colors button{width:29px;height:29px;padding:0;border:3px solid var(--panel-solid);outline:1px solid var(--line);border-radius:50%;background:var(--swatch)}.settings-colors button.active{outline:2px solid var(--text)}.settings-colors input{width:34px;height:29px;padding:3px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}.settings-colors input::-webkit-color-swatch{border:0;border-radius:5px}.setting-range{min-height:67px;display:grid;grid-template-columns:minmax(130px,1fr) minmax(150px,1.35fr) 48px;align-items:center;gap:12px;padding:11px 14px}.setting-range input{width:100%;accent-color:var(--accent)}.setting-range output{color:var(--muted);font-size:9.5px;text-align:right}.setting-row{min-height:62px;display:flex;align-items:center;justify-content:space-between;gap:15px;padding:11px 14px}.setting-toggle{width:38px;height:22px;flex:none;padding:2px;border:1px solid var(--line);border-radius:99px;background:var(--surface-2)}.setting-toggle i{display:block;width:16px;height:16px;border-radius:50%;background:var(--muted);transition:transform .18s,background .18s}.setting-toggle.on{background:var(--accent)}.setting-toggle.on i{background:var(--accent-text);transform:translateX(16px)}.settings-reset{width:100%;height:42px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);font-size:11px}.settings-reset:hover{background:var(--surface-2)}
+.settings-colors button[data-color="#f4f4f4"]{--swatch:#f4f4f4}.settings-colors button[data-color="#a98cff"]{--swatch:#a98cff}.settings-colors button[data-color="#70a8ff"]{--swatch:#70a8ff}.settings-colors button[data-color="#67d4a3"]{--swatch:#67d4a3}.settings-colors button[data-color="#ed8674"]{--swatch:#ed8674}
+
+.toast{position:fixed;left:50%;bottom:22px;z-index:50;max-width:min(520px,90vw);padding:9px 13px;border:1px solid var(--line);border-radius:9px;background:var(--text);color:var(--bg);font-size:11px;opacity:0;pointer-events:none;transform:translate(-50%,15px);transition:opacity .18s,transform .18s}.toast.visible{opacity:1;transform:translate(-50%,0)}
+
+.conversation-avatar,.peer-avatar,.profile-avatar,.profile-avatar-large{background-position:center;background-size:cover}.has-avatar{color:transparent}
+.profile-settings{padding:16px;margin-bottom:14px}.profile-settings-head{display:grid;grid-template-columns:68px 1fr;align-items:center;gap:14px}.profile-settings-head h3{margin:0 0 5px;font:600 15px "Unbounded UI",sans-serif}.profile-settings-head p{margin:0;color:var(--muted);font-size:10.5px;line-height:1.5}.profile-avatar-large{width:68px;height:68px;display:grid;place-items:center;border:1px solid var(--line);border-radius:20px;background-color:var(--surface-2);color:var(--text);font-weight:700}.profile-avatar-large:hover{border-color:var(--muted)}.profile-detail{display:grid;grid-template-columns:190px minmax(0,1fr);align-items:center;gap:14px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);font-size:11px}.profile-detail>span{color:var(--muted)}.profile-detail button{min-width:0;padding:8px 10px;overflow:hidden;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);font:10.5px "Inter UI",sans-serif;text-align:left;text-overflow:ellipsis;white-space:nowrap}/*
+   Заголовок строки и пояснение к ней — разные строки, а не один слипшийся
+   текст. Раньше это чинилось только у .security-detail, и любая новая строка
+   с пояснением выходила слипшейся: «Значок и цветВидны собеседникам…».
+*/
+.profile-detail>span b,.profile-detail>span small{display:block}
+.profile-detail>span b{color:var(--text);font-size:11px}
+.profile-detail>span small{margin-top:4px;color:var(--muted);font-size:9px;line-height:1.45}
+/* Строку с пояснением равняем по верху: подпись длиннее кнопки справа. */
+.profile-detail:has(>span b){align-items:start}
+.security-detail{align-items:start}.security-detail span b,.security-detail span small{display:block}.security-detail span b{color:var(--text);font-size:11px}.security-detail span small{margin-top:4px;color:var(--muted);font-size:9px;line-height:1.45}.security-detail code{font:9.5px/1.5 "Inter UI",sans-serif;white-space:normal}
+
+/* Все параметры оформления видны сразу и в превью, и в основном интерфейсе. */
+.preview-messages span{font-size:var(--message-font-size);line-height:1.45;transition:font-size .12s,padding .12s,border-radius .12s,max-width .12s}
+.search-field,.new-chat-form,.conversation-button,.identity-row,.profile-row,.ghost-button,.composer,.settings-card,.settings-reset{border-radius:var(--radius)}
+body.compact .preview-messages{gap:4px;padding-top:13px;padding-bottom:13px}
+body.compact .preview-messages span{padding:6px 8px}
+body.square-avatars .preview-avatar{border-radius:8px}
+
+/* Composer без квадратного системного focus-ring. */
+.composer{grid-template-columns:38px minmax(0,1fr) 38px 40px;border-radius:999px;padding:4px 5px}
+.composer textarea,.composer textarea:focus,.composer textarea:focus-visible{appearance:none!important;outline:0!important;border:0!important;border-radius:999px!important;box-shadow:none!important}
+.send-button{border-radius:50%}
+.attach-button{width:38px;height:38px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);font-size:21px;line-height:1}
+.attach-button:hover:not(:disabled){background:var(--surface-2);color:var(--text)}.attach-button:disabled{opacity:.35}
+
+/* Пузыри занимают ширину содержимого, а не растягиваются до max-width. */
+.message-list li{width:fit-content;min-width:54px;align-self:flex-start}
+.message-list li.out{align-self:flex-end}
+.message-image{display:block;width:auto;max-width:min(420px,62vw);max-height:420px;margin:0 0 5px;border-radius:calc(var(--bubble-radius) - 5px);object-fit:contain}
+.message-meta{display:flex;align-items:center;justify-content:flex-end;gap:7px;margin-top:5px;opacity:.62;font-size:9.5px}
+.message-meta time{margin:0;opacity:1}.delivery{white-space:nowrap}.message-list li.read .delivery{opacity:1}
+
+/* Отдельные режимы перегородок. */
+body[data-dividers="soft"]{--line:color-mix(in srgb,var(--text) 5%,transparent);--line-strong:color-mix(in srgb,var(--text) 8%,transparent)}
+body[data-dividers="none"]{--line:transparent;--line-strong:transparent}
+body[data-dividers="none"] .sidebar,body[data-dividers="none"] .chat-header,body[data-dividers="none"] .composer-wrap,body[data-dividers="none"] .settings-header{border-color:transparent}
+/* Обводка фокуса повторяет форму элемента.
+   box-shadow, а не outline: outline следует за border-radius только в свежих
+   движках, и в старом WebView2 вокруг скруглённого поля появлялся острый
+   прямоугольник. Тень скругляется всегда. Первый слой — «отступ» цветом фона,
+   второй — сама обводка. */
+:where(button,input,textarea,select,a[href],[tabindex]):focus-visible{
+  outline:2px solid transparent;outline-offset:2px;
+  box-shadow:0 0 0 2px var(--bg),0 0 0 4px color-mix(in srgb,var(--accent) 75%,white)}
+/* У полей внутри составных блоков рамку рисует контейнер, а не само поле. */
+.search-field input:focus-visible,.new-chat-form input:focus-visible,.composer textarea:focus-visible{box-shadow:none!important}
+@keyframes spin{to{transform:rotate(360deg)}}@keyframes card-in{from{opacity:0;transform:translateY(10px) scale(.985)}}@keyframes app-in{from{opacity:0}}@keyframes message-in{from{opacity:0;transform:translateY(7px)}}
+@media(max-width:920px){.app-shell{grid-template-columns:275px 1fr}.sidebar-top{padding-left:12px;padding-right:12px}.message-list{padding-left:20px;padding-right:20px}.peer-copy b{max-width:38vw}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+/* --- восстановление и голосовые ---------------------------------------------- */
+.link-button{width:100%;margin-top:11px;padding:6px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:11px;text-decoration:underline;text-underline-offset:3px}
+.link-button:hover{color:var(--text)}
+#recover-segment{margin:4px 0 6px}
+.recovery-code-box{margin-top:11px;padding:12px 13px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-2)}
+.recovery-code-box code{display:block;color:var(--text);font:600 12.5px/1.9 "Inter UI",ui-monospace,monospace;letter-spacing:.09em;word-spacing:.32em;word-break:break-word}
+.setting-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}
+.recovery-form{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:11px}
+.recovery-form input{height:38px;padding:0 11px;border:1px solid var(--line);border-radius:9px;outline:0;background:rgba(255,255,255,.035);font-size:11.5px;transition:border-color .16s,box-shadow .16s}
+.recovery-status{min-height:15px;margin:9px 2px 0;color:var(--muted);font-size:10px;line-height:1.5}
+.recovery-status.ok{color:var(--success)}.recovery-status.bad{color:var(--danger)}
+@media(max-width:620px){.recovery-form{grid-template-columns:1fr}}
+
+.recording-bar{display:flex;align-items:center;gap:10px;margin:0 4px 8px;padding:7px 9px 7px 12px;border:1px solid color-mix(in srgb,var(--danger) 40%,var(--line));border-radius:999px;background:color-mix(in srgb,var(--danger) 9%,transparent);font-size:11px}
+.recording-bar b{font-variant-numeric:tabular-nums}
+.recording-bar .ghost-button{height:30px;margin-left:auto;font-size:10.5px}
+.recording-bar .ghost-button + .ghost-button{margin-left:0}
+.recording-dot{width:8px;height:8px;flex:none;border-radius:50%;background:var(--danger);animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25}}
+#record-voice.recording{background:color-mix(in srgb,var(--danger) 18%,transparent);color:var(--danger)}
+
+.voice-message{display:flex;align-items:center;gap:10px;min-width:190px}
+.voice-play{width:34px;height:34px;flex:none;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:color-mix(in srgb,currentColor 15%,transparent);color:inherit;font-size:12px}
+.voice-play:hover{background:color-mix(in srgb,currentColor 26%,transparent)}
+.voice-track{flex:1;height:3px;border-radius:99px;background:color-mix(in srgb,currentColor 25%,transparent)}
+.voice-track i{display:block;width:0;height:100%;border-radius:99px;background:currentColor;transition:width .1s linear}
+.voice-time{flex:none;opacity:.7;font-size:10px;font-variant-numeric:tabular-nums}
+
+/* Кнопка догрузки: перекрывает ленту сверху, а не сдвигает её, — иначе
+   появление кнопки само по себе прокручивало бы переписку. */
+.history-more{position:absolute;top:78px;left:50%;z-index:3;padding:6px 13px;border:1px solid var(--line);border-radius:99px;background:var(--panel-solid);color:var(--muted);font-size:10px;transform:translateX(-50%);box-shadow:var(--shadow)}
+.history-more:hover{color:var(--text)}
+
+/* --- редактор фото ---------------------------------------------------------- */
+.editor-card{width:min(560px,100%);max-height:92vh;display:flex;flex-direction:column;gap:12px;padding:18px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel-solid);box-shadow:var(--shadow);animation:card-in .2s ease both}
+.editor-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.editor-head h2{margin:0;font:500 15px/1.4 "Unbounded",sans-serif}
+.editor-head .eyebrow{margin:0 0 4px}
+
+/* Шахматка под картинкой: без неё обрезанный край прозрачного PNG не виден. */
+.editor-stage{position:relative;display:grid;place-items:center;min-height:210px;max-height:46vh;overflow:hidden;border:1px solid var(--line);border-radius:calc(var(--radius) - 3px);background:
+  repeating-conic-gradient(rgba(255,255,255,.045) 0 25%,transparent 0 50%) 0 0/16px 16px,var(--bg)}
+.editor-stage canvas{display:block;max-width:100%;max-height:46vh}
+
+.editor-crop{position:absolute;box-sizing:border-box;border:1px solid rgba(255,255,255,.92);cursor:move;
+  /* Затемнение вне рамки — одной тенью, без четырёх накладок. */
+  box-shadow:0 0 0 9999px rgba(0,0,0,.55)}
+.editor-crop::before,.editor-crop::after{content:"";position:absolute;inset:0;pointer-events:none}
+.editor-crop::before{border-left:1px solid rgba(255,255,255,.25);border-right:1px solid rgba(255,255,255,.25);margin:0 33.33%}
+.editor-crop::after{border-top:1px solid rgba(255,255,255,.25);border-bottom:1px solid rgba(255,255,255,.25);margin:33.33% 0}
+.editor-crop i{position:absolute;width:16px;height:16px;border:2px solid #fff;background:transparent}
+.editor-crop i[data-handle="nw"]{top:-2px;left:-2px;border-right:0;border-bottom:0;cursor:nwse-resize}
+.editor-crop i[data-handle="ne"]{top:-2px;right:-2px;border-left:0;border-bottom:0;cursor:nesw-resize}
+.editor-crop i[data-handle="se"]{right:-2px;bottom:-2px;border-left:0;border-top:0;cursor:nwse-resize}
+.editor-crop i[data-handle="sw"]{bottom:-2px;left:-2px;border-right:0;border-top:0;cursor:nesw-resize}
+
+.editor-tools{display:flex;flex-direction:column;gap:9px}
+.editor-segment{display:grid;grid-template-columns:repeat(4,1fr);overflow:hidden;border:1px solid var(--line);border-radius:9px}
+.editor-segment button{height:32px;border:0;border-right:1px solid var(--line);background:transparent;color:var(--muted);font-size:10px}
+.editor-segment button:last-child{border-right:0}
+.editor-segment button.active{background:var(--surface-2);color:var(--text)}
+.editor-buttons{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.editor-buttons .ghost-button{justify-content:center;height:32px;font-size:10.5px}
+.editor-range{display:grid;grid-template-columns:110px minmax(0,1fr) 46px;align-items:center;gap:10px;font-size:10.5px;color:var(--muted)}
+.editor-range input{width:100%;accent-color:var(--accent)}
+.editor-range output{text-align:right;font-size:9.5px}
+.editor-caption{height:40px;padding:0 12px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.035);font-size:12.5px}
+.editor-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.editor-actions .primary-button{width:auto;margin:0;padding:0 22px}
+.editor-size{color:var(--faint);font-size:10px}
+
+
+/* --- дополнительное оформление ---------------------------------------------- */
+.setting-segment-2{grid-template-columns:repeat(2,1fr)}
+.setting-segment-4{grid-template-columns:repeat(4,1fr)}
+
+.wallpaper-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-top:10px}
+.wallpaper-grid button{padding:0;border:1px solid var(--line);border-radius:9px;background:transparent;overflow:hidden}
+.wallpaper-grid button.active{border-color:var(--accent);outline:1px solid var(--accent)}
+.wallpaper-grid i{display:block;height:38px;background:var(--bg)}
+.wallpaper-grid span{display:block;padding:4px 2px;color:var(--muted);font-size:8.5px}
+.wallpaper-grid [data-wallpaper="aurora"] i{background:
+  radial-gradient(120% 90% at 15% 0%,color-mix(in srgb,var(--accent) 45%,transparent),transparent 60%),
+  radial-gradient(120% 90% at 85% 100%,color-mix(in srgb,var(--accent) 28%,transparent),transparent 60%),var(--bg)}
+.wallpaper-grid [data-wallpaper="mesh"] i{background:
+  radial-gradient(60% 60% at 20% 25%,color-mix(in srgb,var(--accent) 38%,transparent),transparent 70%),
+  radial-gradient(50% 50% at 80% 70%,color-mix(in srgb,var(--accent) 26%,transparent),transparent 70%),var(--bg)}
+.wallpaper-grid [data-wallpaper="grid"] i{background:
+  linear-gradient(color-mix(in srgb,var(--accent) 30%,transparent) 1px,transparent 1px) 0 0/9px 9px,
+  linear-gradient(90deg,color-mix(in srgb,var(--accent) 30%,transparent) 1px,transparent 1px) 0 0/9px 9px,var(--bg)}
+.wallpaper-grid [data-wallpaper="dots"] i{background:
+  radial-gradient(color-mix(in srgb,var(--accent) 45%,transparent) 1px,transparent 1px) 0 0/8px 8px,var(--bg)}
+.wallpaper-grid [data-wallpaper="rays"] i{background:
+  repeating-linear-gradient(115deg,color-mix(in srgb,var(--accent) 24%,transparent) 0 3px,transparent 3px 11px),var(--bg)}
+
+/* Обои живут на отдельном слое под лентой: так насыщенность меняется одним
+   значением прозрачности и не тянет за собой перерисовку сообщений.
+
+   Слой лежит внутри панели переписки и над её фоном, а содержимое поднято над
+   ним. Раньше слой был с отрицательным z-index и уходил ЗА непрозрачный фон
+   .chat-panel — обои выбирались, но их никто никогда не видел. Ещё он висел на
+   .message-list, поэтому пропадал вместе с лентой, когда переписка не выбрана. */
+.chat-panel::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  opacity:calc(var(--wallpaper-intensity,45) / 100);background:var(--wallpaper-image,none)}
+.chat-panel>*{position:relative;z-index:1}
+body[data-wallpaper="none"] .chat-panel::before{display:none}
+body[data-wallpaper="aurora"]{--wallpaper-image:
+  radial-gradient(90% 70% at 12% 0%,color-mix(in srgb,var(--accent) 40%,transparent),transparent 62%),
+  radial-gradient(80% 70% at 88% 100%,color-mix(in srgb,var(--accent) 26%,transparent),transparent 62%)}
+body[data-wallpaper="mesh"]{--wallpaper-image:
+  radial-gradient(45% 45% at 22% 28%,color-mix(in srgb,var(--accent) 34%,transparent),transparent 70%),
+  radial-gradient(40% 40% at 78% 72%,color-mix(in srgb,var(--accent) 24%,transparent),transparent 70%),
+  radial-gradient(35% 35% at 55% 12%,color-mix(in srgb,var(--accent) 18%,transparent),transparent 70%)}
+body[data-wallpaper="grid"]{--wallpaper-image:
+  linear-gradient(color-mix(in srgb,var(--accent) 22%,transparent) 1px,transparent 1px) 0 0/34px 34px,
+  linear-gradient(90deg,color-mix(in srgb,var(--accent) 22%,transparent) 1px,transparent 1px) 0 0/34px 34px}
+body[data-wallpaper="dots"]{--wallpaper-image:
+  radial-gradient(color-mix(in srgb,var(--accent) 34%,transparent) 1.4px,transparent 1.4px) 0 0/22px 22px}
+body[data-wallpaper="rays"]{--wallpaper-image:
+  repeating-linear-gradient(115deg,color-mix(in srgb,var(--accent) 15%,transparent) 0 8px,transparent 8px 30px)}
+
+.storage-report{margin:11px 0 0;color:var(--text);font-size:11.5px;line-height:1.7;white-space:pre-line}
+
+/*
+   Движение.
+
+   Всё ниже подчиняется настройке «Анимации»: при «сокращённых» длительности
+   срезаются, при «выключенных» — обнуляются, правило стоит ниже по файлу и
+   перекрывает эти. Поэтому здесь можно не оговаривать каждый случай отдельно.
+
+   Правило для всего набора одно: движение объясняет, откуда взялся элемент, и
+   заканчивается раньше, чем его успеют заметить. Ничто не качается, не
+   подпрыгивает и не задерживает работу.
+*/
+
+/* Сообщение приезжает со своей стороны — оттуда, где стоит его пузырь. */
+@keyframes message-in-left{from{opacity:0;transform:translate(-9px,6px) scale(.985)}}
+@keyframes message-in-right{from{opacity:0;transform:translate(9px,6px) scale(.985)}}
+.message-list li.in{animation:message-in-left .22s cubic-bezier(.22,.61,.36,1) both}
+.message-list li.out{animation:message-in-right .22s cubic-bezier(.22,.61,.36,1) both}
+
+/* Раздел настроек проявляется, а не подменяется рывком. */
+@keyframes section-in{from{opacity:0;transform:translateY(8px)}}
+.settings-section:not(.hidden){animation:section-in .2s cubic-bezier(.22,.61,.36,1) both}
+
+/* Затемнение под окном набирается отдельно от самой карточки. */
+@keyframes backdrop-in{from{opacity:0}}
+.modal{animation:backdrop-in .16s ease both}
+
+/* Строка списка чуть подаётся к курсору — движение вместо мигания цветом. */
+.conversation-button{transition:background .16s,border-color .16s,transform .14s}
+.conversation-button:hover{transform:translateX(2px)}
+.conversation-list li.active .conversation-button:hover{transform:none}
+
+/* Нажатие проседает: отклик пальцу, а не только глазу. */
+.ghost-button,.reset-button,.decor-grid button,.settings-nav button{transition:background .16s,
+  border-color .16s,color .16s,transform .12s}
+.ghost-button:active:not(:disabled),.reset-button:active:not(:disabled),
+.decor-grid button:active:not(:disabled),.settings-nav button:active{transform:scale(.97)}
+
+/* Выбранный значок и цвет отмечаются коротким подъёмом. */
+@keyframes decor-pick{50%{transform:scale(1.12)}}
+.decor-grid button.active{animation:decor-pick .22s ease}
+
+/* Появление собеседника в сети — точка разгорается, а не возникает. */
+@keyframes dot-in{from{opacity:0;transform:scale(.4)}}
+.connection i{animation:dot-in .2s ease both}
+
+/* «Печатает» — три точки, каждая со своим тактом.
+   Точки настоящие элементы, а не псевдосодержимое: анимировать content умеют
+   не все движки, и надпись молча оставалась бы без точек. */
+.typing-dots{display:inline-flex;gap:2px;margin-left:3px;vertical-align:baseline}
+.typing-dots i{width:3px;height:3px;border-radius:50%;background:currentColor;
+  animation:typing-dot 1.1s ease-in-out infinite}
+.typing-dots i:nth-child(2){animation-delay:.15s}
+.typing-dots i:nth-child(3){animation-delay:.3s}
+@keyframes typing-dot{0%,60%,100%{opacity:.25;transform:translateY(0)}
+  30%{opacity:1;transform:translateY(-2px)}}
+
+/* Значок рядом с именем проявляется, когда профиль доехал. */
+@keyframes emblem-in{from{opacity:0;transform:scale(.6)}}
+.emblem{display:inline-block;animation:emblem-in .24s cubic-bezier(.34,1.3,.64,1) both}
+
+/* Кнопка отправки отвечает на нажатие сжатием, а не подсветкой. */
+.send-button{transition:transform .12s,filter .16s}
+.send-button:not(:disabled):hover{filter:brightness(1.06)}
+
+/* Найденный по юзернейму въезжает сверху — он появился только что. */
+@keyframes found-in{from{opacity:0;transform:translateY(-6px)}}
+.search-result:not(.hidden){animation:found-in .2s cubic-bezier(.22,.61,.36,1) both}
+
+/* Вкладка настроек: подчёркивание переезжает вместе с выбором. */
+.settings-nav button{position:relative}
+.settings-nav button::after{content:"";position:absolute;left:10px;right:10px;bottom:4px;height:1px;
+  background:var(--accent);transform:scaleX(0);transform-origin:left;transition:transform .18s ease}
+.settings-nav button.active::after{display:none}
+.update-link{display:inline-flex;text-decoration:none}
+
+@media(max-width:1040px){
+  .app-shell{grid-template-columns:clamp(225px,28vw,275px) minmax(0,1fr)}
+  .sidebar-top{padding:13px 11px 8px}
+  .conversation-button{grid-template-columns:36px minmax(0,1fr) auto;gap:8px;padding:7px}
+  .conversation-avatar{width:36px;height:36px}
+  .message-list{padding-left:clamp(14px,3vw,24px);padding-right:clamp(14px,3vw,24px)}
+  .composer-wrap{padding-left:clamp(10px,2.5vw,18px);padding-right:clamp(10px,2.5vw,18px)}
+}
+@media(max-height:680px){
+  .sidebar-top{padding-top:10px;padding-bottom:6px}
+  .search-field,.new-chat-form{height:36px;margin-top:8px}
+  .section-tabs{padding-top:6px}
+  .conversation-button{padding-top:5px;padding-bottom:5px}
+  .conversation-avatar{width:34px;height:34px}
+  .sidebar-bottom{padding:5px 8px}
+  .settings-header{height:52px}
+  .settings-body{padding-bottom:14px}
+  .settings-nav,.settings-content{padding-top:14px}
+}
+
+/* Обои меняются переходом: смена узора рывком выглядит как сбой отрисовки. */
+.chat-panel::before{transition:opacity .25s ease}
+
+/* Группы и каналы: та же строка списка, но со своей меткой. */
+.group-create{width:100%;height:34px;margin-top:7px;border:1px solid var(--line);border-radius:var(--radius);
+  background:transparent;color:var(--muted);font-size:11px;transition:background .16s,color .16s,border-color .16s}
+.group-create:hover{background:var(--surface);color:var(--text);border-color:var(--line-strong)}
+.conversation-avatar.group{border-radius:11px;font-size:12px}
+.kind-tag{margin-left:6px;padding:1px 5px;border:1px solid var(--line);border-radius:5px;
+  color:var(--muted);font-size:8.5px;vertical-align:middle}
+.message-list li .from{display:block;margin-bottom:3px;color:var(--muted);font-size:10px;font-weight:600}
+.channel-note{margin:0;padding:12px 4px;color:var(--faint);font-size:11.5px;text-align:center}
+.group-form{display:flex;flex-direction:column;gap:9px;margin:15px 0}
+.group-form input{height:38px;padding:0 11px;border:1px solid var(--line);border-radius:9px;outline:0;
+  background:rgba(255,255,255,.035);color:var(--text);font-size:12px}
+.group-form .kinds{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.group-form .kinds button{height:56px;padding:0 10px;border:1px solid var(--line);border-radius:9px;
+  background:transparent;color:var(--muted);font-size:11px;text-align:left}
+.group-form .kinds button.active{border-color:var(--accent);color:var(--text);background:var(--surface)}
+.group-form .kinds b{display:block;font-size:12px}
+.group-form .kinds small{display:block;margin-top:2px;font-size:9.5px;opacity:.8}
+
+/*
+   Цвет профиля — подложка аватара.
+
+   Текстом красить нельзя: тёмные цвета на почти чёрном фоне не читаются, и
+   половина палитры была бы негодной. Подложка же видна при любом цвете.
+*/
+.tinted{background-color:color-mix(in srgb,var(--tint) 30%,var(--surface-2))!important;
+  border-color:color-mix(in srgb,var(--tint) 55%,var(--line))!important;
+  transition:background-color .22s ease,border-color .22s ease}
+
+/*
+   Полоса заголовка.
+
+   Название по центру, значок слева, кнопки окна справа. Высота закреплена
+   переменной: от неё же отсчитываются экраны, иначе они уезжают под полосу.
+*/
+:root{--titlebar:40px}
+.titlebar{position:fixed;top:0;left:0;right:0;height:var(--titlebar);z-index:40;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 6px 0 10px;border-bottom:1px solid var(--line);
+  background:color-mix(in srgb,var(--panel-solid) 92%,transparent);
+  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);user-select:none}
+.titlebar-logo{width:17px;height:17px;flex:none;opacity:.85;pointer-events:none}
+/* Название стоит по центру ОКНА, а не между значком и кнопками: ширины по
+   краям разные, и середина колонки серединой окна не является. */
+.titlebar-title{position:absolute;left:50%;transform:translateX(-50%);
+  font:600 11px "Unbounded",sans-serif;letter-spacing:-.02em;color:var(--text);
+  pointer-events:none}
+.titlebar-actions{display:flex;align-self:stretch;gap:2px}
+.window-button{width:40px;height:100%;display:grid;place-items:center;padding:0;border:0;
+  border-radius:7px;background:transparent;color:var(--muted);
+  transition:background .14s,color .14s}
+.window-button svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.2}
+.window-button:hover{background:var(--surface);color:var(--text)}
+.window-button.danger:hover{background:color-mix(in srgb,var(--danger) 80%,transparent);color:#fff}
+.window-button:active{transform:scale(.94)}
+
+
+/* Значок и цвет профиля: выбор глазами, а не из выпадающего списка. */
+.decor-controls{display:flex;flex-direction:column;gap:8px}
+.decor-grid{display:flex;flex-wrap:wrap;gap:6px}
+.decor-grid button{width:32px;height:32px;display:grid;place-items:center;padding:0;
+  border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--text);
+  font-size:14px;line-height:1}
+.decor-grid button.active{border-color:var(--accent);outline:1px solid var(--accent)}
+.decor-grid button i{display:block;width:15px;height:15px;border-radius:50%;background:var(--swatch)}
+.emblem{margin-left:5px;opacity:.9}
+.admin-users{display:flex;flex-direction:column;gap:6px;margin:11px 0}
+.admin-user{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;
+  padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.admin-user b{display:block;font:600 11px "Inter UI",sans-serif}
+.admin-user small{display:block;margin-top:3px;color:var(--muted);font-size:9.5px}
+.admin-user code{color:var(--muted);font-size:9px}
+.admin-user.blocked{border-color:color-mix(in srgb,var(--danger) 45%,var(--line))}
+.admin-user.blocked b::after{content:" · закрыт вход";color:var(--danger);font-weight:400}
+.admin-empty{padding:14px;color:var(--faint);font-size:10.5px;text-align:center}
+@keyframes row-in{from{opacity:0;transform:translateY(5px)}}
+.admin-user{animation:row-in .18s ease both}
+.admin-counts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:7px;margin:11px 0}
+.admin-counts div{display:flex;justify-content:space-between;gap:9px;padding:8px 10px;
+  border:1px solid var(--line);border-radius:9px;background:var(--surface);font-size:10.5px}
+.admin-counts b{font-size:11px}
+.admin-input{flex:1;min-width:190px;height:34px;padding:0 11px;border:1px solid var(--line);
+  border-radius:9px;outline:0;background:rgba(255,255,255,.035);color:var(--text);font-size:11.5px}
+
+/* Гарнитуры. Заголовки остаются на Unbounded — они и есть подпись продукта. */
+body[data-font="system"]{--ui-font:system-ui,"Segoe UI",sans-serif}
+body[data-font="rounded"]{--ui-font:"Segoe UI Variable Display","Nunito",system-ui,sans-serif}
+body[data-font="mono"]{--ui-font:"Cascadia Mono","Consolas",ui-monospace,monospace}
+body[data-font]{font-family:var(--ui-font,"Inter UI",sans-serif)}
+body[data-font] button,body[data-font] input,body[data-font] textarea{font-family:inherit}
+
+.app-shell{grid-template-columns:var(--sidebar-width,310px) 1fr}
+
+/* Хвостик — срезанный угол у ближнего к краю нижнего скругления. */
+body.tails .message-list li.out{border-bottom-right-radius:5px}
+body.tails .message-list li.in{border-bottom-left-radius:5px}
+
+body[data-motion="reduced"] *{animation-duration:.12s!important;transition-duration:.1s!important}
+body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="off"] *::after{
+  animation:none!important;transition:none!important}
+
+/* --- настройки: категории ---------------------------------------------------- */
+.settings-body{display:grid;grid-template-columns:210px minmax(0,1fr);gap:22px;min-height:0;padding:0 max(20px,calc((100% - 940px)/2)) 30px;overflow:hidden}
+.settings-nav{display:flex;flex-direction:column;gap:2px;padding-top:22px;overflow:auto}
+.settings-nav button{height:36px;padding:0 12px;border:1px solid transparent;border-radius:var(--radius);background:transparent;color:var(--muted);font-size:12px;text-align:left}
+.settings-nav button:hover:not(:disabled){background:var(--surface);color:var(--text)}
+.settings-nav button.active{border-color:var(--line);background:var(--surface);color:var(--text)}
+.settings-nav button:disabled{opacity:.4;cursor:default}
+.settings-nav-note{margin:12px 12px 0;color:var(--faint);font-size:9.5px;line-height:1.5}
+.settings-content{min-width:0;padding-top:22px;overflow:auto}
+.settings-section h1{margin:0 0 6px;font:500 21px/1.3 "Unbounded",sans-serif;letter-spacing:-.04em}
+.settings-sub{margin:0 0 18px;color:var(--muted);font-size:11.5px;line-height:1.6}
+
+/* --- правила приватности ------------------------------------------------------ */
+.privacy-group{margin-bottom:14px}
+.privacy-group>h3{margin:0 0 8px 2px;color:var(--faint);font-size:9px;font-weight:600;letter-spacing:.11em;text-transform:uppercase}
+.privacy-rule{padding:14px;border-bottom:1px solid var(--line)}
+.privacy-rule:last-child{border-bottom:0}
+.privacy-rule>b{display:block;font-size:11.5px}
+.privacy-rule>small{display:block;margin-top:3px;color:var(--muted);font-size:9.5px;line-height:1.5}
+.privacy-scopes{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;margin-top:10px;overflow:hidden;border:1px solid var(--line);border-radius:9px}
+.privacy-scopes button{height:33px;border:0;border-right:1px solid var(--line);background:transparent;color:var(--muted);font-size:10px}
+.privacy-scopes button:last-child{border-right:0}
+.privacy-scopes button:hover{color:var(--text)}
+.privacy-scopes button.active{background:var(--surface-2);color:var(--text)}
+.privacy-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:9px}
+.privacy-counts{color:var(--faint);font-size:9.5px}
+.privacy-foot .ghost-button{height:30px;font-size:10px}
+
+/* Пометка о том, что правило пока не проверяется сервером. Спокойная, без
+   тревожной раскраски: это уточнение границ, а не авария. */
+.privacy-note{display:flex;gap:7px;margin-top:8px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--muted);font-size:9.5px;line-height:1.5}
+.privacy-note::before{content:"◔";flex:none;color:var(--faint)}
+
+/* --- окно исключений ---------------------------------------------------------- */
+.exceptions-card{width:min(460px,100%)}
+.exceptions-list{max-height:52vh;overflow:auto}
+.exception-row{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.exception-row:last-child{border-bottom:0}
+.exception-row .conversation-avatar{width:34px;height:34px;font-size:9.5px}
+.exception-row b{display:block;overflow:hidden;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
+.exception-row small{display:block;margin-top:2px;color:var(--faint);font-size:9px}
+.exception-choice{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;overflow:hidden;border:1px solid var(--line);border-radius:8px}
+.exception-choice button{height:28px;padding:0 10px;border:0;border-right:1px solid var(--line);background:transparent;color:var(--muted);font-size:9.5px;white-space:nowrap}
+.exception-choice button:last-child{border-right:0}
+.exception-choice button.active{background:var(--surface-2);color:var(--text)}
+.exception-choice button.active[data-choice="deny"]{background:color-mix(in srgb,var(--danger) 22%,var(--surface-2));color:var(--text)}
+.exceptions-empty{padding:22px 0;color:var(--faint);font-size:11px;text-align:center}
+
+/* --- рабочая колонка переписки ------------------------------------------------ */
+/* На широком мониторе лента не должна тянуться во всю ширину: строка в полтора
+   метра нечитаема, а пустое поле по краям — это фон, а не часть сообщения. */
+.message-list{padding-left:max(24px,calc((100% - var(--chat-column,760px))/2));
+  padding-right:max(24px,calc((100% - var(--chat-column,760px))/2))}
+.composer-wrap{padding-left:max(18px,calc((100% - var(--chat-column,760px))/2));
+  padding-right:max(18px,calc((100% - var(--chat-column,760px))/2))}
+
+
+/* --- юзернейм ----------------------------------------------------------------- */
+.username-detail{align-items:start}
+.username-detail span b{display:block;font-size:11px}
+.username-detail span small{display:block;margin-top:4px;color:var(--muted);font-size:9px;line-height:1.45}
+.username-controls{min-width:0}
+.username-field{display:flex;align-items:center;gap:2px;height:34px;padding:0 10px;border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.035);transition:border-color .16s,box-shadow .16s}
+.username-field:focus-within{box-shadow:0 0 0 2px var(--bg),0 0 0 4px color-mix(in srgb,var(--accent) 55%,transparent)}
+.username-field i{color:var(--faint);font-style:normal;font-size:11.5px}
+.username-field input{width:100%;min-width:0;border:0;background:transparent;box-shadow:none!important;font-size:11.5px}
+.setting-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.setting-actions .ghost-button{height:30px;font-size:10px}
+
+/* --- поиск и запросы ---------------------------------------------------------- */
+.search-result{margin:10px 8px 0;padding:11px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);animation:card-in .2s ease both}
+.search-result .found{display:grid;grid-template-columns:39px minmax(0,1fr);align-items:center;gap:10px}
+.search-result .conversation-avatar{width:39px;height:39px}
+.search-result b{display:block;overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+.search-result small{display:block;margin-top:2px;color:var(--muted);font-size:10px}
+.search-result .setting-actions{margin-top:10px}
+.search-result .miss{margin:0;color:var(--muted);font-size:10.5px;line-height:1.5}
+
+.section-tabs{display:flex;gap:4px;padding:10px 12px 6px}
+.section-tabs button{display:flex;align-items:center;gap:6px;height:26px;padding:0 9px;border:1px solid transparent;border-radius:99px;background:transparent;color:var(--faint);font-size:9px;font-weight:600;letter-spacing:.09em;text-transform:uppercase}
+.section-tabs button:hover{color:var(--muted)}
+.section-tabs button.active{border-color:var(--line);background:var(--surface);color:var(--text)}
+.section-tabs i{display:grid;place-items:center;min-width:16px;height:16px;padding:0 4px;border-radius:99px;background:var(--accent);color:var(--accent-text);font-size:8.5px;font-style:normal;letter-spacing:0}
+.section-tabs i:empty,.section-tabs i.zero{display:none}
+
+.request-card{margin:2px 8px;padding:11px;border:1px solid var(--line);border-radius:var(--radius);background:transparent;list-style:none}
+.request-card .found{display:grid;grid-template-columns:37px minmax(0,1fr);align-items:center;gap:10px}
+.request-card .conversation-avatar{width:37px;height:37px}
+.request-card b{display:block;font-size:11.5px}
+.request-card small{display:block;margin-top:2px;color:var(--muted);font-size:9.5px}
+.request-card .origin{margin:8px 0 0;color:var(--faint);font-size:9.5px;line-height:1.45}
+.request-card .setting-actions{margin-top:9px}
+.request-card .setting-actions .ghost-button{flex:1;justify-content:center}
+.request-card .danger{border-color:color-mix(in srgb,var(--danger) 35%,var(--line));color:var(--danger)}
+
+
+/* --- скрытое вложение --------------------------------------------------------- */
+/* Спокойная заглушка, а не тревожная панель: сработала настройка получателя,
+   ничего не сломалось. */
+.blocked-attachment{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border:1px dashed var(--line-strong);border-radius:calc(var(--bubble-radius) - 4px);background:var(--surface)}
+.blocked-attachment b{font-size:11px}
+.blocked-attachment small{color:var(--muted);font-size:9.5px;line-height:1.45}
+.blocked-attachment .ghost-button{align-self:flex-start;height:28px;font-size:10px}
+
+
+/* --- приглашения --------------------------------------------------------------- */
+.invite-form{display:grid;grid-template-columns:minmax(0,1fr) 140px;gap:7px;margin-top:10px}
+.invite-form input,.invite-form select{height:34px;padding:0 10px;border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.035);color:var(--text);font-size:11px}
+.invite-once{display:flex;align-items:center;gap:7px;margin-top:9px;color:var(--muted);font-size:10.5px}
+.invite-once input{accent-color:var(--accent)}
+.invite-list{margin-top:8px}
+.invite-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.invite-row:last-child{border-bottom:0}
+.invite-row b{display:block;font-size:11px}
+.invite-row small{display:block;margin-top:2px;color:var(--faint);font-size:9px}
+.invite-row code{display:block;margin-top:4px;overflow:hidden;color:var(--muted);font:9.5px/1.4 "Inter UI",sans-serif;text-overflow:ellipsis;white-space:nowrap}
+.invite-actions{display:flex;gap:6px}
+.invite-actions .ghost-button{height:28px;font-size:9.5px}
+.invite-empty{padding:14px 0;color:var(--faint);font-size:10.5px}
+
+
+/* --- вкладки приватности ------------------------------------------------------- */
+.privacy-tabs{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px}
+.privacy-tabs button{height:30px;padding:0 12px;border:1px solid var(--line);border-radius:99px;background:transparent;color:var(--muted);font-size:10.5px}
+.privacy-tabs button:hover{color:var(--text)}
+.privacy-tabs button.active{background:var(--surface);color:var(--text);border-color:var(--line-strong)}
+
+/* --- профиль собеседника -------------------------------------------------------- */
+.peer-card{width:min(420px,100%)}
+.peer-head{display:grid;grid-template-columns:68px minmax(0,1fr);align-items:center;gap:14px;margin:14px 0}
+.peer-username{margin:0;font-size:12.5px}
+.peer-standing{margin:4px 0 0;color:var(--muted);font-size:10px}
+.peer-actions{margin-top:12px}
+.peer-actions .ghost-button{flex:1;justify-content:center}
+.ghost-button.danger{border-color:color-mix(in srgb,var(--danger) 35%,var(--line));color:var(--danger)}
+.ghost-button.danger:hover:not(:disabled){background:color-mix(in srgb,var(--danger) 10%,transparent)}
+
+/* --- меню сообщения -------------------------------------------------------------- */
+.message-menu{position:fixed;z-index:40;min-width:170px;padding:5px;border:1px solid var(--line);border-radius:11px;background:var(--panel-solid);box-shadow:var(--shadow);animation:card-in .12s ease both}
+.message-menu button{width:100%;height:32px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--text);font-size:11.5px;text-align:left}
+.message-menu button:hover{background:var(--surface)}
+.message-menu button.danger{color:var(--danger)}
+.message-list li.selected{outline:2px solid color-mix(in srgb,var(--accent) 60%,transparent);outline-offset:2px}
+
+/* --- цитата в сообщении ----------------------------------------------------------- */
+.reply-quote{margin:0 0 6px;padding:6px 9px;border-left:2px solid color-mix(in srgb,var(--accent) 70%,transparent);border-radius:5px;background:rgba(255,255,255,.05);font-size:11px;line-height:1.4;opacity:.85}
+.reply-quote b{display:block;margin-bottom:2px;font-size:9.5px;opacity:.75}
+.composer-reply{display:flex;align-items:center;gap:9px;margin:0 6px 7px;padding:7px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:10.5px}
+.composer-reply span{flex:1;overflow:hidden;color:var(--muted);text-overflow:ellipsis;white-space:nowrap}
+
+/* --- «печатает» -------------------------------------------------------------------- */
+.peer-copy span.typing{color:var(--accent)}
+.peer-open{padding:0;border:0;background:transparent;text-align:left}
+.peer-open:hover .peer-copy b{color:var(--accent)}
+
+/* Жёсткая геометрия окна: только списки прокручиваются, нижние панели всегда
+   остаются внутри доступной высоты WebView. */
+.screen{min-width:0;min-height:0;overflow:hidden}
+.app-shell{height:auto;min-height:0;overflow:hidden}
+.sidebar{height:auto;min-height:0;overflow:hidden}
+.conversation-list{flex:1 1 0;min-height:0;overscroll-behavior:contain}
+.sidebar-bottom{flex:none}
+.chat-panel{height:auto;min-height:0;overflow:hidden}
+.composer-wrap{min-width:0}
+.composer textarea{min-width:0}

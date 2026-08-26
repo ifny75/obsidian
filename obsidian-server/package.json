@@ -1,0 +1,33 @@
+{
+  "name": "obsidian-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --watch src/index.ts",
+    "start": "node --env-file-if-exists=.env src/index.ts",
+    "check": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "invite": "node --env-file-if-exists=.env src/tools/invite.ts",
+    "smoke": "node test/smoke.ts",
+    "ton:check": "node --env-file-if-exists=.env src/tools/ton-check.ts",
+    "invite:revoke": "node --env-file-if-exists=.env src/tools/revoke.ts",
+    "backup": "node --env-file-if-exists=.env src/tools/backup.ts"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.9.1",
+    "@noble/hashes": "^1.8.0",
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.69.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.3"
+  },
+  "optionalDependencies": {
+    "@ton/core": "^0.63.1",
+    "ton-lite-client": "^3.1.1"
+  }
+}

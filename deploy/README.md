@@ -1,0 +1,214 @@
+# Развёртывание
+
+Что грузить на домашний сервер, как это запустить и как вывести наружу через Cloudflare Tunnel.
+
+## 1. Что грузить
+
+Ровно содержимое `obsidian-server/`, и **только** эти файлы:
+
+```
+src/                 исходники (TypeScript выполняется Node напрямую, сборки нет)
+package.json
+package-lock.json
+tsconfig.json        только для `npm run check` на копии разработчика
+.npmrc               engine-strict: отказ при неподходящей версии Node
+.env.example
+README.md
+```
+
+Что **не** грузить:
+
+| | почему |
+|---|---|
+| `node_modules/` | ставится на сервере через `npm ci` — иначе приедут бинари не под ту платформу |
+| `data/` | это ваша база и вложения; на сервере она своя |
+| `.env` | там админский токен, ему место только на сервере |
+| `obsidian-core/`, клиенты | серверу они не нужны и не должны там лежать |
+
+Готовый архив собирается скриптом:
+
+```powershell
+deploy\package.ps1
+```
+
+Он кладёт `deploy/dist/obsidian-server-<дата>.zip` — этот файл и есть то, что уезжает на сервер.
+
+## 2. Установка
+
+Нужен **Node 24 или новее** — сервер опирается на встроенный `node:sqlite`, разбор TypeScript без сборки и `--env-file-if-exists`.
+
+**Сначала проверьте, какой node вы зовёте.** Системный часто старее 24:
+
+```bash
+node -v            # системный
+/opt/node-24/bin/node -v   # тот, что нужен серверу
+```
+
+Ставить нужно тем же npm, что лежит рядом с Node 24. `.npmrc` в архиве включает
+`engine-strict`, поэтому установка старым npm просто откажет и назовёт причину —
+это лучше, чем невнятный `SyntaxError` в `.ts` при первом запуске.
+
+```bash
+unzip obsidian-server-*.zip -d /opt/obsidian
+cd /opt/obsidian
+
+sudo /opt/node-24/bin/npm ci --ignore-scripts --omit=optional --omit=dev
+sudo chown -R obsidian:obsidian /opt/obsidian
+cp .env.example .env
+```
+
+`sudo` и `chown` здесь не формальность: каталог принадлежит пользователю
+`obsidian`, от которого работает служба, а `npm ci` первым делом сносит
+`node_modules` целиком. Из-под своей учётки вы получите `EACCES` на
+`node_modules/.bin`.
+
+Каждый флаг тут по делу:
+
+| | |
+|---|---|
+| `--ignore-scripts` | установка пакета не выполняет чужие скрипты |
+| `--omit=optional` | пропускает пакеты TON: платный вход выключен, без них сервер работает по инвайтам |
+| `--omit=dev` | на боевой машине не нужен компилятор TypeScript — сервер выполняет исходники напрямую, а лишний инструмент это лишняя поверхность |
+
+С этими флагами ставится ровно два пакета верхнего уровня: `uWebSockets.js` и `@noble/*`.
+
+`npm run check` — команда машины разработчика, а не сервера: без dev-зависимостей `tsc` там просто нет.
+
+В `.env` меняем как минимум:
+
+```ini
+OBSIDIAN_HOST=127.0.0.1        # наружу торчит cloudflared, а не сервер
+OBSIDIAN_PORT=8787
+OBSIDIAN_ADMIN_TOKEN=          # пусто = инвайты только через CLI, так безопаснее
+```
+
+**`OBSIDIAN_HOST` обязан остаться `127.0.0.1`.** Ограничение частоты попыток входа доверяет заголовку `cf-connecting-ip`, а его подделает кто угодно, если до сервера можно достучаться напрямую.
+
+Проверка:
+
+```bash
+node src/index.ts
+# ожидаем: INFO ton entry disabled, invites only
+#          INFO obsidian-server up port=8787 heartbeatSec=30
+```
+
+## 3. Автозапуск
+
+**Linux (systemd):** в юнитах прописан `/usr/bin/node`. Если системный node старее 24 — а это обычное дело, — путь нужно подменить, иначе служба упадёт на разборе `.ts`:
+
+```bash
+sudo cp systemd/obsidian*.service systemd/*.timer /etc/systemd/system/
+sudo sed -i 's|/usr/bin/node|/opt/node-24/bin/node|' /etc/systemd/system/obsidian*.service
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now obsidian
+sudo journalctl -u obsidian -f
+```
+
+Юнит намеренно ужат: свой пользователь, `NoNewPrivileges`, только своя папка на запись. Мессенджер не должен иметь доступа ни к чему, кроме своей базы.
+
+**Windows:** запланированная задача при старте системы —
+
+```powershell
+deploy\windows\install-task.ps1 -Root C:\obsidian
+```
+
+## 4. Cloudflare Tunnel
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create obsidian
+cloudflared tunnel route dns obsidian obsidian.example.com
+```
+
+Конфиг — [cloudflared/config.example.yml](cloudflared/config.example.yml), положить в `~/.cloudflared/config.yml` и подставить свои id и домен. Затем:
+
+```bash
+sudo cloudflared service install
+```
+
+Проверка снаружи: `https://obsidian.example.com/v1/health` отвечает `{"ok":true,"v":1}`.
+
+### Обязательно про WebSocket
+
+В панели Cloudflare: **Network → WebSockets → On.** Без этого соединение не установится вообще, а симптом будет невнятный.
+
+Cloudflare рвёт WebSocket после ~100 секунд тишины — клиент шлёт PING каждые 30 секунд именно поэтому. Менять `OBSIDIAN_HEARTBEAT_SEC` выше 45 нельзя.
+
+## 5. Cloudflare Access
+
+Это третий слой закрытого доступа: незалогиненный запрос не доходит до домашнего сервера вообще, что защищает и от сканеров, и от возможной дыры в самом сервере.
+
+Zero Trust → Access → Applications → Self-hosted:
+
+- домен: `obsidian.example.com`
+- политика: `Service Auth` → Service Token
+- создать service token, выдать `Client ID` и `Client Secret`
+
+Клиентское ядро отправку этих заголовков пока не умеет — это отдельная задача. **Пока она не сделана, Access придётся оставить выключенным**, иначе клиент не пройдёт. Остальные два слоя (инвайты и подпись на каждое соединение) работают.
+
+## 6. Первый пользователь
+
+Открытой регистрации нет:
+
+```bash
+cd /opt/obsidian
+node src/tools/invite.ts
+# invite: 7f3a91c4e2b8d05a6f1e9c3d
+# expires: 2026-08-30T12:00:00.000Z
+```
+
+Код печатается один раз, в базе лежит только его SHA-256. Потеряли — выпускайте новый.
+
+В клиенте: адрес `wss://obsidian.example.com/ws`, имя, этот код.
+
+**Инвайт — это пропуск, обращаться с ним как с паролем.** Не пересылайте его в переписке, чатах поддержки и скриншотах: до использования им может воспользоваться любой, кто увидел. Если код куда-то утёк:
+
+```bash
+node src/tools/revoke.ts <код>
+```
+
+Отзыв работает по самому коду: в базе лежит только его SHA-256, и узнать по базе, какой код за какой строкой, невозможно — это и было целью. Код возврата 0 — отозвали, 1 — такого кода уже нет.
+
+## 7. Бэкап
+
+`data/` не бэкапится сам по себе. Что это даёт и чего не даёт:
+
+- **не спасёт переписку** — у сервера нет ключей, в очереди только шифротекст;
+- **спасёт регистрации** — без базы все устройства станут серверу неизвестны, и людям придётся заходить заново по новым инвайтам.
+
+Обычным `cp` копировать нельзя: база в режиме WAL, и файл, снятый во время записи, окажется битым. Инструмент делает `VACUUM INTO` — консистентный снимок на работающем сервере:
+
+```bash
+sudo mkdir -p /var/backups/obsidian && sudo chown obsidian: /var/backups/obsidian
+sudo systemctl enable --now obsidian-backup.timer
+```
+
+Раз в сутки, 14 снимков, старые чистятся сами (`OBSIDIAN_BACKUP_KEEP`). Разовый прогон: `node src/tools/backup.ts /var/backups/obsidian`.
+
+## 8. Обновление
+
+```bash
+sudo systemctl stop obsidian
+
+# распаковать новый архив поверх, data/ не трогать
+cd /opt/obsidian
+sudo /opt/node-24/bin/npm ci --ignore-scripts --omit=optional --omit=dev
+sudo chown -R obsidian:obsidian /opt/obsidian
+
+sudo systemctl start obsidian
+```
+
+`cd` здесь обязателен: без него `npm ci` не найдёт `package-lock.json` и
+пожалуется, что его нет вовсе.
+
+База переживает обновление. Очередь недоставленных конвертов — не всегда: при смене схемы она сносится осознанно, это транзитная очередь с TTL, а не архив.
+
+## 9. Что проверить после запуска
+
+- [ ] `/v1/health` отвечает снаружи
+- [ ] в панели Cloudflare WebSockets включены
+- [ ] `OBSIDIAN_HOST=127.0.0.1`, порт снаружи напрямую не открыт
+- [ ] `.env` не читается посторонними (`chmod 600`)
+- [ ] `obsidian-backup.timer` включён (`systemctl list-timers obsidian-backup`)
+- [ ] в логах нет ни pubkey, ни handle, ни IP — если появились, это баг

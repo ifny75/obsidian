@@ -1,0 +1,14 @@
+{
+  "name": "obsidian-windows",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows-клиент Obsidian: WebView2 поверх obsidian-core",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build --no-bundle",
+    "icon": "tauri icon ../resource/obsidian_logo.svg"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

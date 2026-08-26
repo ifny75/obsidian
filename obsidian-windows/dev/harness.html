@@ -1,0 +1,209 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Obsidian — стенд интерфейса</title>
+<!--
+  Стенд для проверки интерфейса без сборки Tauri.
+
+  Лежит вне src/ намеренно: tauri.conf.json объявляет frontendDist: "../src",
+  то есть всю папку целиком, и файл, подменяющий мост к ядру, уехал бы в
+  готовый exe. Пути при этом остаются настоящими за счёт <base>: стили,
+  шрифты, иконки и main.js берутся из src/ ровно так же, как в приложении.
+
+  Разметка не дублируется, а подтягивается из index.html, поэтому забыть
+  обновить стенд нельзя.
+
+  Ядро подменено: команды складываются в журнал, события возвращаются по
+  заданному сценарию. Криптографии здесь нет и быть не должно — проверяется
+  только поведение интерфейса.
+-->
+<script>
+  const bridge = {
+    commands: [],
+    listeners: [],
+    // Сценарий: сколько сообщений «лежит в базе» у каждой беседы.
+    store: new Map(),
+    historyCalls: 0,
+    username: null,
+    taken: new Set(["занято"]),
+    directoryHits: {},
+    entries: [],
+    access: { policy: "everyone", invites: [], granted: 0 },
+    // Значения по умолчанию повторяют Privacy::default() из ядра.
+    privacy: {
+      direct_messages: { scope: "everyone", allow: [], deny: [] },
+      invite_requests: true,
+      media: { scope: "approved", allow: [], deny: [] },
+      voice: { scope: "approved", allow: [], deny: [] },
+      files: { scope: "approved", allow: [], deny: [] },
+      calls: { scope: "approved", allow: [], deny: [] },
+      link_previews: { scope: "nobody", allow: [], deny: [] },
+      presence: { scope: "contacts", allow: [], deny: [] },
+      last_seen: { scope: "nobody", allow: [], deny: [] },
+      read_receipts: { scope: "everyone", allow: [], deny: [] },
+      typing: { scope: "contacts", allow: [], deny: [] },
+      voice_recording_hint: { scope: "contacts", allow: [], deny: [] },
+      discoverable: { scope: "everyone", allow: [], deny: [] },
+      profile_avatar: { scope: "contacts", allow: [], deny: [] },
+      profile_name: { scope: "everyone", allow: [], deny: [] },
+      profile_username: { scope: "everyone", allow: [], deny: [] },
+    },
+  };
+  window.__bridge = bridge;
+
+  function emit(event) {
+    // Ядро отдаёт события строкой — стенд обязан вести себя так же.
+    for (const fn of bridge.listeners) fn({ payload: JSON.stringify(event) });
+  }
+  window.__emit = emit;
+
+  window.__TAURI__ = {
+    core: {
+      invoke(name, args) {
+        // Команды ядра приходят строкой в args.json; остальные вызовы Tauri
+        // (auto_unlock, open_store) её не несут.
+        if (!args || typeof args.json !== "string") {
+          bridge.commands.push({ type: name });
+          return Promise.resolve(true);
+        }
+        const command = JSON.parse(args.json);
+        bridge.commands.push(command);
+        if (command.type === "history") {
+          bridge.historyCalls += 1;
+          queueMicrotask(() => respondHistory(command));
+        }
+        // Правила приватности живут в запечатанной базе; стенд держит их в
+        // памяти и отвечает так же, как ядро.
+        // Каталог юзернеймов и книга отношений — как в ядре, но в памяти.
+        if (command.type === "username_set") {
+          const taken = bridge.taken.has(command.name);
+          queueMicrotask(() => taken
+            ? emit({ type: "failed", code: "username_taken", message: "занято" })
+            : (bridge.username = command.name, emit({ type: "username", name: command.name, discoverable: command.discoverable })));
+        }
+        if (command.type === "username_clear") {
+          bridge.username = null;
+          queueMicrotask(() => emit({ type: "username", name: null, discoverable: true }));
+        }
+        if (command.type === "username_lookup") {
+          const name = command.name.replace(/^@/, "").toLowerCase();
+          const hit = bridge.directoryHits[name];
+          queueMicrotask(() => emit({
+            type: "username_found", query: name,
+            device: hit?.device ?? null, chat_code: hit?.chatCode ?? null,
+            avatar_mime: null, avatar_base64: null,
+          }));
+        }
+        if (command.type === "clear_conversation") {
+          queueMicrotask(() => emit({ type: "conversation_cleared",
+                                      conversation: command.conversation, forgotten: false }));
+        }
+        if (command.type === "delete_conversation") {
+          queueMicrotask(() => emit({ type: "conversation_cleared",
+                                      conversation: command.conversation, forgotten: true }));
+        }
+        if (command.type === "delete_message") {
+          queueMicrotask(() => emit({ type: "deleted",
+                                      conversation: command.conversation, ids: [command.id] }));
+        }
+        if (command.type === "access_get") {
+          queueMicrotask(() => emit({ type: "access", ...bridge.access }));
+        }
+        if (command.type === "access_set") {
+          bridge.access.policy = command.policy;
+          queueMicrotask(() => emit({ type: "access", ...bridge.access }));
+        }
+        if (command.type === "pass_invite") {
+          const pass = [...crypto.getRandomValues(new Uint8Array(32))]
+            .map((b) => b.toString(16).padStart(2, "0")).join("");
+          bridge.access.invites.push({ pass, hash: pass.slice(0, 64), label: command.label,
+                                       one_time: command.one_time, ttl_sec: command.ttl_sec, created_at: 0 });
+          queueMicrotask(() => emit({ type: "access", ...bridge.access }));
+        }
+        if (command.type === "pass_revoke") {
+          bridge.access.invites = bridge.access.invites.filter((i) => i.hash !== command.hash);
+          queueMicrotask(() => emit({ type: "access", ...bridge.access }));
+        }
+        if (command.type === "directory_list") {
+          queueMicrotask(() => emit({ type: "directory", entries: bridge.entries }));
+        }
+        if (command.type === "directory_set") {
+          const existing = bridge.entries.find((e) => e.device === command.device);
+          if (existing) existing.standing = command.standing;
+          else bridge.entries.push({ device: command.device, standing: command.standing,
+                                     display_name: null, username: null, origin: null, noted_at: 0 });
+          queueMicrotask(() => emit({ type: "directory", entries: bridge.entries }));
+        }
+        if (command.type === "directory_forget") {
+          bridge.entries = bridge.entries.filter((e) => e.device !== command.device);
+          queueMicrotask(() => emit({ type: "directory", entries: bridge.entries }));
+        }
+        if (command.type === "privacy_get") {
+          queueMicrotask(() => emit({ type: "privacy", privacy: bridge.privacy }));
+        }
+        if (command.type === "privacy_set") {
+          bridge.privacy = command.privacy;
+          queueMicrotask(() => emit({ type: "privacy", privacy: bridge.privacy }));
+        }
+        return Promise.resolve(true);
+      },
+    },
+    event: {
+      listen(_name, fn) {
+        bridge.listeners.push(fn);
+        return Promise.resolve(() => {});
+      },
+    },
+  };
+
+  /** Отдаёт страницу «из базы», новейшие первыми — как настоящее ядро. */
+  function respondHistory(command) {
+    const all = bridge.store.get(command.conversation) ?? [];
+    const start = command.before ? all.findIndex((m) => m.cursor === command.before) + 1 : 0;
+    const page = all.slice(start, start + command.limit);
+    emit({
+      type: "history",
+      conversation: command.conversation,
+      has_more: start + page.length < all.length,
+      messages: page,
+    });
+  }
+
+  /** Наполняет «базу»: сообщения от новых к старым, как их отдаёт ядро. */
+  window.__seed = (conversation, count, label) => {
+    const rows = [];
+    for (let i = count; i >= 1; i--) {
+      rows.push({
+        id: `${label}-${i}`,
+        cursor: `${1000 + i}:${i}`,
+        outgoing: i % 3 === 0,
+        created_at: 1_700_000_000_000 + i * 1000,
+        body: `⁣OBS1:${JSON.stringify({ v: 1, type: "text", id: `${label}-${i}`, text: `${label} #${i}` })}`,
+      });
+    }
+    bridge.store.set(conversation, rows);
+  };
+</script>
+<script type="module">
+  // <base> переводит все относительные ссылки страницы в src/ — без него
+  // assets/, styles.css и main.js искались бы рядом со стендом.
+  const base = document.createElement("base");
+  base.href = "../src/";
+  document.head.prepend(base);
+
+  const page = await (await fetch("../src/index.html")).text();
+  const parsed = new DOMParser().parseFromString(page, "text/html");
+  for (const node of parsed.head.querySelectorAll("link,style")) document.head.append(node);
+  document.body.innerHTML = parsed.body.innerHTML;
+  document.body.className = parsed.body.className;
+  // Обычным тегом, а не import(): в настоящем приложении main.js — классический
+  // скрипт, и всё его содержимое глобально. Загрузка модулем прятала бы функции
+  // в область модуля, и стенд проверял бы не то, что работает у пользователя.
+  await new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "main.js";
+    script.onload = resolve;
+    script.onerror = reject;
+    document.body.append(script);
+  });
+  window.__ready = true;
+</script>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="obsidian_black">#FF050505</color>
+    <color name="obsidian_white">#FFF5F5F3</color>
+    <color name="obsidian_muted">#FF929292</color>
+    <color name="obsidian_dim">#FF606060</color>
+    <color name="obsidian_line">#FF292929</color>
+    <color name="obsidian_panel">#F20D0D0D</color>
+    <color name="obsidian_glass">#D9111111</color>
+    <color name="obsidian_green">#FF75E0A7</color>
+    <color name="obsidian_danger">#F0736B</color>
+</resources>

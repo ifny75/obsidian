@@ -1,0 +1,31 @@
+[package]
+name = "obsidian-windows"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Ядро линкуется напрямую: FFI здесь не нужен, обе стороны на Rust.
+obsidian-core = { path = "../../obsidian-core" }
+tauri = { version = "2", features = [] }
+serde_json = "1"
+rand_core = { version = "0.6", features = ["getrandom"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+# Обработчик запросов разрешений WebView2. Версия совпадает с той, что уже
+# тянет wry, — иначе в дереве оказались бы два несовместимых COM-слоя.
+webview2-com = "0.38"
+
+[features]
+# Проброс фичи ядра: платный вход в TON по умолчанию выключен.
+ton = ["obsidian-core/ton"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

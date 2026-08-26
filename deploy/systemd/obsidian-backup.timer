@@ -1,0 +1,18 @@
+# /etc/systemd/system/obsidian-backup.timer
+#
+#   sudo mkdir -p /var/backups/obsidian && sudo chown obsidian: /var/backups/obsidian
+#   sudo systemctl enable --now obsidian-backup.timer
+#   systemctl list-timers obsidian-backup
+
+[Unit]
+Description=Obsidian daily backup
+
+[Timer]
+OnCalendar=daily
+# Разброс, чтобы снимок не приходился на ту же секунду, что и другие задачи.
+RandomizedDelaySec=30m
+# Пропущенный из-за выключенной машины запуск наверстывается.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

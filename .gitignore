@@ -1,0 +1,40 @@
+node_modules/
+data/
+.env
+*.log
+dist/
+build/
+target/
+
+# Tauri: сгенерированные шаблоны платформ и артефакты сборки
+src-tauri/gen/
+
+# Собранные архивы для сервера — артефакт, а не исходник
+deploy/dist/
+
+# Инструменты и артефакты, которым в исходниках не место
+.tooling/
+release/
+test-data/
+.claude/
+obsidian-site-release.tar.gz
+
+# Нативная библиотека ядра: её собирает cargo-ndk из obsidian-core
+obsidian-android/app/src/main/jniLibs/
+
+# Сайт живёт в своём репозитории
+obsidian-site/
+
+# Сборочные каталоги фронтенда
+.next/
+.vinext/
+.wrangler/
+.openai/
+
+# Слепки базы и архивы: в открытом репозитории им не место —
+# в них живые аккаунты, коды чатов и запечатанные посылки восстановления.
+*.db
+*.db-wal
+*.db-shm
+*.tar.gz
+deploy/migration-backup/

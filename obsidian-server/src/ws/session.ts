@@ -1,0 +1,1014 @@
+import { sha256 } from "@noble/hashes/sha2";
+import { config, PROTOCOL_VERSION } from "../config.ts";
+import { log } from "../log.ts";
+import type { Store } from "../db/index.ts";
+import type { NonceStore } from "../auth/nonce.ts";
+import type { SessionStore } from "../auth/sessions.ts";
+import { authMessage, deviceCertMessage, verify } from "../auth/verify.ts";
+import type { RateLimiter } from "../util/ratelimit.ts";
+import { BadInput, ascii, concat, constantTimeEqual, fromHex, random, toHex } from "../util/bytes.ts";
+import {
+  CLOSE,
+  KEY_LEN,
+  OP,
+  SIG_LEN,
+  authErrFrame,
+  envelopeFrame,
+  errorFrame,
+  frame,
+  jsonFrame,
+  keyPackageFrame,
+  parseAck,
+  parseJsonBody,
+  parseKeyPackageClaim,
+  parseKeyPackages,
+  parseSend,
+  sendOkFrame,
+} from "../proto/frames.ts";
+import type { Registry } from "./registry.ts";
+import type { Socket } from "./registry.ts";
+
+const HANDLE_RE = /^[a-z0-9_]{3,20}$/;
+const DRAIN_BATCH = 200;
+/** Выше этого не пампим очередь — клиент не успевает читать. */
+const DRAIN_BACKPRESSURE_BYTES = 4 * 1024 * 1024;
+/** Алфавит memo: без символов, которые путаются при переписывании вручную. */
+const REF_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789";
+const REF_LEN = 10;
+
+export interface Deps {
+  store: Store;
+  nonces: NonceStore;
+  sessions: SessionStore;
+  registry: Registry;
+  authLimiter: RateLimiter;
+  recoveryLimiter: RateLimiter;
+  searchLimiter: RateLimiter;
+  now: () => number;
+}
+
+/** Состояние одного соединения. Живёт в user data сокета. */
+export interface ConnData {
+  ip: string;
+  authAttempts: number;
+  nonce: Uint8Array | null;
+  identity: Uint8Array | null;
+  devicePub: Uint8Array | null;
+  devicePubHex: string | null;
+  token: string | null;
+  /** Счёт, по которому это соединение ждёт зачисления. */
+  paymentRef: string | null;
+  /**
+   * Получатели, к которым это соединение предъявило пропуск.
+   *
+   * Только в памяти и только на время соединения: запись на диск превратила бы
+   * пропуск в постоянный след «кто кому пишет» — ровно ту метаданную, ради
+   * отсутствия которой всё и затевалось.
+   */
+  admitted: Set<string>;
+}
+
+export function newConnData(ip: string): ConnData {
+  return {
+    ip,
+    authAttempts: 0,
+    nonce: null,
+    identity: null,
+    devicePub: null,
+    devicePubHex: null,
+    token: null,
+    paymentRef: null,
+    admitted: new Set(),
+  };
+}
+
+export function handleOpen(deps: Deps, sock: Socket, conn: ConnData): void {
+  const now = deps.now();
+  conn.nonce = deps.nonces.issue(now);
+  sock.send(
+    jsonFrame(OP.HELLO, {
+      v: PROTOCOL_VERSION,
+      nonce: toHex(conn.nonce),
+      serverTime: now,
+      heartbeatSec: config.heartbeatSec,
+      maxFrame: config.maxFrameBytes,
+      /** Клиент сразу знает, какие способы входа доступны. */
+      entry: { invite: !config.publicRegistration, ton: config.ton.address !== "" },
+      features: { profiles: true, recovery: true, usernames: true, passes: true, decor: true },
+    }),
+    true,
+  );
+}
+
+export function handleClose(deps: Deps, sock: Socket, conn: ConnData): void {
+  if (conn.devicePubHex) deps.registry.remove(conn.devicePubHex, sock);
+  if (conn.paymentRef) deps.registry.unwatchPayment(conn.paymentRef, sock);
+  if (conn.token) deps.sessions.revoke(conn.token);
+}
+
+/**
+ * `msg` обязан быть копией: ArrayBuffer от uWS невалиден после возврата из
+ * обработчика.
+ */
+export function handleMessage(deps: Deps, sock: Socket, conn: ConnData, msg: Uint8Array): void {
+  if (msg.byteLength === 0) {
+    sock.end(CLOSE.PROTOCOL, "empty frame");
+    return;
+  }
+  const op = msg[0]!;
+  const body = msg.subarray(1);
+
+  try {
+    switch (op) {
+      case OP.PING:
+        sock.send(frame(OP.PONG), true);
+        return;
+      case OP.AUTH:
+        onAuth(deps, sock, conn, body);
+        return;
+      case OP.PAY_REQUEST:
+        onPayRequest(deps, sock, conn, body);
+        return;
+      case OP.SEND:
+        requireAuth(conn);
+        onSend(deps, sock, conn, body);
+        return;
+      case OP.ACK:
+        requireAuth(conn);
+        onAck(deps, conn, body);
+        return;
+      case OP.KEYPKG_PUBLISH:
+        requireAuth(conn);
+        onKeyPackagePublish(deps, conn, body);
+        return;
+      case OP.KEYPKG_CLAIM:
+        requireAuth(conn);
+        onKeyPackageClaim(deps, sock, body);
+        return;
+      case OP.PROFILE_GET:
+        requireAuth(conn);
+        onProfileGet(deps, sock, body);
+        return;
+      case OP.PROFILE_SET:
+        requireAuth(conn);
+        onProfileSet(deps, sock, conn, body);
+        return;
+      case OP.RECOVERY_SET:
+        requireAuth(conn);
+        onRecoverySet(deps, sock, conn, body);
+        return;
+      case OP.ACCESS_SET:
+        requireAuth(conn);
+        onAccessSet(deps, sock, conn, body);
+        return;
+      case OP.PASS_CREATE:
+        requireAuth(conn);
+        onPassCreate(deps, sock, conn, body);
+        return;
+      case OP.PASS_REVOKE:
+        requireAuth(conn);
+        onPassRevoke(deps, sock, conn, body);
+        return;
+      case OP.PASS_PRESENT:
+        requireAuth(conn);
+        onPassPresent(deps, sock, conn, body);
+        return;
+      case OP.USERNAME_SET:
+        requireAuth(conn);
+        onUsernameSet(deps, sock, conn, body);
+        return;
+      case OP.USERNAME_LOOKUP:
+        requireAuth(conn);
+        onUsernameLookup(deps, sock, conn, body);
+        return;
+      case OP.ADMIN_GET:
+        requireAuth(conn);
+        onAdminGet(deps, sock, conn, body);
+        return;
+      case OP.ADMIN_ACTION:
+        requireAuth(conn);
+        onAdminAction(deps, sock, conn, body);
+        return;
+      case OP.RECOVERY_GET:
+        // Единственный кадр без requireAuth: тому, кто потерял устройство,
+        // подписаться нечем. Взамен — жёсткий ограничитель частоты и
+        // доказательство знания пароля.
+        onRecoveryGet(deps, sock, conn, body);
+        return;
+      default:
+        sock.end(CLOSE.PROTOCOL, "unknown opcode");
+        return;
+    }
+  } catch (err) {
+    if (err instanceof BadInput) {
+      // Fail closed: не пытаемся разобрать «как получится».
+      sock.end(CLOSE.PROTOCOL, "bad frame");
+      return;
+    }
+    if (err instanceof Unauthenticated) {
+      sock.end(CLOSE.POLICY, "unauthenticated");
+      return;
+    }
+    log.error("frame handler failed", { op });
+    sock.end(CLOSE.PROTOCOL, "internal");
+  }
+}
+
+class Unauthenticated extends Error {}
+
+/**
+ * Любая неудача AUTH выдаёт свежий nonce: клиент чинит повод (занятый handle,
+ * неоплаченный счёт) и пробует снова на том же соединении. Челлендж каждый раз
+ * новый, попытки ограничены — переиспользования подписи это не даёт.
+ */
+function authFail(deps: Deps, sock: Socket, conn: ConnData, code: string, message: string): void {
+  const nonce = deps.nonces.issue(deps.now());
+  conn.nonce = nonce;
+  sock.send(authErrFrame(code, message, nonce), true);
+}
+
+function requireAuth(conn: ConnData): void {
+  if (!conn.devicePub) throw new Unauthenticated();
+}
+
+// --- проверка владения ключами ------------------------------------------------
+
+interface SignedPayload {
+  v: unknown;
+  identity: unknown;
+  device: unknown;
+  deviceCert: unknown;
+  sig: unknown;
+  invite?: unknown;
+  paymentRef?: unknown;
+  handle?: unknown;
+}
+
+interface Credentials {
+  identity: Uint8Array;
+  devicePub: Uint8Array;
+  cert: Uint8Array;
+}
+
+/**
+ * Общая часть AUTH и PAY_REQUEST: доказательство владения identity-ключом и
+ * ключом устройства. Подпись проверяется против nonce ЭТОГО соединения, а не
+ * присланного клиентом, — перехваченный кадр на другом сокете не сойдётся.
+ */
+function checkCredentials(
+  deps: Deps,
+  sock: Socket,
+  conn: ConnData,
+  payload: SignedPayload,
+): Credentials | null {
+  const now = deps.now();
+
+  if (payload === null || typeof payload !== "object" || payload.v !== PROTOCOL_VERSION) {
+    authFail(deps, sock, conn, "bad_version", "unsupported protocol version");
+    return null;
+  }
+
+  const identity = fromHex(payload.identity, KEY_LEN);
+  const devicePub = fromHex(payload.device, KEY_LEN);
+  const cert = fromHex(payload.deviceCert, SIG_LEN);
+  const sig = fromHex(payload.sig, SIG_LEN);
+
+  const nonce = conn.nonce;
+  if (!nonce || !deps.nonces.consume(nonce, now)) {
+    authFail(deps, sock, conn, "bad_nonce", "challenge expired");
+    return null;
+  }
+  conn.nonce = null;
+
+  if (!verify(cert, deviceCertMessage(identity, devicePub), identity)) {
+    authFail(deps, sock, conn, "bad_cert", "device certificate rejected");
+    return null;
+  }
+  if (!verify(sig, authMessage(nonce, identity, devicePub), devicePub)) {
+    authFail(deps, sock, conn, "bad_signature", "challenge signature rejected");
+    return null;
+  }
+  return { identity, devicePub, cert };
+}
+
+function rateOk(deps: Deps, sock: Socket, conn: ConnData): boolean {
+  conn.authAttempts += 1;
+  if (
+    conn.authAttempts > config.maxAuthAttemptsPerConn ||
+    !deps.authLimiter.allow(conn.ip, deps.now())
+  ) {
+    sock.end(CLOSE.POLICY, "rate limited");
+    return false;
+  }
+  return true;
+}
+
+// --- платный вход -------------------------------------------------------------
+
+function makeRef(): string {
+  let out = "";
+  for (const b of random(REF_LEN)) out += REF_ALPHABET[b % REF_ALPHABET.length];
+  return out;
+}
+
+/**
+ * Выставляет счёт. Счёт привязан к identity: memo лежит в блокчейне открыто,
+ * и без привязки любой наблюдатель погасил бы чужую оплату своим ключом.
+ */
+function onPayRequest(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  if (config.ton.address === "") {
+    sock.send(errorFrame("payment_disabled", "ton entry is not configured"), true);
+    return;
+  }
+  if (conn.devicePub) {
+    sock.end(CLOSE.POLICY, "already authenticated");
+    return;
+  }
+  if (!rateOk(deps, sock, conn)) return;
+
+  const creds = checkCredentials(deps, sock, conn, parseJsonBody(body) as SignedPayload);
+  if (!creds) return;
+
+  const now = deps.now();
+  if (deps.store.userExists(creds.identity)) {
+    sock.send(errorFrame("already_registered", "identity already has access"), true);
+    return;
+  }
+
+  // Пока прошлый счёт жив — отдаём его же, а не плодим новые memo.
+  let payment = deps.store.pendingPayment(creds.identity, now);
+  if (!payment) {
+    const ref = makeRef();
+    deps.store.createPayment(
+      ref,
+      creds.identity,
+      config.ton.priceNano,
+      now,
+      now + config.ton.invoiceTtlSec * 1000,
+    );
+    payment = deps.store.getPayment(ref)!;
+  }
+
+  if (conn.paymentRef) deps.registry.unwatchPayment(conn.paymentRef, sock);
+  conn.paymentRef = payment.ref;
+  deps.registry.watchPayment(payment.ref, sock);
+
+  // Новый challenge: следующий шаг клиента — AUTH, а nonce мы только что сожгли.
+  const nonce = deps.nonces.issue(now);
+  conn.nonce = nonce;
+  sock.send(
+    jsonFrame(OP.PAY_INFO, {
+      ref: payment.ref,
+      address: config.ton.address,
+      amountNano: payment.amount_nano,
+      expiresAt: payment.expires_at,
+      paid: payment.paid_at !== null,
+      nonce: toHex(nonce),
+    }),
+    true,
+  );
+}
+
+/** Вызывается наблюдателем за блокчейном, когда счёт закрыт. */
+export function notifyPaid(deps: Deps, ref: string): void {
+  deps.registry.notifyPayment(ref, jsonFrame(OP.PAY_OK, { ref }));
+}
+
+// --- AUTH ---------------------------------------------------------------------
+
+function onAuth(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  if (conn.devicePub) {
+    sock.end(CLOSE.POLICY, "already authenticated");
+    return;
+  }
+  if (!rateOk(deps, sock, conn)) return;
+
+  const payload = parseJsonBody(body) as SignedPayload;
+  const creds = checkCredentials(deps, sock, conn, payload);
+  if (!creds) return;
+
+  const now = deps.now();
+  const { identity, devicePub, cert } = creds;
+
+  const existing = deps.store.getDevice(devicePub);
+  if (existing && !constantTimeEqual(existing.identity, identity)) {
+    // Один device key не может кочевать между личностями.
+    authFail(deps, sock, conn, "device_conflict", "device bound to another identity");
+    return;
+  }
+
+  if (deps.store.userExists(identity) && deps.store.isBlocked(identity)) {
+    // Закрытая дверь, а не молчание: человек должен понимать, что его не
+    // пускают, иначе он будет считать это поломкой связи и стучаться вечно.
+    authFail(deps, sock, conn, "blocked", "account blocked by the server owner");
+    return;
+  }
+
+  if (!deps.store.userExists(identity) && !admit(deps, sock, conn, payload, identity, now)) return;
+
+  const deviceId = existing ? existing.id : deps.store.createDevice(identity, devicePub, cert, now);
+  deps.store.touchDevice(devicePub, now);
+
+  const devicePubHex = toHex(devicePub);
+  conn.identity = identity;
+  conn.devicePub = devicePub;
+  conn.devicePubHex = devicePubHex;
+  conn.token = deps.sessions.create({ identity, devicePub, deviceId }, now);
+  deps.registry.add(devicePubHex, sock);
+  if (conn.paymentRef) {
+    deps.registry.unwatchPayment(conn.paymentRef, sock);
+    conn.paymentRef = null;
+  }
+
+  sock.send(
+    jsonFrame(OP.AUTH_OK, {
+      deviceId: toHex(deviceId),
+      token: conn.token,
+      queued: deps.store.countPending(devicePub, now),
+      // Сколько KeyPackages уже лежит. Без этого числа клиент не знает,
+      // сколько ему доложить, и выкладывает полную пачку на каждый вход.
+      keyPackages: deps.store.countKeyPackages(devicePub),
+      // Панель владельца существует только тогда, когда так решил сервер.
+      // Клиент об этом не догадывается и сам себе прав не выдаёт.
+      admin: config.admins.includes(toHex(identity)),
+    }),
+    true,
+  );
+
+  sendProfile(deps, sock, deps.store.ensureProfile(identity, now), devicePub);
+
+  drainQueue(deps, sock, devicePub, now);
+}
+
+const CHAT_CODE_RE = /^OBS-[A-HJ-NP-Z2-9]{5}-[A-HJ-NP-Z2-9]{5}$/;
+const MAX_AVATAR_BYTES = 256 * 1024;
+const AVATAR_MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+function normalizeChatCode(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const code = raw.trim().toUpperCase();
+  return CHAT_CODE_RE.test(code) ? code : null;
+}
+
+function onProfileGet(deps: Deps, sock: Socket, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as { query?: unknown };
+  if (!payload || typeof payload !== "object" || typeof payload.query !== "string") {
+    throw new BadInput("profile query required");
+  }
+  const query = payload.query.trim();
+  let profile;
+  if (/^[0-9a-fA-F]{64}$/.test(query)) {
+    const device = fromHex(query, KEY_LEN);
+    profile = deps.store.profileByDevice(device);
+  } else {
+    const code = normalizeChatCode(query);
+    if (!code) throw new BadInput("bad chat code");
+    profile = deps.store.profileByChatCode(code);
+  }
+  if (!profile) {
+    sock.send(errorFrame("profile_not_found", "profile not found"), true);
+    return;
+  }
+  const device = deps.store.activeDevice(profile.identity);
+  if (!device) {
+    sock.send(errorFrame("profile_not_found", "profile has no active device"), true);
+    return;
+  }
+  sendProfile(deps, sock, profile, device);
+}
+
+/**
+ * Значки и цвета — закрытые списки, а не произвольные строки.
+ *
+ * Это поле видит собеседник, и произвольный текст здесь означал бы, что любой
+ * может показать соседу что угодно рядом со своим именем. Клиенты рисуют метку
+ * по своему справочнику: сервер хранит слово, а не картинку.
+ */
+const EMBLEMS = new Set([
+  "none", "star", "moon", "leaf", "flame", "drop", "bolt", "heart", "anchor", "crown", "orbit",
+  "shield",
+]);
+const PROFILE_COLORS = new Set([
+  "none", "white", "blue", "violet", "green", "coral", "amber", "teal", "rose",
+]);
+
+function onProfileSet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as {
+    avatarMime?: unknown; avatarBase64?: unknown; emblem?: unknown; color?: unknown;
+  };
+  if (!payload || typeof payload !== "object") throw new BadInput("profile payload required");
+
+  // Значок и цвет приходят отдельно от аватара: менять одно, не трогая другое.
+  if ("emblem" in payload || "color" in payload) {
+    const emblem = payload.emblem === undefined ? undefined : String(payload.emblem);
+    const color = payload.color === undefined ? undefined : String(payload.color);
+    if (emblem !== undefined && !EMBLEMS.has(emblem)) throw new BadInput("unknown emblem");
+    if (color !== undefined && !PROFILE_COLORS.has(color)) throw new BadInput("unknown color");
+    const current = deps.store.ensureProfile(conn.identity!, deps.now());
+    const profile = deps.store.updateDecoration(
+      conn.identity!,
+      emblem === undefined ? current.emblem : (emblem === "none" ? null : emblem),
+      color === undefined ? current.color : (color === "none" ? null : color),
+      deps.now(),
+    );
+    sendProfile(deps, sock, profile, conn.devicePub!);
+    return;
+  }
+
+  const clear = payload.avatarMime === null && payload.avatarBase64 === null;
+  let mime: string | null = null;
+  let avatar: Uint8Array | null = null;
+  if (!clear) {
+    if (typeof payload.avatarMime !== "string" || !AVATAR_MIMES.has(payload.avatarMime)) {
+      throw new BadInput("unsupported avatar mime");
+    }
+    if (typeof payload.avatarBase64 !== "string" || payload.avatarBase64.length > 360_000) {
+      throw new BadInput("bad avatar data");
+    }
+    const decoded = Buffer.from(payload.avatarBase64, "base64");
+    if (decoded.byteLength === 0 || decoded.byteLength > MAX_AVATAR_BYTES) {
+      sock.send(errorFrame("avatar_too_large", "avatar must be at most 256 KiB"), true);
+      return;
+    }
+    validateAvatarMagic(payload.avatarMime, decoded);
+    mime = payload.avatarMime;
+    avatar = decoded;
+  }
+  const profile = deps.store.updateAvatar(conn.identity!, mime, avatar, deps.now());
+  sendProfile(deps, sock, profile, conn.devicePub!);
+}
+
+function validateAvatarMagic(mime: string, bytes: Uint8Array): void {
+  const jpeg = bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  const png = bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50
+    && bytes[2] === 0x4e && bytes[3] === 0x47;
+  const webp = bytes.length >= 12 && Buffer.from(bytes.subarray(0, 4)).toString("ascii") === "RIFF"
+    && Buffer.from(bytes.subarray(8, 12)).toString("ascii") === "WEBP";
+  if ((mime === "image/jpeg" && !jpeg) || (mime === "image/png" && !png)
+      || (mime === "image/webp" && !webp)) {
+    throw new BadInput("avatar signature does not match mime");
+  }
+}
+
+function sendProfile(
+  deps: Deps,
+  sock: Socket,
+  profile: { identity: Uint8Array; chat_code: string; avatar_mime: string | null;
+    avatar: Uint8Array | null; emblem: string | null; color: string | null; updated_at: number },
+  device: Uint8Array,
+): void {
+  sock.send(jsonFrame(OP.PROFILE, {
+    device: toHex(device),
+    chatCode: profile.chat_code,
+    handle: deps.store.getUserHandle(profile.identity),
+    avatarMime: profile.avatar_mime,
+    avatarBase64: profile.avatar ? Buffer.from(profile.avatar).toString("base64") : null,
+    emblem: profile.emblem,
+    color: profile.color,
+    updatedAt: profile.updated_at,
+  }), true);
+}
+
+// --- кому можно писать --------------------------------------------------------
+
+const PASS_HASH_LEN = 32;
+const PASS_LEN = 32;
+/** Больше держать незачем: пропуска раздают по числу собеседников. */
+const MAX_PASSES = 500;
+const DM_POLICIES = new Set(["everyone", "passes"]);
+
+function onAccessSet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as { dmPolicy?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("access payload required");
+  if (typeof payload.dmPolicy !== "string" || !DM_POLICIES.has(payload.dmPolicy)) {
+    throw new BadInput("unknown dm policy");
+  }
+  deps.store.setDmPolicy(conn.identity!, payload.dmPolicy, deps.now());
+  sock.send(jsonFrame(OP.ACCESS_OK, { dmPolicy: payload.dmPolicy }), true);
+}
+
+/** Владелец кладёт хеш пропуска; сам секрет остаётся у него и у того, кому он его отдаст. */
+function onPassCreate(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as
+    { passHash?: unknown; oneTime?: unknown; ttlSec?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("pass payload required");
+
+  if (deps.store.countPasses(conn.identity!) >= MAX_PASSES) {
+    sock.send(errorFrame("passes_full", "too many passes issued"), true);
+    return;
+  }
+
+  const passHash = fromHex(payload.passHash, PASS_HASH_LEN);
+  const oneTime = payload.oneTime === true;
+  const now = deps.now();
+  // 0 или отсутствие — бессрочный пропуск: срок задаёт владелец, а не сервер.
+  const ttl = typeof payload.ttlSec === "number" && payload.ttlSec > 0
+    ? Math.min(payload.ttlSec, 10 * 365 * 24 * 3600)
+    : 10 * 365 * 24 * 3600;
+
+  deps.store.addPass(passHash, conn.identity!, oneTime, now, now + ttl * 1000);
+  sock.send(jsonFrame(OP.ACCESS_OK, { created: true }), true);
+}
+
+function onPassRevoke(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as { passHash?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("pass payload required");
+  const passHash = fromHex(payload.passHash, PASS_HASH_LEN);
+  sock.send(jsonFrame(OP.ACCESS_OK, {
+    revoked: deps.store.revokePass(passHash, conn.identity!),
+  }), true);
+}
+
+/**
+ * Предъявляет пропуск. Успех действует до конца соединения и никуда не пишется.
+ *
+ * Проверяется не только годность пропуска, но и то, что он выписан именно тем,
+ * кому собираются писать: иначе один общий пропуск открывал бы дорогу ко всем.
+ */
+function onPassPresent(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as { recipient?: unknown; pass?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("pass payload required");
+
+  const recipient = fromHex(payload.recipient, KEY_LEN);
+  const pass = fromHex(payload.pass, PASS_LEN);
+  const now = deps.now();
+
+  const owner = deps.store.redeemPass(sha256(concat(ascii("obsidian-pass-v1"), pass)), now);
+  const device = deps.store.getDevice(recipient);
+  const admitted = owner !== undefined && device !== undefined
+    && constantTimeEqual(device.identity, owner);
+
+  if (admitted) conn.admitted.add(toHex(recipient));
+  // Ответ одинаков по форме: годность пропуска — не повод для разных кодов.
+  sock.send(jsonFrame(OP.ACCESS_OK, { admitted }), true);
+}
+
+// --- юзернеймы ----------------------------------------------------------------
+
+const USERNAME_HASH_LEN = 32;
+
+/**
+ * Занимает юзернейм. Сервер видит только хеш — самого имени он не знает и
+ * восстановить его не может.
+ */
+function onUsernameSet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as
+    { nameHash?: unknown; discoverable?: unknown; clear?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("username payload required");
+
+  if (payload.clear === true) {
+    deps.store.releaseUsername(conn.identity!);
+    sock.send(jsonFrame(OP.USERNAME_OK, { cleared: true }), true);
+    return;
+  }
+
+  const nameHash = fromHex(payload.nameHash, USERNAME_HASH_LEN);
+  const discoverable = payload.discoverable !== false;
+
+  if (!deps.store.claimUsername(nameHash, conn.identity!, discoverable, deps.now())) {
+    sock.send(errorFrame("username_taken", "this username is already taken"), true);
+    return;
+  }
+  sock.send(jsonFrame(OP.USERNAME_OK, { cleared: false }), true);
+}
+
+/**
+ * Поиск по точному имени.
+ *
+ * Возвращается ровно то, что владелец согласился показывать: профиль и активное
+ * устройство. Ни отпечатка, ни присутствия, ни списка контактов здесь нет и
+ * появиться не должно — найденный человек ещё никого не одобрял.
+ *
+ * Ненайденное и скрытое отвечают одинаково: разные ответы превратили бы поиск
+ * в способ проверять существование юзернеймов.
+ */
+function onUsernameLookup(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as { nameHash?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("username query required");
+  const nameHash = fromHex(payload.nameHash, USERNAME_HASH_LEN);
+  const now = deps.now();
+
+  // Перебор по словарю ограничивается здесь: хеш имени подобрать несложно.
+  if (!deps.searchLimiter.allow(conn.ip, now)) {
+    sock.send(errorFrame("search_rate_limited", "too many lookups, try later"), true);
+    return;
+  }
+
+  const identity = deps.store.findByUsername(nameHash);
+  const device = identity ? deps.store.activeDevice(identity) : undefined;
+  if (!identity || !device) {
+    sock.send(jsonFrame(OP.USERNAME_FOUND, { found: false }), true);
+    return;
+  }
+
+  const profile = deps.store.ensureProfile(identity, now);
+  sock.send(jsonFrame(OP.USERNAME_FOUND, {
+    found: true,
+    device: toHex(device),
+    chatCode: profile.chat_code,
+    avatarMime: profile.avatar_mime,
+    avatarBase64: profile.avatar ? Buffer.from(profile.avatar).toString("base64") : null,
+    emblem: profile.emblem,
+    color: profile.color,
+  }), true);
+}
+
+// --- панель владельца ---------------------------------------------------------
+
+/**
+ * Владельца определяет ключ личности, а не имя.
+ *
+ * Юзернейм можно освободить и занять заново — привязка к нему означала бы, что
+ * права владельца достаются тому, кто первым перехватит освободившееся имя.
+ * Список задаётся при запуске сервера и в базе не хранится: строку в базе можно
+ * было бы дописать, получив доступ к диску, а переменную окружения — нет.
+ */
+function isAdmin(conn: ConnData): boolean {
+  return conn.identity !== null && conn.identity !== undefined
+    && config.admins.includes(toHex(conn.identity));
+}
+
+function requireAdmin(sock: Socket, conn: ConnData): boolean {
+  if (isAdmin(conn)) return true;
+  // Тот же ответ, что и на неизвестный запрос: посторонний не должен по ответу
+  // понять, что такая панель вообще существует.
+  sock.send(errorFrame("unknown_request", "unsupported request"), true);
+  return false;
+}
+
+const ADMIN_PAGE = 40;
+
+function onAdminGet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  if (!requireAdmin(sock, conn)) return;
+  const payload = (body.byteLength > 0 ? parseJsonBody(body) : {}) as { offset?: unknown };
+  const offset = typeof payload?.offset === "number" && Number.isFinite(payload.offset)
+    ? Math.max(0, Math.floor(payload.offset))
+    : 0;
+  sock.send(jsonFrame(OP.ADMIN_OK, adminReport(deps, offset)), true);
+}
+
+function adminReport(deps: Deps, offset: number): Record<string, unknown> {
+  const users = deps.store.adminUsers(ADMIN_PAGE + 1, offset);
+  const page = users.slice(0, ADMIN_PAGE);
+  return {
+    counts: deps.store.adminCounts(deps.now()),
+    online: deps.registry.size(),
+    startedAt: STARTED_AT,
+    offset,
+    more: users.length > ADMIN_PAGE,
+    users: page.map((row) => ({
+      identity: toHex(row.identity),
+      chatCode: row.chat_code,
+      devices: row.devices,
+      lastSeen: row.last_seen,
+      createdAt: row.created_at,
+      blocked: row.blocked > 0,
+      hasUsername: row.has_username > 0,
+    })),
+  };
+}
+
+function onAdminAction(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  if (!requireAdmin(sock, conn)) return;
+  const payload = parseJsonBody(body) as { action?: unknown; reference?: unknown };
+  if (!payload || typeof payload !== "object" || typeof payload.action !== "string"
+      || typeof payload.reference !== "string") {
+    throw new BadInput("admin action required");
+  }
+  const identity = deps.store.identityByReference(payload.reference.trim());
+  if (!identity) {
+    sock.send(errorFrame("admin_not_found", "no such account"), true);
+    return;
+  }
+  if (payload.action === "block") {
+    if (config.admins.includes(toHex(identity))) {
+      // Иначе владелец запирает сам себя, и открыть будет нечем.
+      sock.send(errorFrame("admin_self", "cannot block an owner"), true);
+      return;
+    }
+    deps.store.block(identity, deps.now());
+  } else if (payload.action === "unblock") {
+    deps.store.unblock(identity);
+  } else {
+    throw new BadInput("unknown admin action");
+  }
+  sock.send(jsonFrame(OP.ADMIN_OK, {
+    ...adminReport(deps, 0),
+    done: payload.action,
+    identity: toHex(identity),
+  }), true);
+}
+
+const STARTED_AT = Date.now();
+
+// --- восстановление по логину и паролю ----------------------------------------
+
+/** Тот же домен, что в obsidian-core/src/passphrase.rs. Расхождение = отказ входа. */
+const RECOVERY_VERIFIER_DOMAIN = ascii("obsidian-recovery-verifier-v1");
+const RECOVERY_ID_LEN = 32;
+const RECOVERY_VERIFIER_LEN = 32;
+const RECOVERY_TOKEN_LEN = 32;
+/** nonce(24) + ключ(32) + тег(16). Ровно, чтобы не принимать ничего лишнего. */
+const RECOVERY_SEALED_LEN = 72;
+
+/**
+ * Кладёт запечатанную личность. Сервер видит три непрозрачных значения и не
+ * может ни открыть посылку, ни узнать логин: у него только хеши.
+ */
+function onRecoverySet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as
+    { loginId?: unknown; verifier?: unknown; sealed?: unknown; clear?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("recovery payload required");
+
+  if (payload.clear === true) {
+    deps.store.deleteRecovery(conn.identity!);
+    sock.send(frame(OP.RECOVERY_OK), true);
+    return;
+  }
+
+  const loginId = fromHex(payload.loginId, RECOVERY_ID_LEN);
+  const verifier = fromHex(payload.verifier, RECOVERY_VERIFIER_LEN);
+  const sealed = fromHex(payload.sealed, RECOVERY_SEALED_LEN);
+
+  if (!deps.store.setRecovery(loginId, conn.identity!, verifier, sealed, deps.now())) {
+    sock.send(errorFrame("login_taken", "this login is already used by another account"), true);
+    return;
+  }
+  sock.send(frame(OP.RECOVERY_OK), true);
+}
+
+/**
+ * Отдаёт посылку тому, кто доказал знание пароля.
+ *
+ * Ограничитель бьёт по двум ключам сразу: по IP — против одного упорного
+ * перебора, по логину — против распределённого. Ответ на неверное
+ * доказательство и на несуществующий логин одинаков: иначе сервер сам
+ * подсказывал бы, какие логины заняты.
+ */
+function onRecoveryGet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as { loginId?: unknown; token?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("recovery query required");
+
+  const loginId = fromHex(payload.loginId, RECOVERY_ID_LEN);
+  const token = fromHex(payload.token, RECOVERY_TOKEN_LEN);
+  const now = deps.now();
+
+  // Проверка частоты идёт до обращения к базе: иначе разница во времени ответа
+  // сама рассказала бы, существует логин или нет.
+  const withinLimit = deps.recoveryLimiter.allow(conn.ip, now)
+    && deps.recoveryLimiter.allow(`login:${toHex(loginId)}`, now);
+  if (!withinLimit) {
+    sock.send(errorFrame("recovery_rate_limited", "too many attempts, try later"), true);
+    return;
+  }
+
+  const row = deps.store.getRecovery(loginId);
+  if (!row || !constantTimeEqual(sha256(concat(RECOVERY_VERIFIER_DOMAIN, token)), row.verifier)) {
+    sock.send(errorFrame("recovery_not_found", "login or password is wrong"), true);
+    return;
+  }
+
+  sock.send(jsonFrame(OP.RECOVERY_BLOB, { sealed: toHex(row.sealed) }), true);
+}
+
+/**
+ * Пропуск нового пользователя: оплаченный счёт в TON либо инвайт-код. Оба
+ * расходуются последними, уже после всех проверок, — иначе занятое имя сжигало
+ * бы оплату.
+ */
+function admit(
+  deps: Deps,
+  sock: Socket,
+  conn: ConnData,
+  payload: SignedPayload,
+  identity: Uint8Array,
+  now: number,
+): boolean {
+  const handle = normalizeHandle(payload.handle);
+  if (handle === undefined) {
+    authFail(deps, sock, conn, "bad_handle", "handle must match [a-z0-9_]{3,20}");
+    return false;
+  }
+  if (handle !== null && deps.store.handleTaken(handle)) {
+    authFail(deps, sock, conn, "handle_taken", "handle already in use");
+    return false;
+  }
+
+  if (typeof payload.paymentRef === "string" && payload.paymentRef.length > 0) {
+    const payment = deps.store.getPayment(payload.paymentRef);
+    // Чужой и несуществующий счёт неотличимы в ответе — незачем подсказывать.
+    if (!payment || !constantTimeEqual(payment.identity, identity) || payment.expires_at <= now) {
+      authFail(deps, sock, conn, "payment_invalid", "invoice unknown or expired");
+      return false;
+    }
+    if (payment.paid_at === null) {
+      authFail(deps, sock, conn, "payment_pending", "invoice not funded yet");
+      return false;
+    }
+    if (!deps.store.consumePayment(payment.ref, identity, now)) {
+      authFail(deps, sock, conn, "payment_invalid", "invoice unknown or expired");
+      return false;
+    }
+  } else if (typeof payload.invite === "string" && payload.invite.length > 0) {
+    if (!deps.store.consumeInvite(sha256(ascii(payload.invite)), now)) {
+      authFail(deps, sock, conn, "invite_invalid", "invite unknown, used or expired");
+      return false;
+    }
+  } else if (!config.publicRegistration) {
+    authFail(deps, sock, conn, "entry_required", "provide an invite code or a funded invoice");
+    return false;
+  }
+
+  deps.store.createUser(identity, handle, now);
+  log.info("user registered");
+  return true;
+}
+
+/** `undefined` — невалидно, `null` — handle не задан (это допустимо). */
+function normalizeHandle(raw: unknown): string | null | undefined {
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (typeof raw !== "string") return undefined;
+  const handle = raw.toLowerCase();
+  return HANDLE_RE.test(handle) ? handle : undefined;
+}
+
+// --- SEND / ACK ---------------------------------------------------------------
+
+function onSend(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const now = deps.now();
+  const parsed = parseSend(body);
+
+  const recipient = deps.store.getDevice(parsed.recipientDevice);
+  if (!recipient) {
+    sock.send(errorFrame("unknown_recipient", "no such device"), true);
+    return;
+  }
+
+  // Политика получателя. Проверять надо здесь, до постановки в очередь: иначе
+  // «кто может мне писать» было бы обещанием, которое ничего не значит.
+  if (deps.store.dmPolicy(recipient.identity) === "passes"
+      && !conn.admitted.has(toHex(parsed.recipientDevice))) {
+    sock.send(errorFrame("dm_not_allowed", "recipient does not accept messages from you"), true);
+    return;
+  }
+
+  const ttlSec = Math.min(parsed.ttlSec, config.envelopeTtlSec);
+  // Копия обязательна: parsed.* — это view в буфер uWS.
+  const payload = parsed.ciphertext.slice();
+  const envelopeId = deps.store.enqueue(parsed.recipientDevice, payload, now, now + ttlSec * 1000);
+
+  sock.send(sendOkFrame(parsed.clientRef, envelopeId), true);
+  deps.registry.deliver(toHex(parsed.recipientDevice), envelopeFrame(envelopeId, now, payload));
+}
+
+function onAck(deps: Deps, conn: ConnData, body: Uint8Array): void {
+  const id = parseAck(body);
+  // Проверка владения внутри запроса: чужой конверт не удалить.
+  deps.store.ack(id, conn.devicePub!);
+}
+
+// --- MLS KeyPackages ----------------------------------------------------------
+
+/** Больше держать незачем: собеседников у одного устройства не бесконечно. */
+export const MAX_KEY_PACKAGES = 100;
+const MAX_KEY_PACKAGE_BYTES = 16 * 1024;
+
+/**
+ * Публикуются только свои пакеты: устройство берётся из сессии, а не из кадра.
+ * Иначе кто угодно залил бы подложные KeyPackages за чужое устройство.
+ */
+function onKeyPackagePublish(deps: Deps, conn: ConnData, body: Uint8Array): void {
+  const devicePub = conn.devicePub!;
+
+  // Разбираем по пределу кадра. Раньше пределом было свободное место, и когда
+  // его оставалось меньше присланного, разбор падал как «битый кадр» — а это
+  // закрытие соединения. Клиент переподключался, снова выкладывал пакеты,
+  // снова получал закрытие: связь не держалась дольше одного захода, очередь
+  // не подтверждалась и стояла намертво. Лишние пакеты — это не нарушение
+  // протокола, а всего лишь лишние пакеты.
+  const packages = parseKeyPackages(body, MAX_KEY_PACKAGES, MAX_KEY_PACKAGE_BYTES);
+
+  // Копия обязательна: тело — view в буфер uWS.
+  deps.store.addKeyPackages(devicePub, packages.map((p) => p.slice()), deps.now(), MAX_KEY_PACKAGES);
+}
+
+/**
+ * Выдаёт один чужой пакет и сразу его удаляет: переиспользование KeyPackage
+ * ломает forward secrecy в MLS. Подлинность проверяет клиент — он сверяет
+ * привязку пакета к ключу устройства и серверу здесь не верит.
+ */
+function onKeyPackageClaim(deps: Deps, sock: Socket, body: Uint8Array): void {
+  const { clientRef, devicePub } = parseKeyPackageClaim(body);
+  const keyPackage = deps.store.claimKeyPackage(devicePub);
+  sock.send(keyPackageFrame(clientRef, keyPackage ?? null), true);
+}
+
+/** Отдаём накопившееся, пока клиент успевает читать. Остаток — по реконнекту. */
+function drainQueue(deps: Deps, sock: Socket, devicePub: Uint8Array, now: number): void {
+  const pending = deps.store.pending(devicePub, now, DRAIN_BATCH);
+  for (const row of pending) {
+    if (sock.getBufferedAmount() > DRAIN_BACKPRESSURE_BYTES) return;
+    sock.send(envelopeFrame(row.id, row.created_at, row.payload), true);
+  }
+  if (pending.length < DRAIN_BATCH) sock.send(frame(OP.QUEUE_DONE), true);
+}
