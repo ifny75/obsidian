@@ -329,6 +329,13 @@ async fn run(mut commands: mpsc::UnboundedReceiver<Command>, store: Store, sink:
             | Command::ProfileSet { .. }
             | Command::ProfileDecor { .. }
             | Command::AdminGet { .. }
+            | Command::ChannelCreate { .. }
+            | Command::ChannelPublish { .. }
+            | Command::ChannelList
+            | Command::ChannelFeed { .. }
+            | Command::ChannelSubscribe { .. }
+            | Command::ChannelFind { .. }
+            | Command::ChannelDeletePost { .. }
             | Command::AdminAction { .. }
             | Command::RecoverySetup { .. }
             | Command::DeleteMessage { .. }
@@ -1569,6 +1576,34 @@ async fn pump(
                             sink(Event::GroupForgotten { group });
                         }
                     }
+                    Command::ChannelCreate { handle, title, about } => {
+                        send(&mut socket, proto::channel_frame(op::CHANNEL_CREATE,
+                            &serde_json::json!({ "handle": handle, "title": title, "about": about }))?).await?;
+                    }
+                    Command::ChannelPublish { channel, body } => {
+                        send(&mut socket, proto::channel_frame(op::CHANNEL_PUBLISH,
+                            &serde_json::json!({ "channel": channel, "body": body }))?).await?;
+                    }
+                    Command::ChannelList => {
+                        send(&mut socket, proto::channel_frame(op::CHANNEL_LIST,
+                            &serde_json::json!({}))?).await?;
+                    }
+                    Command::ChannelFeed { channel, before } => {
+                        send(&mut socket, proto::channel_frame(op::CHANNEL_FEED,
+                            &serde_json::json!({ "channel": channel, "before": before }))?).await?;
+                    }
+                    Command::ChannelSubscribe { channel, subscribe } => {
+                        send(&mut socket, proto::channel_frame(op::CHANNEL_SUB,
+                            &serde_json::json!({ "channel": channel, "subscribe": subscribe }))?).await?;
+                    }
+                    Command::ChannelFind { handle } => {
+                        send(&mut socket, proto::channel_frame(op::CHANNEL_FIND,
+                            &serde_json::json!({ "handle": handle }))?).await?;
+                    }
+                    Command::ChannelDeletePost { channel, post } => {
+                        send(&mut socket, proto::channel_frame(op::CHANNEL_DELETE_POST,
+                            &serde_json::json!({ "channel": channel, "post": post }))?).await?;
+                    }
                     Command::AdminGet { offset } => {
                         send(&mut socket, proto::admin_get_frame(offset)?).await?;
                     }
@@ -1712,6 +1747,12 @@ async fn on_frame(
             sink(Event::Failed { code: err.code, message: err.message });
         }
 
+        op::CHANNEL_OK => {
+            sink(Event::Channels { report: proto::parse_json(body)? });
+        }
+        op::CHANNEL_POST => {
+            sink(Event::ChannelPost { report: proto::parse_json(body)? });
+        }
         op::ADMIN_OK => {
             // Отчёт пересылается как есть: набор счётчиков задаёт сервер, и
             // разбирать его по полям здесь значило бы ломать клиент при каждом

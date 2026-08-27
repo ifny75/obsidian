@@ -237,6 +237,64 @@ public final class Commands {
         return out.append('}').toString();
     }
 
+    // --- открытые каналы --------------------------------------------------------
+
+    /**
+     * Публичный канал: посты уходят на сервер БЕЗ шифрования.
+     *
+     * Так задумано — подписаться может кто угодно, и ключ пришлось бы отдать
+     * любому желающему. Интерфейс обязан помечать такой канал открытым.
+     */
+    public static String channelCreate(String handle, String title, String about) {
+        StringBuilder out = new StringBuilder("{\"type\":\"channel_create\",\"handle\":");
+        quote(out, handle);
+        out.append(",\"title\":");
+        quote(out, title);
+        out.append(",\"about\":");
+        if (about == null) out.append("null");
+        else quote(out, about);
+        return out.append('}').toString();
+    }
+
+    public static String channelList() {
+        return "{\"type\":\"channel_list\"}";
+    }
+
+    public static String channelFeed(String channel, Long before) {
+        StringBuilder out = new StringBuilder("{\"type\":\"channel_feed\",\"channel\":");
+        quote(out, channel);
+        out.append(",\"before\":").append(before == null ? "null" : before.toString());
+        return out.append('}').toString();
+    }
+
+    public static String channelPublish(String channel, String body) {
+        StringBuilder out = new StringBuilder("{\"type\":\"channel_publish\",\"channel\":");
+        quote(out, channel);
+        out.append(",\"body\":");
+        quote(out, body);
+        return out.append('}').toString();
+    }
+
+    public static String channelSubscribe(String channel, boolean subscribe) {
+        StringBuilder out = new StringBuilder("{\"type\":\"channel_subscribe\",\"channel\":");
+        quote(out, channel);
+        return out.append(",\"subscribe\":").append(subscribe).append('}').toString();
+    }
+
+    public static String channelFind(String handle) {
+        StringBuilder out = new StringBuilder("{\"type\":\"channel_find\",\"handle\":");
+        quote(out, handle);
+        return out.append('}').toString();
+    }
+
+    public static String channelDeletePost(String channel, String post) {
+        StringBuilder out = new StringBuilder("{\"type\":\"channel_delete_post\",\"channel\":");
+        quote(out, channel);
+        out.append(",\"post\":");
+        quote(out, post);
+        return out.append('}').toString();
+    }
+
     // --- панель владельца -------------------------------------------------------
 
     /** {@code offset} — с какого места списка продолжать. */

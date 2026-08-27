@@ -9,6 +9,7 @@ import type { RateLimiter } from "../util/ratelimit.ts";
 import { BadInput, ascii, concat, constantTimeEqual, fromHex, random, toHex } from "../util/bytes.ts";
 import {
   CLOSE,
+  ID_LEN,
   KEY_LEN,
   OP,
   SIG_LEN,
@@ -180,6 +181,34 @@ export function handleMessage(deps: Deps, sock: Socket, conn: ConnData, msg: Uin
       case OP.USERNAME_LOOKUP:
         requireAuth(conn);
         onUsernameLookup(deps, sock, conn, body);
+        return;
+      case OP.CHANNEL_CREATE:
+        requireAuth(conn);
+        onChannelCreate(deps, sock, conn, body);
+        return;
+      case OP.CHANNEL_PUBLISH:
+        requireAuth(conn);
+        onChannelPublish(deps, sock, conn, body);
+        return;
+      case OP.CHANNEL_LIST:
+        requireAuth(conn);
+        onChannelList(deps, sock, conn);
+        return;
+      case OP.CHANNEL_FEED:
+        requireAuth(conn);
+        onChannelFeed(deps, sock, conn, body);
+        return;
+      case OP.CHANNEL_SUB:
+        requireAuth(conn);
+        onChannelSub(deps, sock, conn, body);
+        return;
+      case OP.CHANNEL_FIND:
+        requireAuth(conn);
+        onChannelFind(deps, sock, conn, body);
+        return;
+      case OP.CHANNEL_DELETE_POST:
+        requireAuth(conn);
+        onChannelDeletePost(deps, sock, conn, body);
         return;
       case OP.ADMIN_GET:
         requireAuth(conn);
@@ -710,6 +739,198 @@ function onUsernameLookup(deps: Deps, sock: Socket, conn: ConnData, body: Uint8A
     avatarBase64: profile.avatar ? Buffer.from(profile.avatar).toString("base64") : null,
     emblem: profile.emblem,
     color: profile.color,
+  }), true);
+}
+
+// --- каналы -------------------------------------------------------------------
+
+/**
+ * Открытая лента, которую ведёт один человек.
+ *
+ * Содержимое лежит у сервера в открытом виде — и это не упущение, а условие
+ * задачи: подписаться может кто угодно, поэтому ключ пришлось бы отдать любому
+ * желающему. Шифровать вещание для неизвестного круга — самообман, и хуже того,
+ * обман читателя, которому пообещали защиту.
+ *
+ * Отсюда обязанность клиента: канал должен быть подписан как открытый. За этим
+ * следит интерфейс; сервер со своей стороны ничего не обещает.
+ */
+const HANDLE = /^[a-z][a-z0-9_]{2,29}$/;
+const MAX_TITLE = 64;
+const MAX_ABOUT = 280;
+const MAX_POST = 4096;
+const FEED_PAGE = 30;
+
+function channelView(deps: Deps, row: { id: Uint8Array; owner: Uint8Array; handle: string;
+  title: string; about: string | null; created_at: number; updated_at: number },
+  identity: Uint8Array): Record<string, unknown> {
+  return {
+    id: toHex(row.id),
+    handle: row.handle,
+    title: row.title,
+    about: row.about,
+    owner: constantTimeEqual(row.owner, identity),
+    ownerCode: deps.store.ensureProfile(row.owner, deps.now()).chat_code,
+    subscribed: deps.store.isSubscribed(row.id, identity),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function postView(row: { seq: number; id: Uint8Array; channel: Uint8Array; body: string;
+  created_at: number; edited_at: number | null }): Record<string, unknown> {
+  return {
+    seq: row.seq,
+    id: toHex(row.id),
+    channel: toHex(row.channel),
+    body: row.body,
+    createdAt: row.created_at,
+    editedAt: row.edited_at,
+  };
+}
+
+function onChannelCreate(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as { handle?: unknown; title?: unknown; about?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("channel payload required");
+  const handle = String(payload.handle ?? "").trim().toLowerCase();
+  const title = String(payload.title ?? "").trim();
+  const about = payload.about === undefined || payload.about === null
+    ? null : String(payload.about).trim().slice(0, MAX_ABOUT);
+  if (!HANDLE.test(handle)) throw new BadInput("bad channel handle");
+  if (title.length === 0 || title.length > MAX_TITLE) throw new BadInput("bad channel title");
+
+  const created = deps.store.createChannel(random(ID_LEN), conn.identity!, handle, title, about,
+    deps.now());
+  if (!created) {
+    sock.send(errorFrame("channel_taken", "handle already used"), true);
+    return;
+  }
+  sock.send(jsonFrame(OP.CHANNEL_OK, {
+    channels: deps.store.channelsFor(conn.identity!)
+      .map((row) => channelView(deps, row, conn.identity!)),
+    opened: channelView(deps, created, conn.identity!),
+  }), true);
+}
+
+function onChannelList(deps: Deps, sock: Socket, conn: ConnData): void {
+  sock.send(jsonFrame(OP.CHANNEL_OK, {
+    channels: deps.store.channelsFor(conn.identity!)
+      .map((row) => channelView(deps, row, conn.identity!)),
+  }), true);
+}
+
+function channelFrom(deps: Deps, sock: Socket, value: unknown): ReturnType<typeof deps.store.channelById> {
+  if (typeof value !== "string") throw new BadInput("channel id required");
+  const channel = deps.store.channelById(fromHex(value, ID_LEN));
+  if (!channel) {
+    sock.send(errorFrame("channel_missing", "no such channel"), true);
+    return undefined;
+  }
+  return channel;
+}
+
+function onChannelPublish(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as { channel?: unknown; body?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("post payload required");
+  const channel = channelFrom(deps, sock, payload.channel);
+  if (!channel) return;
+  if (!constantTimeEqual(channel.owner, conn.identity!)) {
+    // Писать в канал может только тот, кто его ведёт. Остальные читают.
+    sock.send(errorFrame("channel_not_owner", "only the owner posts here"), true);
+    return;
+  }
+  const text = String(payload.body ?? "").trim();
+  if (text.length === 0 || text.length > MAX_POST) throw new BadInput("bad post body");
+
+  const post = deps.store.addPost(random(ID_LEN), channel.id, text, deps.now());
+  const frame = jsonFrame(OP.CHANNEL_POST, {
+    channel: toHex(channel.id),
+    handle: channel.handle,
+    title: channel.title,
+    post: postView(post),
+  });
+  // Читателям, кто сейчас на связи, — сразу. Остальные увидят при открытии:
+  // канал открыт, доставлять его через очередь конвертов незачем.
+  for (const device of deps.store.channelReaderDevices(channel.id)) {
+    deps.registry.deliver(toHex(device), frame);
+  }
+  sock.send(jsonFrame(OP.CHANNEL_OK, {
+    channel: toHex(channel.id),
+    published: postView(post),
+  }), true);
+}
+
+function onChannelFeed(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as { channel?: unknown; before?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("feed payload required");
+  const channel = channelFrom(deps, sock, payload.channel);
+  if (!channel) return;
+  const before = typeof payload.before === "number" && Number.isFinite(payload.before)
+    ? Math.floor(payload.before) : null;
+  const posts = deps.store.posts(channel.id, FEED_PAGE + 1, before);
+
+  sock.send(jsonFrame(OP.CHANNEL_OK, {
+    channel: channelView(deps, channel, conn.identity!),
+    posts: posts.slice(0, FEED_PAGE).map(postView),
+    more: posts.length > FEED_PAGE,
+  }), true);
+}
+
+function onChannelSub(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as { channel?: unknown; subscribe?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("subscription payload required");
+  const channel = channelFrom(deps, sock, payload.channel);
+  if (!channel) return;
+
+  if (payload.subscribe === false) {
+    if (constantTimeEqual(channel.owner, conn.identity!)) {
+      sock.send(errorFrame("channel_owner_stays", "the owner cannot leave their own channel"), true);
+      return;
+    }
+    deps.store.unsubscribeChannel(channel.id, conn.identity!);
+  } else {
+    deps.store.subscribeChannel(channel.id, conn.identity!, deps.now());
+  }
+  sock.send(jsonFrame(OP.CHANNEL_OK, {
+    channels: deps.store.channelsFor(conn.identity!)
+      .map((row) => channelView(deps, row, conn.identity!)),
+    opened: channelView(deps, channel, conn.identity!),
+  }), true);
+}
+
+function onChannelFind(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as { handle?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("handle required");
+  const handle = String(payload.handle ?? "").trim().toLowerCase().replace(/^@/, "");
+  if (!HANDLE.test(handle)) throw new BadInput("bad channel handle");
+
+  // Каналы ищутся по имени целиком, как и люди: перебор здесь никому не нужен,
+  // а ограничитель частоты у нас уже есть.
+  if (!deps.searchLimiter.allow(conn.ip, deps.now())) {
+    sock.send(errorFrame("search_rate_limited", "too many lookups, try later"), true);
+    return;
+  }
+  const channel = deps.store.channelByHandle(handle);
+  sock.send(jsonFrame(OP.CHANNEL_OK, {
+    query: handle,
+    found: channel ? channelView(deps, channel, conn.identity!) : null,
+  }), true);
+}
+
+function onChannelDeletePost(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as { channel?: unknown; post?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("post reference required");
+  const channel = channelFrom(deps, sock, payload.channel);
+  if (!channel) return;
+  if (!constantTimeEqual(channel.owner, conn.identity!)) {
+    sock.send(errorFrame("channel_not_owner", "only the owner edits this channel"), true);
+    return;
+  }
+  if (typeof payload.post !== "string") throw new BadInput("post id required");
+  const removed = deps.store.deletePost(fromHex(payload.post, ID_LEN), channel.id);
+  sock.send(jsonFrame(OP.CHANNEL_OK, {
+    channel: toHex(channel.id),
+    removed: removed ? payload.post : null,
   }), true);
 }
 

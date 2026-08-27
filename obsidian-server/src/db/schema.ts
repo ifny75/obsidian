@@ -106,6 +106,53 @@ CREATE TABLE IF NOT EXISTS usernames (
   updated_at   INTEGER NOT NULL
 ) WITHOUT ROWID;
 
+-- Каналы: открытая лента, которую ведёт один человек.
+--
+-- Здесь, в отличие от переписки, содержимое лежит В ОТКРЫТОМ ВИДЕ. Это
+-- осознанный размен: канал по смыслу публичен, подписаться может кто угодно, и
+-- шифровать вещание для неизвестного круга — самообман: ключ пришлось бы отдать
+-- каждому подписчику, а значит и любому, кто им станет.
+--
+-- Из этого следует правило, которое нельзя нарушать в интерфейсе: канал обязан
+-- быть подписан как открытый. Человек должен понимать, что пост в канале — не
+-- то же самое, что сообщение в диалоге.
+CREATE TABLE IF NOT EXISTS channels (
+  id         BLOB PRIMARY KEY,
+  owner      BLOB NOT NULL REFERENCES users(identity) ON DELETE CASCADE,
+  handle     TEXT NOT NULL UNIQUE,
+  title      TEXT NOT NULL,
+  about      TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+) WITHOUT ROWID;
+
+CREATE INDEX IF NOT EXISTS channels_owner ON channels(owner);
+
+-- Порядок постов задаёт seq по той же причине, что и в очереди: время в
+-- миллисекундах не различает две записи подряд.
+CREATE TABLE IF NOT EXISTS channel_posts (
+  seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+  id         BLOB NOT NULL UNIQUE,
+  channel    BLOB NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  body       TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  edited_at  INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS channel_posts_feed ON channel_posts(channel, seq);
+
+-- Подписка — единственное место, где сервер знает про связь человека с чем-то
+-- ещё. Это не связка «кто с кем переписывается»: канал открыт, и его читатели
+-- ничем не отличаются от читателей открытого сайта.
+CREATE TABLE IF NOT EXISTS channel_subs (
+  channel    BLOB NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  identity   BLOB NOT NULL REFERENCES users(identity) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (channel, identity)
+) WITHOUT ROWID;
+
+CREATE INDEX IF NOT EXISTS channel_subs_reader ON channel_subs(identity);
+
 CREATE TABLE IF NOT EXISTS key_packages (
   id         BLOB PRIMARY KEY,
   device_pub BLOB NOT NULL REFERENCES devices(device_pub) ON DELETE CASCADE,

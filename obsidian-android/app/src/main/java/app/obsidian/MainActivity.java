@@ -96,6 +96,19 @@ public final class MainActivity extends Activity implements Events.Listener {
     private View screenChatSettings;
     private View screenData;
 
+    /**
+     * Открытые каналы: лента, которую ведёт один человек.
+     *
+     * Единственное место, где содержимое уходит на сервер незашифрованным, — и
+     * потому единственное, где интерфейс обязан об этом сказать вслух. Канал
+     * открыт по своей природе: подписаться может кто угодно, значит и ключ
+     * достался бы любому. Предупреждение висит над лентой, а не в настройках.
+     */
+    private final Map<String, JSONObject> channels = new LinkedHashMap<>();
+    private View screenChannel;
+    private String openChannel;
+    private Long channelOldest;
+
     /** Нижний островок: три корневых экрана и размытая подложка. */
     private BlurPanel tabBar;
 
@@ -263,6 +276,7 @@ public final class MainActivity extends Activity implements Events.Listener {
         screenSettings = findViewById(R.id.screen_settings);
         screenPrivacy = findViewById(R.id.screen_privacy);
         screenPrivacySection = findViewById(R.id.screen_privacy_section);
+        screenChannel = findViewById(R.id.screen_channel);
         tabBar = findViewById(R.id.tab_bar);
         screenUsername = findViewById(R.id.screen_username);
         screenSecurity = findViewById(R.id.screen_security);
@@ -342,6 +356,11 @@ public final class MainActivity extends Activity implements Events.Listener {
         findViewById(R.id.open_profile_row).setOnClickListener(v -> open(screenProfile));
         findViewById(R.id.chat_code_row).setOnClickListener(v -> copyChatCode());
         findViewById(R.id.nav_chats).setOnClickListener(v -> switchTab(screenChat));
+        findViewById(R.id.channel_back).setOnClickListener(v -> goBack());
+        findViewById(R.id.channel_create).setOnClickListener(v -> askNewChannel());
+        findViewById(R.id.channel_find).setOnClickListener(v -> askFindChannel());
+        findViewById(R.id.channel_subscribe).setOnClickListener(v -> toggleSubscription());
+        findViewById(R.id.channel_send).setOnClickListener(v -> publishPost());
         findViewById(R.id.nav_settings).setOnClickListener(v -> switchTab(screenSettings));
         findViewById(R.id.nav_profile).setOnClickListener(v -> switchTab(screenProfile));
         findViewById(R.id.username_back).setOnClickListener(v -> goBack());
@@ -1632,6 +1651,12 @@ public final class MainActivity extends Activity implements Events.Listener {
             case "admin":
                 onAdminReport(event);
                 break;
+            case "channels":
+                onChannels(event);
+                break;
+            case "channel_post":
+                onChannelPost(event);
+                break;
             case "verification":
                 new AlertDialog.Builder(this).setTitle("Проверка защищённого чата")
                         .setMessage("Код пары устройств:\n" + event.optString("safety_number")
@@ -1917,7 +1942,7 @@ public final class MainActivity extends Activity implements Events.Listener {
         for (View candidate : new View[]{screenBoot, screenMigrate, screenEntry, screenRecover,
                 screenChat, screenConversation, screenProfile, screenSettings, screenPrivacy,
                 screenPrivacySection, screenAppearance, screenUsername, screenSecurity,
-                screenAdmin, screenChatSettings, screenData}) {
+                screenAdmin, screenChatSettings, screenData, screenChannel}) {
             if (candidate == null) continue;
             if (candidate != screen) {
                 candidate.animate().cancel();
@@ -4016,16 +4041,283 @@ public final class MainActivity extends Activity implements Events.Listener {
     // --- запросы ------------------------------------------------------------------
 
     private void wireListTabs() {
-        findViewById(R.id.tab_chats).setOnClickListener(v -> showList(true));
-        findViewById(R.id.tab_requests).setOnClickListener(v -> showList(false));
-        showList(true);
+        findViewById(R.id.tab_chats).setOnClickListener(v -> showList(LIST_CHATS));
+        findViewById(R.id.tab_requests).setOnClickListener(v -> showList(LIST_REQUESTS));
+        findViewById(R.id.tab_channels).setOnClickListener(v -> {
+            showList(LIST_CHANNELS);
+            submit(Commands.channelList());
+        });
+        showList(LIST_CHATS);
     }
 
-    private void showList(boolean chats) {
-        contactList.setVisibility(chats ? View.VISIBLE : View.GONE);
-        requestList.setVisibility(chats ? View.GONE : View.VISIBLE);
-        markActive(findViewById(R.id.tab_chats), chats, R.drawable.chip_active, R.drawable.chip_idle);
-        markActive(findViewById(R.id.tab_requests), !chats, R.drawable.chip_active, R.drawable.chip_idle);
+    private static final int LIST_CHATS = 0;
+    private static final int LIST_REQUESTS = 1;
+    private static final int LIST_CHANNELS = 2;
+
+    private void showList(int list) {
+        contactList.setVisibility(list == LIST_CHATS ? View.VISIBLE : View.GONE);
+        requestList.setVisibility(list == LIST_REQUESTS ? View.VISIBLE : View.GONE);
+        findViewById(R.id.channel_pane)
+                .setVisibility(list == LIST_CHANNELS ? View.VISIBLE : View.GONE);
+        markActive(findViewById(R.id.tab_chats), list == LIST_CHATS,
+                R.drawable.chip_active, R.drawable.chip_idle);
+        markActive(findViewById(R.id.tab_requests), list == LIST_REQUESTS,
+                R.drawable.chip_active, R.drawable.chip_idle);
+        markActive(findViewById(R.id.tab_channels), list == LIST_CHANNELS,
+                R.drawable.chip_active, R.drawable.chip_idle);
+    }
+
+    // --- открытые каналы -----------------------------------------------------------
+
+    private void askNewChannel() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(22), dp(8), dp(22), 0);
+
+        EditText handle = new EditText(this);
+        handle.setHint(R.string.channel_handle_hint);
+        handle.setSingleLine(true);
+        EditText title = new EditText(this);
+        title.setHint(R.string.channel_title_hint);
+        title.setSingleLine(true);
+        box.addView(handle);
+        box.addView(title);
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.channel_create)
+                // Предупреждение стоит до того, как человек нажал «Завести»:
+                // после — оно уже оправдание, а не предупреждение.
+                .setMessage(R.string.channel_create_warning)
+                .setView(box)
+                .setPositiveButton(R.string.channel_create, (dialog, which) -> {
+                    String name = handle.getText().toString().trim()
+                            .replaceAll("^@", "").toLowerCase(Locale.ROOT);
+                    String caption = title.getText().toString().trim();
+                    if (name.isEmpty() || caption.isEmpty()) return;
+                    submit(Commands.channelCreate(name, caption, null));
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    private void askFindChannel() {
+        EditText input = new EditText(this);
+        input.setHint(R.string.channel_find_hint);
+        input.setSingleLine(true);
+        LinearLayout box = new LinearLayout(this);
+        box.setPadding(dp(22), dp(8), dp(22), 0);
+        box.addView(input);
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.channel_find)
+                .setView(box)
+                .setPositiveButton(R.string.channel_find, (dialog, which) -> {
+                    String name = input.getText().toString().trim();
+                    if (!name.isEmpty()) submit(Commands.channelFind(name));
+                })
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
+    private void renderChannelList() {
+        LinearLayout host = findViewById(R.id.channel_list);
+        host.removeAllViews();
+        if (channels.isEmpty()) {
+            host.addView(listNotice(getString(R.string.channel_none)));
+            return;
+        }
+        for (JSONObject channel : channels.values()) {
+            host.addView(channelRow(channel));
+        }
+    }
+
+    private View channelRow(JSONObject channel) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        row.setBackgroundResource(R.drawable.panel_glass);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(66));
+        params.bottomMargin = dp(8);
+        row.setLayoutParams(params);
+
+        TextView mark = new TextView(this);
+        mark.setText("◈");
+        mark.setGravity(Gravity.CENTER);
+        mark.setTextColor(getColor(R.color.obsidian_white));
+        mark.setBackground(avatarPlaceholder());
+        mark.setLayoutParams(new LinearLayout.LayoutParams(dp(44), dp(44)));
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setPadding(dp(12), 0, 0, 0);
+        copy.setLayoutParams(new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+
+        TextView title = new TextView(this);
+        title.setText(channel.optString("title"));
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(15);
+        TextView handle = new TextView(this);
+        handle.setText("@" + channel.optString("handle")
+                + (channel.optBoolean("owner") ? " · " + getString(R.string.channel_yours) : ""));
+        handle.setTextColor(getColor(R.color.obsidian_muted));
+        handle.setTextSize(11);
+        copy.addView(title);
+        copy.addView(handle);
+
+        row.addView(mark);
+        row.addView(copy);
+        row.setOnClickListener(v -> openChannelFeed(channel.optString("id"), null));
+        return row;
+    }
+
+    private void openChannelFeed(String id, Long before) {
+        openChannel = id;
+        if (before == null) channelOldest = null;
+        submit(Commands.channelFeed(id, before));
+    }
+
+    private void renderChannel(JSONObject report) {
+        JSONObject channel = report.optJSONObject("channel");
+        if (channel == null) return;
+        channels.put(channel.optString("id"), channel);
+        openChannel = channel.optString("id");
+        boolean owner = channel.optBoolean("owner");
+
+        if (screenChannel.getVisibility() != View.VISIBLE) open(screenChannel);
+        ((TextView) findViewById(R.id.channel_screen_title)).setText(channel.optString("title"));
+        ((TextView) findViewById(R.id.channel_screen_handle)).setText("@"
+                + channel.optString("handle")
+                + (owner ? " · " + getString(R.string.channel_yours) : ""));
+        findViewById(R.id.channel_composer).setVisibility(owner ? View.VISIBLE : View.GONE);
+
+        Button subscribe = findViewById(R.id.channel_subscribe);
+        subscribe.setVisibility(owner ? View.GONE : View.VISIBLE);
+        subscribe.setText(channel.optBoolean("subscribed")
+                ? R.string.channel_unsubscribe : R.string.channel_subscribe);
+
+        LinearLayout feed = findViewById(R.id.channel_feed);
+        JSONArray posts = report.optJSONArray("posts");
+        if (channelOldest == null) feed.removeAllViews();
+        if ((posts == null || posts.length() == 0) && feed.getChildCount() == 0) {
+            feed.addView(listNotice(getString(owner
+                    ? R.string.channel_empty_owner : R.string.channel_empty_reader)));
+        }
+        for (int i = 0; posts != null && i < posts.length(); i++) {
+            JSONObject post = posts.optJSONObject(i);
+            if (post == null) continue;
+            feed.addView(postRow(post, owner));
+            channelOldest = post.optLong("seq");
+        }
+        renderChannelList();
+    }
+
+    private View postRow(JSONObject post, boolean owner) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setBackgroundResource(R.drawable.card_flat);
+        row.setPadding(dp(14), dp(12), dp(14), dp(12));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(8);
+        row.setLayoutParams(params);
+
+        TextView body = new TextView(this);
+        body.setText(post.optString("body"));
+        body.setTextColor(getColor(R.color.obsidian_white));
+        body.setTextSize(14);
+
+        TextView when = new TextView(this);
+        when.setText(java.text.DateFormat.getDateTimeInstance(
+                java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
+                .format(new java.util.Date(post.optLong("createdAt"))));
+        when.setTextColor(getColor(R.color.obsidian_muted));
+        when.setTextSize(10);
+        LinearLayout.LayoutParams whenParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        whenParams.topMargin = dp(6);
+        when.setLayoutParams(whenParams);
+
+        row.addView(body);
+        row.addView(when);
+        if (owner) {
+            row.setOnLongClickListener(v -> {
+                new AlertDialog.Builder(this)
+                        .setTitle(R.string.channel_drop_post)
+                        .setMessage(R.string.channel_drop_hint)
+                        .setPositiveButton(R.string.delete, (dialog, which) ->
+                                submit(Commands.channelDeletePost(openChannel, post.optString("id"))))
+                        .setNegativeButton(R.string.cancel, null)
+                        .show();
+                return true;
+            });
+        }
+        return row;
+    }
+
+    private void toggleSubscription() {
+        JSONObject channel = channels.get(openChannel);
+        if (channel == null) return;
+        submit(Commands.channelSubscribe(openChannel, !channel.optBoolean("subscribed")));
+    }
+
+    private void publishPost() {
+        EditText input = findViewById(R.id.channel_text);
+        String text = input.getText().toString().trim();
+        if (text.isEmpty() || openChannel == null) return;
+        input.setText("");
+        submit(Commands.channelPublish(openChannel, text));
+    }
+
+    /** Ответ по каналам: список, лента, найденный канал — что спросили. */
+    private void onChannels(JSONObject event) {
+        JSONObject report = event.optJSONObject("report");
+        if (report == null) return;
+
+        JSONArray list = report.optJSONArray("channels");
+        if (list != null) {
+            channels.clear();
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject channel = list.optJSONObject(i);
+                if (channel != null) channels.put(channel.optString("id"), channel);
+            }
+            renderChannelList();
+        }
+        if (report.has("found")) {
+            JSONObject found = report.optJSONObject("found");
+            if (found == null) {
+                toast(getString(R.string.channel_not_found));
+            } else {
+                channels.put(found.optString("id"), found);
+                renderChannelList();
+                openChannelFeed(found.optString("id"), null);
+            }
+        }
+        JSONObject opened = report.optJSONObject("opened");
+        if (opened != null) openChannelFeed(opened.optString("id"), null);
+        if (report.optJSONObject("channel") != null && report.optJSONArray("posts") != null) {
+            renderChannel(report);
+        }
+        // Опубликованное и убранное показываем перечитыванием ленты: на экране
+        // должно быть то, что лежит на сервере, а не то, что мы надеемся увидеть.
+        if (report.optJSONObject("published") != null || report.has("removed")) {
+            channelOldest = null;
+            openChannelFeed(report.optString("channel", openChannel), null);
+        }
+    }
+
+    private void onChannelPost(JSONObject event) {
+        JSONObject report = event.optJSONObject("report");
+        if (report == null) return;
+        String channel = report.optString("channel");
+        if (channel.equals(openChannel) && screenChannel.getVisibility() == View.VISIBLE) {
+            channelOldest = null;
+            openChannelFeed(channel, null);
+            return;
+        }
+        toast("@" + report.optString("handle") + ": новый пост");
     }
 
     private void renderRequests() {

@@ -142,9 +142,17 @@
         <div class="section-tabs" id="section-tabs" role="tablist">
           <button type="button" data-list="chats" class="active" role="tab" aria-selected="true">Диалоги</button>
           <button type="button" data-list="requests" role="tab" aria-selected="false">Запросы <i id="requests-count">0</i></button>
+          <button type="button" data-list="channels" role="tab" aria-selected="false">Публичные</button>
         </div>
         <ul id="conversations" class="conversation-list"></ul>
         <ul id="requests" class="conversation-list hidden"></ul>
+        <div id="channels-pane" class="hidden">
+          <div class="channel-actions">
+            <button id="channel-create" class="ghost-button" type="button">Завести канал</button>
+            <button id="channel-find" class="ghost-button" type="button">Найти по имени</button>
+          </div>
+          <ul id="channels" class="conversation-list"></ul>
+        </div>
 
         <div class="sidebar-bottom">
           <button id="copy-chat-code" class="identity-row" type="button">
@@ -178,6 +186,34 @@
           <div><span>Код пары устройств</span><code id="safety-number">—</code></div>
           <div><span>Код текущей эпохи</span><code id="epoch-code">—</code></div>
           <p>Сверьте числа с собеседником по другому каналу.</p>
+        </section>
+
+        <!--
+          Канал — открытая лента. Он живёт в той же панели, что и переписка, но
+          подписан иначе: содержимое здесь видно серверу, и человек обязан это
+          знать до того, как что-то напишет.
+        -->
+        <section id="channel-panel" class="channel-panel hidden">
+          <header class="channel-head">
+            <div>
+              <b id="channel-title">—</b>
+              <small id="channel-handle">@—</small>
+            </div>
+            <div class="setting-actions">
+              <button id="channel-subscribe" class="ghost-button" type="button">Подписаться</button>
+            </div>
+          </header>
+          <p id="channel-about" class="channel-about"></p>
+          <p class="channel-open-note">
+            <span class="ui-icon icon-shield"></span>
+            <span>Открытый канал: посты хранятся на сервере <b>без шифрования</b> и видны всем, кто знает имя. Личная переписка так не работает — она шифруется на устройстве.</span>
+          </p>
+          <ul id="channel-feed" class="channel-feed"></ul>
+          <button id="channel-more" class="ghost-button hidden" type="button">Показать более ранние</button>
+          <form id="channel-composer" class="channel-composer hidden">
+            <textarea id="channel-text" rows="2" placeholder="Написать в канал…"></textarea>
+            <button class="primary-button" type="submit">Опубликовать</button>
+          </form>
         </section>
 
         <div id="chat-empty" class="chat-empty">

@@ -596,6 +596,43 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
 .composer-wrap{min-width:0}
 .composer textarea{min-width:0}
 
+/* --- каналы ---------------------------------------------------------------- */
+
+.channel-actions{display:flex;gap:6px;padding:0 8px 8px}
+.channel-actions .ghost-button{flex:1;justify-content:center;height:32px;font-size:10.5px}
+
+.channel-panel{grid-row:4;display:flex;flex-direction:column;min-height:0;
+  padding:22px max(24px,calc((100% - 720px)/2))}
+.channel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.channel-head b{display:block;font:600 17px "Unbounded",sans-serif;letter-spacing:-.035em}
+.channel-head small{display:block;margin-top:4px;color:var(--muted);font-size:11.5px}
+.channel-about{margin:10px 0 0;color:var(--muted);font-size:12.5px;line-height:1.6}
+
+/* Предупреждение об открытости — не мелким шрифтом внизу, а на виду. */
+.channel-open-note{display:flex;gap:9px;margin:14px 0 0;padding:11px 13px;
+  border:1px solid color-mix(in srgb,var(--warning) 38%,var(--line));border-radius:var(--radius);
+  background:color-mix(in srgb,var(--warning) 8%,transparent);color:var(--muted);
+  font-size:11px;line-height:1.55}
+.channel-open-note b{color:var(--text)}
+.channel-open-note .ui-icon{width:14px;height:14px;flex:none;margin-top:2px;color:var(--warning)}
+
+.channel-feed{flex:1;min-height:0;margin:16px 0 0;padding:0;overflow:auto;list-style:none}
+.channel-feed li{position:relative;margin-bottom:10px;padding:13px 15px;border:1px solid var(--line);
+  border-radius:var(--radius);background:var(--surface);animation:message-in .2s ease both}
+.channel-feed .body{font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+.channel-feed time{display:block;margin-top:7px;color:var(--faint);font-size:9.5px}
+.channel-feed .drop{position:absolute;top:9px;right:9px;padding:3px 7px;border:1px solid var(--line);
+  border-radius:7px;background:transparent;color:var(--muted);font-size:9px}
+.channel-feed .drop:hover{border-color:var(--danger);color:var(--danger)}
+.channel-empty{padding:22px;color:var(--faint);font-size:11.5px;text-align:center}
+
+.channel-composer{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:9px;
+  margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.channel-composer textarea{min-height:52px;max-height:150px;padding:11px 13px;resize:vertical;
+  border:1px solid var(--line);border-radius:var(--radius);outline:0;background:var(--surface);
+  color:var(--text);font:13px/1.5 "Inter UI",sans-serif}
+.channel-composer .primary-button{width:auto;height:44px;margin:0;padding:0 18px}
+
 /* Экран входа объясняет устройство защиты: человек решает, доверять ли, до
    того как заведёт аккаунт, а не после. */
 /* Экран входа стал выше окна — значит, он обязан прокручиваться: обрезанная

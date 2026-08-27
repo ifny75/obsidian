@@ -30,6 +30,8 @@ pub mod op {
     pub const USERNAME_FOUND: u8 = 0x25;
     pub const ACCESS_OK: u8 = 0x2a;
     pub const ADMIN_OK: u8 = 0x2c;
+    pub const CHANNEL_OK: u8 = 0x32;
+    pub const CHANNEL_POST: u8 = 0x33;
     // клиент → сервер
     pub const AUTH: u8 = 0x02;
     pub const PAY_REQUEST: u8 = 0x05;
@@ -53,6 +55,14 @@ pub mod op {
     /// Кадры владельца сервера. Права проверяет сервер по ключу личности.
     pub const ADMIN_GET: u8 = 0x2b;
     pub const ADMIN_ACTION: u8 = 0x2d;
+    /// Открытые каналы. Шифрования здесь нет — см. Command::ChannelPublish.
+    pub const CHANNEL_CREATE: u8 = 0x34;
+    pub const CHANNEL_PUBLISH: u8 = 0x35;
+    pub const CHANNEL_LIST: u8 = 0x36;
+    pub const CHANNEL_FEED: u8 = 0x37;
+    pub const CHANNEL_SUB: u8 = 0x38;
+    pub const CHANNEL_FIND: u8 = 0x39;
+    pub const CHANNEL_DELETE_POST: u8 = 0x3a;
 }
 
 #[derive(Debug, Deserialize)]
@@ -303,6 +313,12 @@ pub fn profile_decor_frame(emblem: &Option<String>, color: &Option<String>) -> R
         body.insert("color".into(), serde_json::Value::String(color.clone()));
     }
     json_frame(op::PROFILE_SET, &serde_json::Value::Object(body))
+}
+
+/// Кадры каналов. Тело собирается из того, что дал интерфейс: у канала нет
+/// шифрования, и прятать здесь нечего — прятать надо было бы в диалоге.
+pub fn channel_frame(opcode: u8, body: &serde_json::Value) -> Result<Vec<u8>> {
+    json_frame(opcode, body)
 }
 
 pub fn admin_get_frame(offset: u64) -> Result<Vec<u8>> {

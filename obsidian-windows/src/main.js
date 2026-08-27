@@ -507,7 +507,9 @@ function renderConversations() {
     name.textContent = group.title || "Без названия";
     const tag = document.createElement("span");
     tag.className = "kind-tag";
-    tag.textContent = group.kind === "channel" ? "канал" : "группа";
+    // «Закрытый» — чтобы не спутать с публичным каналом на вкладке рядом:
+    // там содержимое лежит у сервера открытым, здесь — зашифровано.
+    tag.textContent = group.kind === "channel" ? "закрытый канал" : "группа";
     name.appendChild(tag);
     const preview = document.createElement("span");
     const count = group.members?.length ?? 0;
@@ -607,6 +609,9 @@ function selectConversation(peer) {
   renderReplyBar();
   showTyping(peer, typingPeers.has(peer));
   refreshPeerState();
+  showChannelPanel(false);
+  $("chat-header").classList.remove("hidden");
+  $("form-send").classList.remove("hidden");
   $("chat-empty").classList.add("hidden");
   $("messages").classList.remove("hidden");
   // В чужом канале писать нельзя: пишет только владелец. Ограничение честное —
@@ -1038,6 +1043,42 @@ const handlers = {
 
   storage(event) {
     renderStorage(event);
+  },
+
+  channels(event) {
+    const report = event.report ?? {};
+    if (Array.isArray(report.channels)) {
+      channels.clear();
+      for (const channel of report.channels) channels.set(channel.id, channel);
+      renderChannelList();
+    }
+    if (report.found !== undefined) {
+      if (report.found) {
+        channels.set(report.found.id, report.found);
+        renderChannelList();
+        openChannelFeed(report.found.id);
+      } else {
+        toast(`Канала @${report.query} нет`);
+      }
+    }
+    if (report.opened) openChannelFeed(report.opened.id);
+    if (report.channel && report.posts) renderChannel(report);
+    // Опубликованное и убранное показываем перечитыванием ленты: так на экране
+    // ровно то, что лежит на сервере, а не то, что мы надеемся там увидеть.
+    if (report.published || report.removed !== undefined) {
+      channelOldest = null;
+      openChannelFeed(report.channel ?? openChannel);
+    }
+  },
+
+  channel_post(event) {
+    const report = event.report ?? {};
+    if (report.channel === openChannel) {
+      channelOldest = null;
+      openChannelFeed(openChannel);
+      return;
+    }
+    toast(`@${report.handle}: новый пост`);
   },
 
   group(event) {
@@ -3096,8 +3137,176 @@ for (const tab of document.querySelectorAll("#section-tabs button[data-list]")) 
     }
     $("conversations").classList.toggle("hidden", tab.dataset.list !== "chats");
     $("requests").classList.toggle("hidden", tab.dataset.list !== "requests");
+    $("channels-pane").classList.toggle("hidden", tab.dataset.list !== "channels");
+    if (tab.dataset.list === "channels") submit({ type: "channel_list" });
   });
 }
+
+// --- каналы ---------------------------------------------------------------------
+
+/**
+ * Открытая лента, которую ведёт один человек.
+ *
+ * Единственное место в приложении, где содержимое уходит на сервер незашифрованным,
+ * — и потому единственное, где интерфейс обязан об этом сказать. Канал открыт по
+ * своей природе: подписаться может кто угодно, а значит ключ достался бы любому
+ * желающему. Молчать об этом было бы обманом, поэтому предупреждение висит над
+ * лентой, а не спрятано в настройках.
+ */
+const channels = new Map();
+let openChannel = null;
+let channelOldest = null;
+
+function renderChannelList() {
+  const list = $("channels");
+  list.replaceChildren();
+  if (channels.size === 0) {
+    const empty = document.createElement("li");
+    empty.className = "empty-list";
+    empty.textContent = "Публичных каналов пока нет. Заведите свой или найдите чужой по имени.";
+    list.appendChild(empty);
+    return;
+  }
+  for (const channel of channels.values()) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "conversation-button";
+    if (openChannel === channel.id) item.classList.add("active");
+
+    const avatar = document.createElement("span");
+    avatar.className = "conversation-avatar";
+    avatar.textContent = channel.title.slice(0, 2).toUpperCase();
+
+    const copy = document.createElement("span");
+    copy.className = "conversation-copy";
+    const name = document.createElement("b");
+    name.textContent = channel.title;
+    const handle = document.createElement("span");
+    handle.textContent = `@${channel.handle}${channel.owner ? " · ваш" : ""}`;
+    copy.append(name, handle);
+
+    button.append(avatar, copy);
+    button.addEventListener("click", () => openChannelFeed(channel.id));
+    item.appendChild(button);
+    list.appendChild(item);
+  }
+}
+
+function openChannelFeed(id, before = null) {
+  openChannel = id;
+  if (before === null) channelOldest = null;
+  submit({ type: "channel_feed", channel: id, before });
+}
+
+function showChannelPanel(show) {
+  $("channel-panel").classList.toggle("hidden", !show);
+  if (!show) return;
+  // Панель канала и переписка занимают одно место — показывать оба нельзя.
+  $("chat-empty").classList.add("hidden");
+  $("messages").classList.add("hidden");
+  $("form-send").classList.add("hidden");
+  $("chat-header").classList.add("hidden");
+}
+
+function renderChannel(report) {
+  const channel = report.channel;
+  if (!channel) return;
+  channels.set(channel.id, channel);
+  openChannel = channel.id;
+  showChannelPanel(true);
+
+  $("channel-title").textContent = channel.title;
+  $("channel-handle").textContent = `@${channel.handle}${channel.owner ? " · ваш канал" : ""}`;
+  $("channel-about").textContent = channel.about ?? "";
+  $("channel-composer").classList.toggle("hidden", !channel.owner);
+
+  const subscribe = $("channel-subscribe");
+  subscribe.classList.toggle("hidden", Boolean(channel.owner));
+  subscribe.textContent = channel.subscribed ? "Отписаться" : "Подписаться";
+
+  const feed = $("channel-feed");
+  if (report.posts.length === 0 && channelOldest === null) {
+    feed.replaceChildren();
+    const empty = document.createElement("li");
+    empty.className = "channel-empty";
+    empty.textContent = channel.owner
+      ? "Здесь пока пусто. Напишите первый пост."
+      : "Автор ещё ничего не публиковал.";
+    feed.appendChild(empty);
+  } else {
+    if (channelOldest === null) feed.replaceChildren();
+    for (const post of report.posts) feed.appendChild(postNode(post, channel));
+  }
+  channelOldest = report.posts.length > 0
+    ? report.posts[report.posts.length - 1].seq : channelOldest;
+  $("channel-more").classList.toggle("hidden", !report.more);
+  renderChannelList();
+}
+
+function postNode(post, channel) {
+  const item = document.createElement("li");
+  item.dataset.post = post.id;
+
+  const body = document.createElement("div");
+  body.className = "body";
+  body.textContent = post.body;
+
+  const time = document.createElement("time");
+  time.textContent = new Date(post.createdAt).toLocaleString();
+
+  item.append(body, time);
+  if (channel.owner) {
+    const drop = document.createElement("button");
+    drop.type = "button";
+    drop.className = "drop";
+    drop.textContent = "Убрать";
+    drop.addEventListener("click", () => {
+      confirmAction("Убрать пост?",
+        "Он исчезнет у всех читателей канала. Отменить это нечем.",
+        () => submit({ type: "channel_delete_post", channel: channel.id, post: post.id }));
+    });
+    item.appendChild(drop);
+  }
+  return item;
+}
+
+$("channel-create").addEventListener("click", () => {
+  const handle = prompt("Короткое имя публичного канала латиницей, например notes.\n\nВажно: посты такого канала лежат на сервере без шифрования и видны всем, кто знает имя.");
+  if (!handle) return;
+  const title = prompt("Название канала:");
+  if (!title) return;
+  submit({
+    type: "channel_create",
+    handle: handle.trim().replace(/^@/, "").toLowerCase(),
+    title: title.trim(),
+    about: null,
+  });
+});
+
+$("channel-find").addEventListener("click", () => {
+  const handle = prompt("Имя канала, например @notes:");
+  if (!handle) return;
+  submit({ type: "channel_find", handle: handle.trim() });
+});
+
+$("channel-subscribe").addEventListener("click", () => {
+  const channel = channels.get(openChannel);
+  if (!channel) return;
+  submit({ type: "channel_subscribe", channel: channel.id, subscribe: !channel.subscribed });
+});
+
+$("channel-more").addEventListener("click", () => {
+  if (openChannel) openChannelFeed(openChannel, channelOldest);
+});
+
+$("channel-composer").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const text = $("channel-text").value.trim();
+  if (!text || !openChannel) return;
+  $("channel-text").value = "";
+  submit({ type: "channel_publish", channel: openChannel, body: text });
+});
 
 // --- проверка правил на входящем ------------------------------------------------
 

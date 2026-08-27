@@ -30,6 +30,25 @@ export interface EnvelopeRow {
   created_at: number;
 }
 
+export interface ChannelRow {
+  id: Bytes;
+  owner: Bytes;
+  handle: string;
+  title: string;
+  about: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface PostRow {
+  seq: number;
+  id: Bytes;
+  channel: Bytes;
+  body: string;
+  created_at: number;
+  edited_at: number | null;
+}
+
 export interface ProfileRow {
   identity: Bytes;
   chat_code: string;
@@ -228,6 +247,106 @@ export class Store {
     return this.getProfile(identity)!;
   }
 
+  // --- каналы ----------------------------------------------------------------
+
+  /** Заводит канал. `undefined` — короткое имя уже занято. */
+  createChannel(id: Bytes, owner: Bytes, handle: string, title: string, about: string | null,
+    now: number): ChannelRow | undefined {
+    try {
+      this.#db
+        .prepare(
+          `INSERT INTO channels (id, owner, handle, title, about, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(id, owner, handle, title, about, now, now);
+    } catch (error) {
+      if (String(error).includes("UNIQUE")) return undefined;
+      throw error;
+    }
+    // Владелец читает свой канал по умолчанию: иначе он не увидит его в списке.
+    this.subscribeChannel(id, owner, now);
+    return this.channelById(id);
+  }
+
+  channelById(id: Bytes): ChannelRow | undefined {
+    return this.#db.prepare("SELECT * FROM channels WHERE id = ?").get(id) as
+      ChannelRow | undefined;
+  }
+
+  channelByHandle(handle: string): ChannelRow | undefined {
+    return this.#db.prepare("SELECT * FROM channels WHERE handle = ?").get(handle.toLowerCase()) as
+      ChannelRow | undefined;
+  }
+
+  /** Каналы, которые человек ведёт или читает. */
+  channelsFor(identity: Bytes): (ChannelRow & { subscribers: number; posts: number })[] {
+    return this.#db
+      .prepare(
+        `SELECT c.*,
+                (SELECT COUNT(*) FROM channel_subs s WHERE s.channel = c.id)  AS subscribers,
+                (SELECT COUNT(*) FROM channel_posts p WHERE p.channel = c.id) AS posts
+         FROM channels c
+         WHERE c.owner = ?
+            OR EXISTS (SELECT 1 FROM channel_subs s WHERE s.channel = c.id AND s.identity = ?)
+         ORDER BY c.updated_at DESC`,
+      )
+      .all(identity, identity) as never;
+  }
+
+  subscribeChannel(channel: Bytes, identity: Bytes, now: number): void {
+    this.#db
+      .prepare("INSERT OR IGNORE INTO channel_subs (channel, identity, created_at) VALUES (?, ?, ?)")
+      .run(channel, identity, now);
+  }
+
+  unsubscribeChannel(channel: Bytes, identity: Bytes): void {
+    this.#db.prepare("DELETE FROM channel_subs WHERE channel = ? AND identity = ?")
+      .run(channel, identity);
+  }
+
+  isSubscribed(channel: Bytes, identity: Bytes): boolean {
+    return this.#db
+      .prepare("SELECT 1 FROM channel_subs WHERE channel = ? AND identity = ?")
+      .get(channel, identity) !== undefined;
+  }
+
+  /** Устройства читателей: им уходит весть о новом посте. */
+  channelReaderDevices(channel: Bytes): Bytes[] {
+    return (this.#db
+      .prepare(
+        `SELECT d.device_pub FROM channel_subs s
+         JOIN devices d ON d.identity = s.identity
+         WHERE s.channel = ?`,
+      )
+      .all(channel) as { device_pub: Bytes }[]).map((row) => row.device_pub);
+  }
+
+  addPost(id: Bytes, channel: Bytes, body: string, now: number): PostRow {
+    this.#db
+      .prepare("INSERT INTO channel_posts (id, channel, body, created_at) VALUES (?, ?, ?, ?)")
+      .run(id, channel, body, now);
+    this.#db.prepare("UPDATE channels SET updated_at = ? WHERE id = ?").run(now, channel);
+    return this.#db.prepare("SELECT * FROM channel_posts WHERE id = ?").get(id) as never as PostRow;
+  }
+
+  deletePost(id: Bytes, channel: Bytes): boolean {
+    const result = this.#db
+      .prepare("DELETE FROM channel_posts WHERE id = ? AND channel = ?")
+      .run(id, channel);
+    return Number(result.changes) > 0;
+  }
+
+  /** Лента страницами: `before` — seq, с которого идти вглубь. */
+  posts(channel: Bytes, limit: number, before: number | null): PostRow[] {
+    return this.#db
+      .prepare(
+        `SELECT * FROM channel_posts
+         WHERE channel = ? AND (? IS NULL OR seq < ?)
+         ORDER BY seq DESC LIMIT ?`,
+      )
+      .all(channel, before, before, limit) as never as PostRow[];
+  }
+
   // --- владелец сервера ------------------------------------------------------
 
   isBlocked(identity: Bytes): boolean {
@@ -263,6 +382,8 @@ export class Store {
       blocked: one("SELECT COUNT(*) AS n FROM blocks"),
       queued: one("SELECT COUNT(*) AS n FROM envelopes WHERE expires_at > ?", now),
       seenDay: one("SELECT COUNT(*) AS n FROM devices WHERE last_seen > ?", now - 86_400_000),
+      channels: one("SELECT COUNT(*) AS n FROM channels"),
+      posts: one("SELECT COUNT(*) AS n FROM channel_posts"),
     };
   }
 

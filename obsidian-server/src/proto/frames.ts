@@ -29,6 +29,10 @@ export const OP = {
   USERNAME_FOUND: 0x25,
   ACCESS_OK: 0x2a,
   ADMIN_OK: 0x2c,
+  /** Ответ на любое действие с каналом: список, лента, подтверждение. */
+  CHANNEL_OK: 0x32,
+  /** Новый пост в канале, на который человек подписан. */
+  CHANNEL_POST: 0x33,
   // клиент → сервер
   AUTH: 0x02,
   PAY_REQUEST: 0x05,
@@ -51,6 +55,14 @@ export const OP = {
   /** Служебные кадры владельца сервера. Проверяются по identity, а не по имени. */
   ADMIN_GET: 0x2b,
   ADMIN_ACTION: 0x2d,
+  /** Открытые каналы: завести, писать, читать, подписаться. */
+  CHANNEL_CREATE: 0x34,
+  CHANNEL_PUBLISH: 0x35,
+  CHANNEL_LIST: 0x36,
+  CHANNEL_FEED: 0x37,
+  CHANNEL_SUB: 0x38,
+  CHANNEL_FIND: 0x39,
+  CHANNEL_DELETE_POST: 0x3a,
 } as const;
 
 export const ID_LEN = 16;

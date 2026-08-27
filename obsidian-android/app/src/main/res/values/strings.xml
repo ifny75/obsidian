@@ -277,4 +277,24 @@
     <string name="entry_point_three">Состав переписки задают сами устройства. Подсунуть в неё лишнего участника сервер не может — это заметит проверка при каждой отправке.</string>
     <string name="entry_trust_title">Почему серверу не нужно доверять</string>
     <string name="entry_trust">Ему достаётся запечатанный конверт, адрес получателя и время. Открыть конверт нечем: ключей у сервера нет — ни по просьбе, ни по ошибке. Проверяется это не обещанием: сервер можно поднять свой.</string>
+    <string name="channels_label">Каналы</string>
+    <string name="channel_open_note">Открытый канал: посты лежат на сервере без шифрования и видны всем, кто знает имя. Личная переписка так не работает — она шифруется на устройстве.</string>
+    <string name="channel_create">Завести канал</string>
+    <string name="channel_find">Найти по имени</string>
+    <string name="channel_none">Публичных каналов пока нет. Заведите свой или найдите чужой по имени.</string>
+    <string name="channel_empty_owner">Здесь пока пусто. Напишите первый пост.</string>
+    <string name="channel_empty_reader">Автор ещё ничего не публиковал.</string>
+    <string name="channel_post_hint">Написать в канал…</string>
+    <string name="channel_publish">Опубликовать</string>
+    <string name="channel_subscribe">Подписаться</string>
+    <string name="channel_unsubscribe">Отписаться</string>
+    <string name="channel_yours">ваш канал</string>
+    <string name="channel_more">Показать более ранние</string>
+    <string name="channel_handle_hint">Короткое имя латиницей, например notes</string>
+    <string name="channel_title_hint">Название канала</string>
+    <string name="channel_create_warning">Посты публичного канала лежат на сервере без шифрования и видны всем, кто знает имя.</string>
+    <string name="channel_find_hint">Имя канала, например notes</string>
+    <string name="channel_not_found">Такого канала нет</string>
+    <string name="channel_drop_post">Убрать пост</string>
+    <string name="channel_drop_hint">Пост исчезнет у всех читателей канала. Отменить это нечем.</string>
 </resources>
