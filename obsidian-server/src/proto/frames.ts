@@ -63,6 +63,9 @@ export const OP = {
   CHANNEL_SUB: 0x38,
   CHANNEL_FIND: 0x39,
   CHANNEL_DELETE_POST: 0x3a,
+  CHANNEL_DELETE: 0x3b,
+  CHANNEL_UPDATE: 0x3c,
+  CHANNEL_ADMIN: 0x3d,
 } as const;
 
 export const ID_LEN = 16;

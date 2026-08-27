@@ -82,6 +82,16 @@
 
     <string name="channel_connection">Соединение</string>
     <string name="notification_connected">Защищённое соединение активно</string>
+    <string name="channel_messages">Входящие сообщения</string>
+    <string name="channel_messages_hint">Уведомления о новых защищённых сообщениях</string>
+    <string name="notification_new_message">Новое сообщение в Obsidian</string>
+    <string name="preview_image">Фотография</string>
+    <string name="preview_voice">Голосовое сообщение</string>
+    <string name="preview_message">Новое сообщение</string>
+    <string name="preview_empty">Сообщений пока нет</string>
+    <string name="notifications_disabled_title">Уведомления выключены</string>
+    <string name="notifications_disabled_hint">Нажмите, чтобы разрешить системные уведомления о сообщениях</string>
+    <string name="scroll_to_new">Вернуться к новым сообщениям</string>
 
     <!-- Восстановление доступа -->
     <string name="recover_open">Уже есть аккаунт — восстановить доступ</string>
@@ -297,4 +307,7 @@
     <string name="channel_not_found">Такого канала нет</string>
     <string name="channel_drop_post">Убрать пост</string>
     <string name="channel_drop_hint">Пост исчезнет у всех читателей канала. Отменить это нечем.</string>
+    <string name="channel_close">Закрыть канал</string>
+    <string name="channel_close_hint">Канал исчезнет вместе со всеми постами и подписками. Отменить это нечем.</string>
+    <string name="channel_closed">Канал закрыт</string>
 </resources>

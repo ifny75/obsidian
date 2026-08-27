@@ -168,6 +168,36 @@ pub enum Command {
     ChannelFind { handle: String },
     /// Убрать свой пост.
     ChannelDeletePost { channel: String, post: String },
+    /// Закрыть свой канал целиком: посты и подписки уходят следом.
+    ChannelDelete { channel: String },
+    /// Сменить название, описание или значок своего канала.
+    ///
+    /// Каждое поле необязательно: шлём только то, что человек тронул. Имя
+    /// канала не меняется — на нём держится ссылка, по которой на канал уже
+    /// сослались. `icon: null` снимает значок, отсутствие поля — не трогает.
+    ChannelUpdate {
+        channel: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        about: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        icon: Option<serde_json::Value>,
+    },
+    /// Позвать человека писать в канал или вернуть его в читатели.
+    ChannelAdmin {
+        channel: String,
+        who: String,
+        #[serde(default = "yes")]
+        admin: bool,
+    },
+    /// Собрать файл переноса аккаунта под отдельным паролем.
+    ///
+    /// Пароль здесь не пароль базы: файл уезжает с машины, и его стойкость
+    /// человек выбирает отдельно и осознанно.
+    AccountExport { password: String },
+    /// Разложить файл переноса в эту базу. `data` — содержимое файла в hex.
+    AccountImport { password: String, data: String },
     /// Сколько места занято на этом устройстве.
     Storage,
     /// Счётчики и список аккаунтов. Отвечает только владельцу.
@@ -251,6 +281,12 @@ pub enum Event {
     GroupForgotten { group: String },
     /// Что лежит на этом устройстве. Ничего из этого никуда не отправляется.
     Storage { database_bytes: u64, conversations: u64, messages: u64 },
+    /// Файл переноса готов: `data` — его содержимое в hex, интерфейс сохраняет
+    /// его на диск. Через ядро он не пишется намеренно — путь к файлу выбирает
+    /// человек, а не библиотека.
+    AccountExported { data: String, messages: u64 },
+    /// Аккаунт перенесён: столько сообщений легло в базу.
+    AccountImported { messages: u64 },
     /// Ответ по каналам: список, лента, найденный канал — что спросили.
     ///
     /// Пересылается как есть: набор полей задаёт сервер, и разбирать его здесь
@@ -477,4 +513,10 @@ mod tests {
         assert!(json.contains(r#""type":"failed""#));
         assert!(json.contains("payment_pending"));
     }
+}
+
+/// Значение по умолчанию для `ChannelAdmin::admin`: команда без флага зовёт,
+/// а не разжалует.
+fn yes() -> bool {
+    true
 }

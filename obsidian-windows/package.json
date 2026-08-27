@@ -1,6 +1,5 @@
 {
   "name": "obsidian-windows",
-  "version": "0.1.0",
   "private": true,
   "description": "Windows-клиент Obsidian: WebView2 поверх obsidian-core",
   "scripts": {

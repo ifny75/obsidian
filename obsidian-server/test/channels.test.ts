@@ -156,7 +156,7 @@ test("писать может только владелец, читать — п
     channel: channel.id,
     body: "чужой пост",
   }));
-  assert.equal(reader.sock.json(OP.ERROR).code, "channel_not_owner");
+  assert.equal(reader.sock.json(OP.ERROR).code, "channel_not_writer");
 
   owner.sock.clear();
   handleMessage(deps, owner.sock, owner.conn, jsonFrame(OP.CHANNEL_PUBLISH, {
@@ -234,6 +234,41 @@ test("канал находится по короткому имени, а вл�
   store.close();
 });
 
+test("канал закрывается владельцем, и посты уходят вместе с ним", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  const owner = connect(deps, store, makeIdentity(), "owner");
+  const reader = connect(deps, store, makeIdentity(), "reader");
+  const channel = createChannel(deps, owner, "notes");
+
+  handleMessage(deps, reader.sock, reader.conn, jsonFrame(OP.CHANNEL_SUB, {
+    channel: channel.id, subscribe: true,
+  }));
+  handleMessage(deps, owner.sock, owner.conn, jsonFrame(OP.CHANNEL_PUBLISH, {
+    channel: channel.id, body: "запись",
+  }));
+
+  // Посторонний закрыть канал не может.
+  reader.sock.clear();
+  handleMessage(deps, reader.sock, reader.conn, jsonFrame(OP.CHANNEL_DELETE, {
+    channel: channel.id,
+  }));
+  assert.equal(reader.sock.json(OP.ERROR).code, "channel_not_owner");
+
+  owner.sock.clear();
+  handleMessage(deps, owner.sock, owner.conn, jsonFrame(OP.CHANNEL_DELETE, {
+    channel: channel.id,
+  }));
+  assert.equal(owner.sock.json(OP.CHANNEL_OK).closed, channel.id);
+  assert.equal(owner.sock.json(OP.CHANNEL_OK).channels.length, 0);
+
+  // Ленты больше нет — вместе с подписками и постами.
+  owner.sock.clear();
+  handleMessage(deps, owner.sock, owner.conn, jsonFrame(OP.CHANNEL_FEED, { channel: channel.id }));
+  assert.equal(owner.sock.json(OP.ERROR).code, "channel_missing");
+  store.close();
+});
+
 test("владелец убирает свой пост, посторонний — нет", () => {
   const store = new Store(":memory:");
   const deps = makeDeps(store);
@@ -265,5 +300,95 @@ test("владелец убирает свой пост, посторонний 
   owner.sock.clear();
   handleMessage(deps, owner.sock, owner.conn, jsonFrame(OP.CHANNEL_FEED, { channel: channel.id }));
   assert.equal(owner.sock.json(OP.CHANNEL_OK).posts.length, 0);
+  store.close();
+});
+
+test("редакция канала: позванный пишет, остальные читают", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  const owner = connect(deps, store, makeIdentity(), "owner");
+  const writer = connect(deps, store, makeIdentity(), "writer");
+  const reader = connect(deps, store, makeIdentity(), "reader");
+  const channel = createChannel(deps, owner, "notes");
+
+  // Пока не позвали — пишет только владелец.
+  writer.sock.clear();
+  handleMessage(deps, writer.sock, writer.conn, jsonFrame(OP.CHANNEL_PUBLISH, {
+    channel: channel.id, body: "рано",
+  }));
+  assert.equal(writer.sock.json(OP.ERROR).code, "channel_not_writer");
+
+  // Состав редакции меняет только владелец.
+  reader.sock.clear();
+  handleMessage(deps, reader.sock, reader.conn, jsonFrame(OP.CHANNEL_ADMIN, {
+    channel: channel.id, who: store.ensureProfile(writer.conn.identity!, Date.now()).chat_code,
+  }));
+  assert.equal(reader.sock.json(OP.ERROR).code, "channel_not_owner");
+
+  owner.sock.clear();
+  handleMessage(deps, owner.sock, owner.conn, jsonFrame(OP.CHANNEL_ADMIN, {
+    channel: channel.id, who: store.ensureProfile(writer.conn.identity!, Date.now()).chat_code,
+  }));
+  assert.equal(owner.sock.json(OP.CHANNEL_OK).updated.admins.length, 1);
+
+  writer.sock.clear();
+  handleMessage(deps, writer.sock, writer.conn, jsonFrame(OP.CHANNEL_PUBLISH, {
+    channel: channel.id, body: "теперь можно",
+  }));
+  assert.equal(writer.sock.json(OP.CHANNEL_OK).published.body, "теперь можно");
+
+  // Позванный пишет, но каналом не распоряжается.
+  writer.sock.clear();
+  handleMessage(deps, writer.sock, writer.conn, jsonFrame(OP.CHANNEL_UPDATE, {
+    channel: channel.id, title: "Моё теперь",
+  }));
+  assert.equal(writer.sock.json(OP.ERROR).code, "channel_not_owner");
+
+  // И его можно убрать обратно в читатели.
+  owner.sock.clear();
+  handleMessage(deps, owner.sock, owner.conn, jsonFrame(OP.CHANNEL_ADMIN, {
+    channel: channel.id, who: store.ensureProfile(writer.conn.identity!, Date.now()).chat_code,
+    admin: false,
+  }));
+  assert.equal(owner.sock.json(OP.CHANNEL_OK).updated.admins.length, 0);
+  writer.sock.clear();
+  handleMessage(deps, writer.sock, writer.conn, jsonFrame(OP.CHANNEL_PUBLISH, {
+    channel: channel.id, body: "уже нельзя",
+  }));
+  assert.equal(writer.sock.json(OP.ERROR).code, "channel_not_writer");
+  store.close();
+});
+
+test("владелец меняет название и значок, читатели узнают", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  const owner = connect(deps, store, makeIdentity(), "owner");
+  const reader = connect(deps, store, makeIdentity(), "reader");
+  const channel = createChannel(deps, owner, "notes");
+  handleMessage(deps, reader.sock, reader.conn, jsonFrame(OP.CHANNEL_SUB, {
+    channel: channel.id, subscribe: true,
+  }));
+
+  reader.sock.clear();
+  owner.sock.clear();
+  const icon = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString("base64");
+  handleMessage(deps, owner.sock, owner.conn, jsonFrame(OP.CHANNEL_UPDATE, {
+    channel: channel.id, title: "Тетрадь", about: "Стало короче",
+    icon: { mime: "image/png", base64: icon },
+  }));
+  const updated = owner.sock.json(OP.CHANNEL_OK).updated;
+  assert.equal(updated.title, "Тетрадь");
+  assert.equal(updated.iconBase64, icon);
+  // Имя канала не менялось: на нём держится ссылка.
+  assert.equal(updated.handle, "notes");
+  assert.equal(reader.sock.json(OP.CHANNEL_OK).updated.title, "Тетрадь");
+
+  // Значок снимается явным null, а не отсутствием поля.
+  owner.sock.clear();
+  handleMessage(deps, owner.sock, owner.conn, jsonFrame(OP.CHANNEL_UPDATE, {
+    channel: channel.id, icon: null,
+  }));
+  assert.equal(owner.sock.json(OP.CHANNEL_OK).updated.iconBase64, null);
+  assert.equal(owner.sock.json(OP.CHANNEL_OK).updated.title, "Тетрадь");
   store.close();
 });

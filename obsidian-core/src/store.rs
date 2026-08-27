@@ -90,6 +90,138 @@ impl Store {
     ///
     /// Считается вместе с журналом WAL: свежие записи лежат именно там, и без
     /// него база с полной перепиской выглядела бы пустой.
+    /// Всё содержимое базы в открытом виде — для переноса аккаунта.
+    ///
+    /// Возвращается расшифрованным: запечатывать это заново будет `migrate`,
+    /// уже под паролем, который человек придумает для файла переноса. Ключ
+    /// этой базы для второго устройства бесполезен — он выведен из её
+    /// собственного секрета, который остаётся на старой машине.
+    pub fn export_archive(&self) -> Result<crate::migrate::Archive> {
+        let credentials = self.load_credentials()?;
+        let mls = self.load_mls()?.map(|(public, snapshot)| crate::migrate::ArchiveMls {
+            signer_public: hex::encode(public),
+            snapshot: hex::encode(snapshot),
+        });
+
+        let mut conversations = Vec::new();
+        {
+            let mut statement = self
+                .connection
+                .prepare("SELECT device_pub, group_id FROM conversations")?;
+            let rows = statement.query_map([], |row| {
+                Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })?;
+            for row in rows {
+                let (device, group) = row?;
+                conversations.push((hex::encode(device), hex::encode(group)));
+            }
+        }
+
+        let mut groups = Vec::new();
+        for (group_id, kind, meta) in self.list_groups()? {
+            groups.push(crate::migrate::ArchiveGroup {
+                group_id: hex::encode(group_id),
+                kind,
+                meta: hex::encode(meta),
+                created_at: 0,
+            });
+        }
+
+        let mut messages = Vec::new();
+        {
+            let mut statement = self.connection.prepare(
+                "SELECT id, conversation, outgoing, created_at, sealed FROM messages
+                 ORDER BY created_at",
+            )?;
+            let rows = statement.query_map([], |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, Vec<u8>>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, Vec<u8>>(4)?,
+                ))
+            })?;
+            for row in rows {
+                let (id, conversation, outgoing, created_at, sealed) = row?;
+                // AAD сообщения — его id: расшифровка сама проверит, что строка
+                // не переехала из чужой записи.
+                let body = self.key.open(&id, &sealed)?;
+                messages.push(crate::migrate::ArchiveMessage {
+                    id: hex::encode(id),
+                    conversation: hex::encode(conversation),
+                    outgoing: outgoing != 0,
+                    created_at,
+                    body: hex::encode(body),
+                });
+            }
+        }
+
+        let mut settings = Vec::new();
+        {
+            let mut statement = self.connection.prepare("SELECT k FROM settings")?;
+            let keys = statement.query_map([], |row| row.get::<_, String>(0))?;
+            for key in keys {
+                let key = key?;
+                if let Some(value) = self.load_setting(&key)? {
+                    settings.push((key, hex::encode(value)));
+                }
+            }
+        }
+
+        Ok(crate::migrate::Archive {
+            v: 1,
+            identity: hex::encode(credentials.identity.to_bytes()),
+            device: hex::encode(credentials.device.to_bytes()),
+            mls,
+            conversations,
+            groups,
+            messages,
+            settings,
+        })
+    }
+
+    /// Раскладывает перенесённый архив в пустую базу.
+    ///
+    /// Сообщения кладутся `INSERT OR IGNORE`: повторный импорт того же файла
+    /// не должен ни падать, ни удваивать историю.
+    pub fn import_archive(&self, archive: &crate::migrate::Archive) -> Result<usize> {
+        let bytes = |value: &str| hex::decode(value).map_err(|_| CoreError::BadFrame);
+
+        self.save_credentials(&Credentials {
+            identity: SecretKey::from_bytes(&bytes(&archive.identity)?)?,
+            device: SecretKey::from_bytes(&bytes(&archive.device)?)?,
+        })?;
+
+        if let Some(mls) = &archive.mls {
+            self.save_mls(&bytes(&mls.signer_public)?, &bytes(&mls.snapshot)?)?;
+        }
+        for (device, group) in &archive.conversations {
+            self.set_conversation(&bytes(device)?, &bytes(group)?)?;
+        }
+        for group in &archive.groups {
+            self.save_group(&bytes(&group.group_id)?, &group.kind, &bytes(&group.meta)?,
+                group.created_at)?;
+        }
+        for (key, value) in &archive.settings {
+            self.save_setting(key, &bytes(value)?)?;
+        }
+
+        let mut restored = 0;
+        for message in &archive.messages {
+            let id = bytes(&message.id)?;
+            let sealed = self.key.seal(&id, &bytes(&message.body)?)?;
+            let changed = self.connection.execute(
+                "INSERT OR IGNORE INTO messages (id, conversation, outgoing, created_at, sealed)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, bytes(&message.conversation)?, message.outgoing as i64,
+                    message.created_at, sealed],
+            )?;
+            restored += changed;
+        }
+        Ok(restored)
+    }
+
     pub fn footprint(&self) -> u64 {
         let size = |suffix: &str| {
             std::fs::metadata(format!("{}{suffix}", self.path))

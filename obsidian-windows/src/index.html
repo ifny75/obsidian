@@ -17,7 +17,7 @@
     -->
     <div class="titlebar" data-tauri-drag-region>
       <img class="titlebar-logo" src="assets/obsidian_logo.svg" alt="" data-tauri-drag-region />
-      <span class="titlebar-title" data-tauri-drag-region>Obsidian</span>
+      <span id="window-title" class="titlebar-title" data-tauri-drag-region>Obsidian</span>
       <div class="titlebar-actions">
         <button id="window-minimize" class="window-button" type="button" aria-label="Свернуть">
           <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6h8" /></svg>
@@ -123,18 +123,16 @@
               <div class="brand-logo"><img src="assets/obsidian_logo.svg" alt="" /></div>
               <div class="brand-copy"><strong>Obsidian</strong><span>public beta</span></div>
             </div>
-            <button id="appearance-open" class="icon-button" type="button" title="Оформление" aria-label="Оформление"><span class="ui-icon icon-settings"></span></button>
+            <div class="brand-actions">
+              <button id="new-group" class="icon-button" type="button" title="Новая группа или канал" aria-label="Новая группа или канал"><span class="ui-icon icon-plus"></span></button>
+              <button id="appearance-open" class="icon-button" type="button" title="Оформление" aria-label="Оформление"><span class="ui-icon icon-settings"></span></button>
+            </div>
           </div>
-          <div id="connection" class="connection offline"><i></i><span>не подключено</span></div>
-          <label class="search-field">
+          <form id="form-omni" class="omni-field">
             <span class="ui-icon icon-search"></span>
-            <input id="conversation-search" type="search" placeholder="Поиск диалогов" />
-          </label>
-          <form id="form-new-chat" class="new-chat-form">
-            <input id="new-peer" type="text" placeholder="@юзернейм, код OBS-… или адрес" autocomplete="off" />
-            <button class="icon-button solid" type="submit" title="Новый диалог" aria-label="Новый диалог"><span class="ui-icon icon-pencil"></span></button>
+            <input id="omni" type="text" placeholder="Поиск, @юзернейм, код OBS-… или адрес" autocomplete="off" />
+            <button id="omni-go" class="icon-button solid hidden" type="submit" title="Начать диалог" aria-label="Начать диалог"><span class="ui-icon icon-pencil"></span></button>
           </form>
-          <button id="new-group" class="group-create" type="button">＋ Группа или канал</button>
         </div>
 
         <div id="search-result" class="search-result hidden"></div>
@@ -155,13 +153,9 @@
         </div>
 
         <div class="sidebar-bottom">
-          <button id="copy-chat-code" class="identity-row" type="button">
-            <span class="identity-icon"><span class="ui-icon icon-discussion"></span></span>
-            <span><small>Код для нового чата</small><code id="my-chat-code">после обновления сервера</code></span>
-          </button>
           <button id="my-device" class="profile-row" type="button" title="Открыть профиль">
             <span class="profile-avatar">ME</span>
-            <span class="profile-copy"><b>Мой профиль</b><small>Аватар, код и безопасность</small></span>
+            <span class="profile-copy"><b>Мой профиль</b><small id="my-chat-code">после обновления сервера</small></span>
             <span class="owner-dot">local</span>
           </button>
         </div>
@@ -195,12 +189,16 @@
         -->
         <section id="channel-panel" class="channel-panel hidden">
           <header class="channel-head">
-            <div>
+            <span id="channel-icon" class="channel-icon">—</span>
+            <div class="channel-head-copy">
               <b id="channel-title">—</b>
               <small id="channel-handle">@—</small>
             </div>
             <div class="setting-actions">
+              <button id="channel-link" class="ghost-button" type="button" title="Ссылка на канал">Ссылка</button>
               <button id="channel-subscribe" class="ghost-button" type="button">Подписаться</button>
+              <button id="channel-settings" class="ghost-button hidden" type="button">Настроить</button>
+              <button id="channel-delete" class="ghost-button danger hidden" type="button">Закрыть канал</button>
             </div>
           </header>
           <p id="channel-about" class="channel-about"></p>
@@ -214,6 +212,7 @@
             <textarea id="channel-text" rows="2" placeholder="Написать в канал…"></textarea>
             <button class="primary-button" type="submit">Опубликовать</button>
           </form>
+          <input id="channel-icon-file" type="file" accept="image/*" class="hidden" />
         </section>
 
         <div id="chat-empty" class="chat-empty">
@@ -243,12 +242,8 @@
       </main>
     </section>
 
-    <section id="settings-page" class="settings-page hidden" aria-labelledby="settings-title">
-      <header class="settings-header">
-        <button id="appearance-close" class="icon-button" type="button" aria-label="Назад"><span class="ui-icon icon-cross"></span></button>
-        <h2 id="settings-title">Настройки</h2>
-        <span></span>
-      </header>
+    <section id="settings-page" class="settings-page hidden" aria-label="Настройки">
+      <button id="appearance-close" class="settings-close" type="button" aria-label="Закрыть настройки"><span class="ui-icon icon-cross"></span></button>
 
       <div class="settings-body">
         <nav class="settings-nav" id="settings-nav" aria-label="Разделы настроек">
@@ -283,11 +278,14 @@
               <p id="username-status" class="recovery-status"></p>
             </div>
           </div>
-          <div class="profile-detail">
+          <div class="profile-detail decor-row">
             <span><b>Значок и цвет</b><small>Видны собеседникам рядом с вашим именем. Хранятся в профиле на сервере как короткое слово из списка — не картинка и не произвольный текст.</small></span>
-            <div class="decor-controls">
-              <div id="emblem-grid" class="decor-grid"></div>
-              <div id="color-grid" class="decor-grid"></div>
+            <div class="decor-picker">
+              <div id="profile-decor-preview" class="profile-decor-preview" aria-hidden="true"><span>ME</span><i></i></div>
+              <div class="decor-controls">
+                <div><small class="decor-label">Значок</small><div id="emblem-grid" class="decor-grid"></div></div>
+                <div><small class="decor-label">Цвет</small><div id="color-grid" class="decor-grid"></div></div>
+              </div>
             </div>
           </div>
           <div class="profile-detail"><span>Код для начала чата</span><button id="profile-chat-code" type="button">после обновления сервера</button></div>
@@ -376,6 +374,7 @@
         <div class="settings-card">
           <label class="setting-range"><span><b>Размер текста сообщений</b><small>Меняется сразу в превью и открытой переписке</small></span><input id="font-range" type="range" min="13" max="22" value="15" /><output id="font-value">15 px</output></label>
           <label class="setting-range"><span><b>Масштаб интерфейса</b><small>Размер всей рабочей области</small></span><input id="scale-range" type="range" min="85" max="125" value="100" /><output id="scale-value">100%</output></label>
+          <div class="setting-row"><span><b>Автоматический масштаб</b><small>Подстраивает интерфейс под размер окна и плотность экрана</small></span><button id="auto-scale-toggle" class="setting-toggle" type="button" role="switch"><i></i></button></div>
           <label class="setting-range"><span><b>Скругление интерфейса</b></span><input id="radius-range" type="range" min="6" max="22" value="13" /><output id="radius-value">13 px</output></label>
           <label class="setting-range"><span><b>Скругление сообщений</b></span><input id="bubble-range" type="range" min="6" max="24" value="13" /><output id="bubble-value">13 px</output></label>
           <label class="setting-range"><span><b>Ширина сообщений</b></span><input id="width-range" type="range" min="55" max="88" value="72" /><output id="width-value">72%</output></label>
@@ -426,6 +425,21 @@
                 <span><b>Играть голосовые подряд</b><small>Следующее голосовое в переписке начнётся само, когда закончится текущее.</small></span>
                 <button id="toggle-voice-autoplay" class="setting-toggle" type="button" role="switch"><i></i></button>
               </div>
+            </div>
+            <div class="settings-card notification-settings">
+              <div class="setting-block">
+                <b>Уведомления о сообщениях</b>
+                <small>Кастомная карточка поверх приложения. Параметры применяются сразу.</small>
+                <div id="notification-preview" class="notification-preview">
+                  <span class="notification-preview-avatar">A</span>
+                  <span><b>Новое сообщение</b><small>Привет! Это предпросмотр уведомления.</small></span>
+                </div>
+                <button id="notification-test" class="ghost-button" type="button">Показать пример</button>
+              </div>
+              <label class="setting-range"><span><b>Размер карточки</b></span><input id="notification-size-range" type="range" min="85" max="130" value="85" /><output id="notification-size-value">85%</output></label>
+              <div class="setting-block"><b>Цвет карточки</b><small>Фон и цветовой акцент уведомления</small><div class="notification-colors" id="notification-colors"><button type="button" data-notification-color="graphite" aria-label="Графит"></button><button type="button" data-notification-color="violet" aria-label="Фиолетовый"></button><button type="button" data-notification-color="blue" aria-label="Синий"></button><button type="button" data-notification-color="green" aria-label="Зелёный"></button></div></div>
+              <div class="setting-block"><b>Положение</b><div class="setting-segment setting-segment-2" id="notification-position"><button type="button" data-notification-position="top">Сверху</button><button type="button" data-notification-position="bottom">Снизу</button></div></div>
+              <div class="setting-row"><span><b>Звук уведомления</b><small>Используется notifiations2.mp3</small></span><button id="notification-sound-toggle" class="setting-toggle" type="button" role="switch"><i></i></button></div>
             </div>
           </section>
 
@@ -488,6 +502,21 @@
                 <small>Считается вместе с журналом SQLite: свежие записи лежат в нём, и без него база с полной перепиской выглядела бы пустой.</small>
                 <p id="storage-report" class="storage-report">—</p>
                 <div class="setting-actions"><button id="storage-refresh" class="ghost-button" type="button">Обновить</button></div>
+              </div>
+              <div class="setting-block">
+                <b>Перенос аккаунта на другое устройство</b>
+                <small>Файл переноса содержит ключи личности и устройства, состояние шифрования и всю историю. Он запечатан отдельным паролем — не паролем этого устройства. Кто получит файл и пароль, получит переписку целиком, поэтому передавать их вместе нельзя.</small>
+                <div class="setting-actions">
+                  <input id="export-password" type="password" placeholder="Пароль файла, от 8 знаков" autocomplete="new-password" />
+                  <button id="export-account" class="ghost-button" type="button">Сохранить файл</button>
+                </div>
+                <p id="export-status" class="storage-report">—</p>
+                <small>После переезда со старого устройства писать нельзя: ключ устройства станет общим, а состояние шифрования у каждой копии своё — эпохи разойдутся, и часть сообщений перестанет открываться.</small>
+                <div class="setting-actions">
+                  <input id="import-password" type="password" placeholder="Пароль файла переноса" autocomplete="off" />
+                  <button id="import-account" class="ghost-button" type="button">Открыть файл переноса</button>
+                </div>
+                <input id="import-file" type="file" accept=".obsidian,text/plain" class="hidden" />
               </div>
               <div class="setting-block">
                 <b>Переписки на этом устройстве</b>

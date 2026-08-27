@@ -35,6 +35,11 @@ public final class Events {
         listeners.remove(listener);
     }
 
+    /** Открыт ли сейчас интерфейс, который сам покажет входящее сообщение. */
+    static boolean hasListeners() {
+        return !listeners.isEmpty();
+    }
+
     /** Вызывается из потока опроса. Разбор здесь, доставка — на главном. */
     static void publish(String json) {
         final JSONObject event;

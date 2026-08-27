@@ -36,6 +36,8 @@ export interface ChannelRow {
   handle: string;
   title: string;
   about: string | null;
+  icon_mime: string | null;
+  icon_base64: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -77,6 +79,7 @@ export class Store {
     this.#dropLegacyEnvelopes();
     this.#db.exec(SCHEMA);
     this.#addProfileDecoration();
+    this.#addChannelIcon();
   }
 
   close(): void {
@@ -114,6 +117,21 @@ export class Store {
     const has = (name: string) => columns.some((column) => column.name === name);
     if (!has("emblem")) this.#db.exec("ALTER TABLE profiles ADD COLUMN emblem TEXT");
     if (!has("color")) this.#db.exec("ALTER TABLE profiles ADD COLUMN color TEXT");
+  }
+
+  /**
+   * Значок канала появился позже таблицы каналов — по той же причине, что и
+   * значок профиля: столбцы добавляются отдельно, таблицу сносить нельзя,
+   * в ней имена каналов, по которым на них ссылаются.
+   */
+  #addChannelIcon(): void {
+    const columns = this.#db.prepare("PRAGMA table_info(channels)").all() as unknown as {
+      name: string;
+    }[];
+    if (columns.length === 0) return;
+    const has = (name: string) => columns.some((column) => column.name === name);
+    if (!has("icon_mime")) this.#db.exec("ALTER TABLE channels ADD COLUMN icon_mime TEXT");
+    if (!has("icon_base64")) this.#db.exec("ALTER TABLE channels ADD COLUMN icon_base64 TEXT");
   }
 
   // --- пользователи и устройства -------------------------------------------
@@ -293,6 +311,58 @@ export class Store {
       .all(identity, identity) as never;
   }
 
+  /**
+   * Меняет название, описание и значок канала.
+   *
+   * Каждое поле необязательно: интерфейс шлёт только то, что человек тронул.
+   * `icon: null` — это «снять значок», а отсутствие поля — «не трогать»; без
+   * этого различия значок нельзя было бы убрать, только заменить.
+   */
+  updateChannel(id: Bytes, patch: {
+    title?: string;
+    about?: string | null;
+    icon?: { mime: string; base64: string } | null;
+  }, now: number): void {
+    const sets: string[] = [];
+    const values: (string | null | number)[] = [];
+    if (patch.title !== undefined) { sets.push("title = ?"); values.push(patch.title); }
+    if (patch.about !== undefined) { sets.push("about = ?"); values.push(patch.about); }
+    if (patch.icon !== undefined) {
+      sets.push("icon_mime = ?", "icon_base64 = ?");
+      values.push(patch.icon?.mime ?? null, patch.icon?.base64 ?? null);
+    }
+    if (sets.length === 0) return;
+    sets.push("updated_at = ?");
+    values.push(now, id as never);
+    this.#db.prepare(`UPDATE channels SET ${sets.join(", ")} WHERE id = ?`).run(...values as never[]);
+  }
+
+  /** Кто пишет в канал, кроме владельца. */
+  channelAdmins(channel: Bytes): Bytes[] {
+    return (this.#db
+      .prepare("SELECT identity FROM channel_admins WHERE channel = ? ORDER BY created_at")
+      .all(channel) as { identity: Bytes }[]).map((row) => row.identity);
+  }
+
+  isChannelAdmin(channel: Bytes, identity: Bytes): boolean {
+    return this.#db
+      .prepare("SELECT 1 FROM channel_admins WHERE channel = ? AND identity = ?")
+      .get(channel, identity) !== undefined;
+  }
+
+  addChannelAdmin(channel: Bytes, identity: Bytes, now: number): void {
+    this.#db
+      .prepare("INSERT OR IGNORE INTO channel_admins (channel, identity, created_at) VALUES (?, ?, ?)")
+      .run(channel, identity, now);
+    // Пишущий обязан и читать: иначе он не увидит канал у себя в списке.
+    this.subscribeChannel(channel, identity, now);
+  }
+
+  removeChannelAdmin(channel: Bytes, identity: Bytes): void {
+    this.#db.prepare("DELETE FROM channel_admins WHERE channel = ? AND identity = ?")
+      .run(channel, identity);
+  }
+
   subscribeChannel(channel: Bytes, identity: Bytes, now: number): void {
     this.#db
       .prepare("INSERT OR IGNORE INTO channel_subs (channel, identity, created_at) VALUES (?, ?, ?)")
@@ -311,14 +381,21 @@ export class Store {
   }
 
   /** Устройства читателей: им уходит весть о новом посте. */
-  channelReaderDevices(channel: Bytes): Bytes[] {
+  /**
+   * Устройства подписчиков канала.
+   *
+   * `except` убирает из выборки одну личность — того, кто сам вызвал команду:
+   * ему уходит собственный ответ, и получить рядом с ним ещё и рассылку
+   * значило бы два разных кадра с одним опкодом подряд.
+   */
+  channelReaderDevices(channel: Bytes, except?: Bytes): Bytes[] {
     return (this.#db
       .prepare(
         `SELECT d.device_pub FROM channel_subs s
          JOIN devices d ON d.identity = s.identity
-         WHERE s.channel = ?`,
+         WHERE s.channel = ? AND (?2 IS NULL OR s.identity != ?2)`,
       )
-      .all(channel) as { device_pub: Bytes }[]).map((row) => row.device_pub);
+      .all(channel, except ?? null) as { device_pub: Bytes }[]).map((row) => row.device_pub);
   }
 
   addPost(id: Bytes, channel: Bytes, body: string, now: number): PostRow {
@@ -417,6 +494,16 @@ export class Store {
          LIMIT ? OFFSET ?`,
       )
       .all(limit, offset) as never;
+  }
+
+  /**
+   * Убирает канал целиком.
+   *
+   * Посты и подписки уходят следом по внешнему ключу: канала больше нет, и
+   * держать его ленту незачем.
+   */
+  deleteChannel(id: Bytes): void {
+    this.#db.prepare("DELETE FROM channels WHERE id = ?").run(id);
   }
 
   /** Личность по коду чата или по адресу устройства: чем владелец её и назовёт. */

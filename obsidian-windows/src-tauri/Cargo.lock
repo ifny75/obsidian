@@ -2861,7 +2861,7 @@ dependencies = [
 
 [[package]]
 name = "obsidian-windows"
-version = "0.1.0"
+version = "0.7.7"
 dependencies = [
  "obsidian-core",
  "rand_core 0.6.4",

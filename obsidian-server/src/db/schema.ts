@@ -122,9 +122,28 @@ CREATE TABLE IF NOT EXISTS channels (
   handle     TEXT NOT NULL UNIQUE,
   title      TEXT NOT NULL,
   about      TEXT,
+  -- Значок канала лежит здесь открытым, как и его посты: канал публичный,
+  -- прятать от сервера картинку, которую он же и раздаёт всем читателям,
+  -- было бы притворством.
+  icon_mime  TEXT,
+  icon_base64 TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 ) WITHOUT ROWID;
+
+-- Кто, кроме владельца, пишет в канал.
+--
+-- Владельца здесь нет: он определяется channels.owner и правами не может быть
+-- лишён. Строка в этой таблице — только «пишет», не «управляет»: сменить
+-- название, значок и состав редакции может по-прежнему один владелец.
+CREATE TABLE IF NOT EXISTS channel_admins (
+  channel    BLOB NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  identity   BLOB NOT NULL REFERENCES users(identity) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (channel, identity)
+) WITHOUT ROWID;
+
+CREATE INDEX IF NOT EXISTS channel_admins_identity ON channel_admins(identity);
 
 CREATE INDEX IF NOT EXISTS channels_owner ON channels(owner);
 

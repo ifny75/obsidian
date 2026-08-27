@@ -1,5 +1,8 @@
 const SERVER_URL = "wss://getobsidian.xyz/ws";
-const APP_VERSION = "0.6.3";
+// Версия не хранится здесь копией: её отдаёт ядро приложения (Cargo.toml).
+// Хардкод в окне уже расходился с собранным бинарём, и клиент вечно
+// предлагал обновиться на версию, которая на нём и стояла.
+let appVersion = "…";
 const RELEASES_URL = "https://getobsidian.xyz/v1/releases/latest";
 const { invoke } = window.__TAURI__.core;
 
@@ -147,15 +150,57 @@ function toast(text) {
   toast.timer = setTimeout(() => node.classList.remove("visible"), 5000);
 }
 
-function setConnection(kind, text) {
-  const node = $("connection");
-  node.className = `connection ${kind}`;
-  node.querySelector("span").textContent = text;
+function notificationText(content) {
+  if (content.type === "text") return content.text || "Новое сообщение";
+  if (content.type === "image") return content.caption ? `Фото · ${content.caption}` : "Отправлено фото";
+  if (content.type === "voice") return "Голосовое сообщение";
+  return "Новое сообщение";
 }
 
-$("connection").addEventListener("click", () => {
-  if (state.lastDisconnectReason) toast(`Связь: ${state.lastDisconnectReason}`);
-});
+function showDesktopNotification({ title, text, device = null }) {
+  const profile = device ? profileFor(device) : null;
+  // Звук играет сама карточка, а не это окно: уведомление — это она, и звучать
+  // должно ровно то, что показалось. Окно приложения при этом может быть
+  // свёрнуто или закрыто на другой рабочий стол.
+  invoke("show_desktop_notification", {
+    payload: {
+      title,
+      text,
+      initials: device ? initials(device) : "O",
+      avatarMime: profile?.avatar_mime ?? null,
+      avatarBase64: profile?.avatar_base64 ?? null,
+      color: preferences?.notificationColor ?? "graphite",
+      size: preferences?.notificationSize ?? 85,
+      position: preferences?.notificationPosition ?? "top",
+      sound: preferences?.notificationSound ?? true,
+      // Карточка — строка беседы, вынесенная на рабочий стол, поэтому берёт
+      // оформление из тех же настроек, что и список бесед.
+      theme: preferences?.theme ?? "dark",
+      accent: preferences?.accent ?? "#f4f4f4",
+      radius: preferences?.radius ?? 13,
+      squareAvatars: preferences?.squareAvatars ?? false,
+    },
+  }).catch((error) => toast(`Уведомление: ${error}`));
+}
+
+/**
+ * Состояние связи.
+ *
+ * Постоянной строчки «в сети» в интерфейсе больше нет: она занимала место в
+ * шапке и почти всегда сообщала то, что и так очевидно — сообщения ходят.
+ * Показываем только то, что требует внимания: обрыв и возвращение связи, и
+ * только уведомлением, которое само уходит через пять секунд.
+ */
+let connectionKind = "offline";
+
+function setConnection(kind, text) {
+  const was = connectionKind;
+  connectionKind = kind;
+  if (kind === "offline" && was !== "offline") toast(`Связь потеряна: ${text}`);
+  // О возвращении говорим только тем, кто видел обрыв: при первом входе
+  // «связь восстановлена» сообщало бы о том, чего не случалось.
+  if (kind === "online" && was === "offline") toast("Связь восстановлена");
+}
 
 function short(hex) {
   if (!hex || hex.length < 16) return hex || "—";
@@ -343,8 +388,33 @@ async function boot() {
 let lookupTimer = null;
 let lookupQuery = null;
 
-$("new-peer").addEventListener("input", () => {
-  const raw = $("new-peer").value.trim();
+/**
+ * Похоже ли введённое на адресата, а не на слово для поиска.
+ *
+ * От этого зависит, показывать ли кнопку «начать диалог»: поле одно, и по
+ * тексту в нём надо понять, чего человек хочет — отфильтровать список или
+ * написать новому собеседнику.
+ */
+/**
+ * Ссылка на публичный канал: `getobsidian.xyz/channel/notes`.
+ *
+ * Отдельного обработчика протокола в системе нет, и заводить его ради этого —
+ * значит просить у человека установку и права. Вставленная в поле ссылка
+ * открывает канал ничуть не хуже.
+ */
+const CHANNEL_LINK = /^(?:https?:\/\/)?(?:www\.)?getobsidian\.xyz\/channel\/([a-z][a-z0-9_]{2,29})\/?$/i;
+
+function looksLikeAddress(raw) {
+  return CHANNEL_LINK.test(raw)
+    || looksLikeUsername(raw)
+    || /^OBS-[A-HJ-NP-Z2-9]{5}-[A-HJ-NP-Z2-9]{5}$/i.test(raw)
+    || /^[0-9a-f]{64}$/i.test(raw);
+}
+
+$("omni").addEventListener("input", () => {
+  const raw = $("omni").value.trim();
+  $("omni-go").classList.toggle("hidden", !looksLikeAddress(raw));
+  renderConversations();
   const name = (raw.startsWith("@") ? raw.slice(1) : raw).toLowerCase();
   clearTimeout(lookupTimer);
   if (!/^[a-z][a-z0-9_]{2,19}$/.test(name)) {
@@ -359,9 +429,19 @@ $("new-peer").addEventListener("input", () => {
   }, 450);
 });
 
-$("form-new-chat").addEventListener("submit", (event) => {
+$("form-omni").addEventListener("submit", (event) => {
   event.preventDefault();
-  const raw = $("new-peer").value.trim();
+  const raw = $("omni").value.trim();
+  // Enter в поле поиска не должен ничего открывать: там просто слово.
+  if (!looksLikeAddress(raw)) return;
+  const link = CHANNEL_LINK.exec(raw);
+  if (link) {
+    $("omni").value = "";
+    hideSearchResult();
+    openTab("channels");
+    submit({ type: "channel_find", handle: link[1].toLowerCase() });
+    return;
+  }
   // Юзернейм ищется по каталогу, код и адрес работают как раньше.
   if (looksLikeUsername(raw)) {
     hideSearchResult();
@@ -387,7 +467,7 @@ $("form-new-chat").addEventListener("submit", (event) => {
     toast("Это адрес вашего устройства");
     return;
   }
-  $("new-peer").value = "";
+  $("omni").value = "";
   if (!state.conversations.has(peer)) {
     state.conversations.set(peer, { conversation: null, unread: 0 });
   }
@@ -395,7 +475,6 @@ $("form-new-chat").addEventListener("submit", (event) => {
   selectConversation(peer);
 });
 
-$("conversation-search").addEventListener("input", renderConversations);
 
 function profileFor(device) {
   return state.profiles.get(device) ?? null;
@@ -464,23 +543,64 @@ function paintTint(node, color) {
   node.classList.toggle("tinted", Boolean(value));
 }
 
+/**
+ * Подложка аватара — тот же градиент, что в мобильном клиенте.
+ *
+ * Палитра, порядок цветов и способ выбора повторяют `avatarPlaceholder()` из
+ * MainActivity, включая хеш строки по правилу Java. Это не педантизм: один и
+ * тот же собеседник обязан получить один и тот же цвет на телефоне и на ПК,
+ * иначе два списка бесед выглядят как списки разных людей.
+ */
+const AVATAR_PALETTE = [
+  ["#8b6ff6", "#5e4fdb"], ["#ff7a54", "#ee4a4f"], ["#ffb952", "#ff843d"],
+  ["#50ccab", "#2d99bc"], ["#5c8ef7", "#7259de"], ["#e65eb1", "#9a51d2"],
+];
+
+/** Хеш строки по правилу Java: тот же индекс палитры, что на телефоне. */
+function javaHash(text) {
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (Math.imul(31, hash) + text.charCodeAt(index)) | 0;
+  }
+  return hash;
+}
+
+function mixHex(color, onto, amount) {
+  const parse = (hex) => [1, 3, 5].map((at) => Number.parseInt(hex.slice(at, at + 2), 16));
+  const [red, green, blue] = parse(color);
+  const [red2, green2, blue2] = parse(onto);
+  const channel = (one, two) => Math.round(one * amount + two * (1 - amount))
+    .toString(16).padStart(2, "0");
+  return `#${channel(red, red2)}${channel(green, green2)}${channel(blue, blue2)}`;
+}
+
+function avatarGradient(seed, tint) {
+  // Выбранный цвет профиля перебивает палитру: человек назначил его сам.
+  if (tint) return `linear-gradient(135deg,${mixHex(tint, "#ffffff", 0.78)},${mixHex(tint, "#000000", 0.78)})`;
+  const [start, end] = AVATAR_PALETTE[Math.abs(javaHash(seed) % AVATAR_PALETTE.length)];
+  return `linear-gradient(135deg,${start},${end})`;
+}
+
 function applyAvatar(node, device) {
   const profile = profileFor(device);
-  paintTint(node, profile?.color);
   if (profile?.avatar_base64 && profile?.avatar_mime) {
     node.textContent = "";
     node.style.backgroundImage = `url(data:${profile.avatar_mime};base64,${profile.avatar_base64})`;
     node.classList.add("has-avatar");
-  } else {
-    node.style.backgroundImage = "";
-    node.classList.remove("has-avatar");
-    node.textContent = initials(device);
+    node.classList.remove("tinted");
+    return;
   }
+  const text = initials(device);
+  node.textContent = text;
+  node.classList.remove("has-avatar", "tinted");
+  node.style.backgroundImage = avatarGradient(text, profileColor(profile?.color));
 }
 
 function renderConversations() {
   const list = $("conversations");
-  const query = $("conversation-search").value.trim().toLowerCase();
+  // Адрес и код в поле — это не запрос к списку: список не фильтруем.
+  const raw = $("omni").value.trim();
+  const query = looksLikeAddress(raw) ? "" : raw.toLowerCase();
   list.innerHTML = "";
   let visible = 0;
 
@@ -1045,6 +1165,28 @@ const handlers = {
     renderStorage(event);
   },
 
+  account_exported(event) {
+    $("export-password").value = "";
+    // Напрямую invoke, а не windowCommand: путь к файлу нужен нам самим, а
+    // windowCommand ошибку проглатывает и возвращает undefined.
+    invoke("save_account_export", { contents: event.data })
+      .then((path) => {
+        $("export-status").textContent = `Файл на ${event.messages} сообщений: ${path}`;
+        toast("Файл переноса сохранён");
+      })
+      .catch((error) => {
+        $("export-status").textContent = `Не удалось сохранить: ${error}`;
+      });
+  },
+
+  account_imported(event) {
+    $("export-status").textContent = `Перенесено сообщений: ${event.messages}`;
+    toast(`Аккаунт перенесён · сообщений: ${event.messages}`);
+    // База сменилась целиком — перечитываем то, что показано на экране.
+    submit({ type: "status" });
+    submit({ type: "conversations" });
+  },
+
   channels(event) {
     const report = event.report ?? {};
     if (Array.isArray(report.channels)) {
@@ -1059,6 +1201,28 @@ const handlers = {
         openChannelFeed(report.found.id);
       } else {
         toast(`Канала @${report.query} нет`);
+      }
+    }
+    if (report.closed) {
+      channels.delete(report.closed);
+      renderChannelList();
+      if (openChannel === report.closed) {
+        openChannel = null;
+        showChannelPanel(false);
+        $("chat-empty").classList.remove("hidden");
+        $("chat-header").classList.remove("hidden");
+        toast(report.handle ? `Канал @${report.handle} закрыт` : "Канал закрыт");
+      }
+    }
+    if (report.updated) {
+      channels.set(report.updated.id, report.updated);
+      renderChannelList();
+      // Открытая панель настроек показывает состав редакции: он только что
+      // мог измениться этим же ответом.
+      channelSettingsModal?.__paintAdmins?.();
+      if (openChannel === report.updated.id) {
+        channelOldest = null;
+        openChannelFeed(report.updated.id);
       }
     }
     if (report.opened) openChannelFeed(report.opened.id);
@@ -1175,6 +1339,12 @@ const handlers = {
       return;
     }
 
+    showDesktopNotification({
+      title: displayName(event.sender_device || peer),
+      text: notificationText(content),
+      device: event.sender_device || peer,
+    });
+
     // В кэш беседы кладём в любом случае — но только если он уже поднят. Иначе
     // одно сообщение притворилось бы всей перепиской, и открытие чата показало
     // бы его одно вместо истории.
@@ -1286,7 +1456,7 @@ const handlers = {
     }
     if (state.pendingChatCode === event.chat_code) {
       state.pendingChatCode = null;
-      $("new-peer").value = "";
+      $("omni").value = "";
       if (event.device === state.device) {
         toast("Это ваш собственный код");
       } else {
@@ -1501,8 +1671,10 @@ function entryError(event) {
 // --- локальные действия -------------------------------------------------------
 
 $("anomaly").addEventListener("click", () => $("anomaly").classList.add("hidden"));
-$("my-device").addEventListener("click", () => settingsPage.classList.remove("hidden"));
-$("copy-chat-code").addEventListener("click", () => copyText(state.chatCode, "Код для чата скопирован"));
+$("my-device").addEventListener("click", () => {
+  settingsPage.classList.remove("hidden");
+  syncWindowTitle();
+});
 $("copy-fingerprint").addEventListener("click", () => copyText(state.fingerprint, "Отпечаток скопирован"));
 $("profile-device").addEventListener("click", () => copyText(state.device, "Адрес устройства скопирован"));
 $("profile-chat-code").addEventListener("click", () => copyText(state.chatCode, "Код для чата скопирован"));
@@ -1567,6 +1739,7 @@ const preferenceDefaults = {
   accentText: "#080808",
   fontSize: 15,
   scale: 100,
+  autoScale: true,
   radius: 13,
   bubbleRadius: 13,
   messageWidth: 72,
@@ -1585,6 +1758,13 @@ const preferenceDefaults = {
   sendKey: "enter",
   confirmDelete: true,
   voiceAutoplay: false,
+  // 85 — не «поменьше на всякий случай», а рабочий размер: на 100 карточка
+  // перекрывает угол экрана и читается как диалоговое окно, а не как
+  // уведомление.
+  notificationSize: 85,
+  notificationColor: "graphite",
+  notificationPosition: "top",
+  notificationSound: true,
 };
 
 function loadPreferences() {
@@ -1620,7 +1800,10 @@ function applyPreferences() {
   root.style.setProperty("--blur", `${preferences.blur}px`);
   root.style.setProperty("--panel-opacity", `${preferences.panelOpacity}%`);
   const shell = $("screen-main");
-  const scale = preferences.scale / 100;
+  const detectedScale = window.innerWidth >= 2200 ? 1.28
+    : window.innerWidth >= 1700 ? 1.18
+      : window.innerWidth <= 1050 ? 0.92 : 1;
+  const scale = (preferences.scale / 100) * (preferences.autoScale ? detectedScale : 1);
   if (scale === 1) {
     shell.style.removeProperty("zoom");
     shell.style.removeProperty("width");
@@ -1632,6 +1815,14 @@ function applyPreferences() {
     shell.style.zoom = String(scale);
     shell.style.width = `${100 * inverse}vw`;
     shell.style.height = `calc(${100 * inverse}vh - ${40 * inverse}px)`;
+  }
+  const settingsBody = document.querySelector(".settings-body");
+  if (scale === 1) {
+    settingsBody.style.removeProperty("zoom");
+    settingsBody.style.removeProperty("width");
+  } else {
+    settingsBody.style.zoom = String(scale);
+    settingsBody.style.width = `${100 / scale}%`;
   }
   root.style.setProperty("--sidebar-width", `${preferences.sidebarWidth}px`);
   root.style.setProperty("--wallpaper-intensity", String(preferences.wallpaperIntensity));
@@ -1679,13 +1870,33 @@ function applyPreferences() {
   }
   $("toggle-confirm-delete").classList.toggle("on", preferences.confirmDelete);
   $("toggle-voice-autoplay").classList.toggle("on", preferences.voiceAutoplay);
+  $("auto-scale-toggle").classList.toggle("on", preferences.autoScale);
+  $("notification-sound-toggle").classList.toggle("on", preferences.notificationSound);
+  $("notification-size-range").value = String(preferences.notificationSize);
+  $("notification-size-value").textContent = `${preferences.notificationSize}%`;
+  for (const button of document.querySelectorAll("#notification-colors [data-notification-color]")) {
+    button.classList.toggle("active", button.dataset.notificationColor === preferences.notificationColor);
+  }
+  for (const button of document.querySelectorAll("#notification-position [data-notification-position]")) {
+    button.classList.toggle("active", button.dataset.notificationPosition === preferences.notificationPosition);
+  }
   $("compact-toggle").classList.toggle("on", preferences.compact);
   $("square-toggle").classList.toggle("on", preferences.squareAvatars);
   $("tails-toggle").classList.toggle("on", preferences.tails);
 }
 
-$("appearance-open").addEventListener("click", () => settingsPage.classList.remove("hidden"));
-$("appearance-close").addEventListener("click", () => settingsPage.classList.add("hidden"));
+function syncWindowTitle() {
+  $("window-title").textContent = settingsPage.classList.contains("hidden") ? "Obsidian" : "Obsidian — Настройки";
+}
+
+$("appearance-open").addEventListener("click", () => {
+  settingsPage.classList.remove("hidden");
+  syncWindowTitle();
+});
+$("appearance-close").addEventListener("click", () => {
+  settingsPage.classList.add("hidden");
+  syncWindowTitle();
+});
 
 for (const button of document.querySelectorAll("#theme-segment [data-theme]")) {
   button.addEventListener("click", () => {
@@ -1749,6 +1960,44 @@ $("tails-toggle").addEventListener("click", () => {
   savePreferences();
 });
 
+$("auto-scale-toggle").addEventListener("click", () => {
+  preferences.autoScale = !preferences.autoScale;
+  applyPreferences();
+  savePreferences();
+});
+
+$("notification-size-range").addEventListener("input", (event) => {
+  preferences.notificationSize = Number(event.target.value);
+  applyPreferences();
+  savePreferences();
+});
+
+for (const button of document.querySelectorAll("#notification-colors [data-notification-color]")) {
+  button.addEventListener("click", () => {
+    preferences.notificationColor = button.dataset.notificationColor;
+    applyPreferences();
+    savePreferences();
+  });
+}
+
+for (const button of document.querySelectorAll("#notification-position [data-notification-position]")) {
+  button.addEventListener("click", () => {
+    preferences.notificationPosition = button.dataset.notificationPosition;
+    applyPreferences();
+    savePreferences();
+  });
+}
+
+$("notification-sound-toggle").addEventListener("click", () => {
+  preferences.notificationSound = !preferences.notificationSound;
+  applyPreferences();
+  savePreferences();
+});
+
+$("notification-test").addEventListener("click", () => {
+  showDesktopNotification({ title: "Obsidian", text: "Так будет выглядеть новое сообщение" });
+});
+
 /** Сбрасывает собранные пузыри, оставляя список бесед на месте. */
 function rebuildHistory() {
   const open = conversationOf(state.current);
@@ -1805,6 +2054,7 @@ document.addEventListener("keydown", (event) => {
   if (!$("exceptions-modal").classList.contains("hidden")) return closeExceptions();
   if (!$("photo-editor").classList.contains("hidden")) return closeEditor();
   settingsPage.classList.add("hidden");
+  syncWindowTitle();
   $("verification").classList.add("hidden");
 });
 
@@ -1973,7 +2223,8 @@ function renderPhoto(maxBase64, startQuality) {
 }
 
 function editorLimit() {
-  return editor.target === "avatar" ? AVATAR_MAX_BASE64 : PHOTO_MAX_BASE64;
+  return editor.target === "avatar" || editor.target === "channel-icon"
+    ? AVATAR_MAX_BASE64 : PHOTO_MAX_BASE64;
 }
 
 /** Показывает вес результата: иначе «слишком большое» прилетает уже при отправке. */
@@ -2005,18 +2256,20 @@ async function openEditor(file, target) {
   editor.target = target;
   editor.rotation = 0;
   editor.flipped = false;
-  editor.ratio = target === "avatar" ? 1 : 0;
+  const square = target === "avatar" || target === "channel-icon";
+  editor.ratio = square ? 1 : 0;
 
   for (const input of ["editor-brightness", "editor-contrast", "editor-saturation"]) {
     $(input).value = "100";
   }
-  $("editor-quality").value = target === "avatar" ? "86" : "82";
+  $("editor-quality").value = square ? "86" : "82";
   syncEditorOutputs();
   $("editor-caption").value = "";
-  $("editor-caption").classList.toggle("hidden", target === "avatar");
-  $("editor-title").textContent = target === "avatar" ? "Аватар" : "Фото";
+  $("editor-caption").classList.toggle("hidden", square);
+  $("editor-title").textContent = target === "avatar" ? "Аватар"
+    : target === "channel-icon" ? "Значок канала" : "Фото";
   // У аватара кадр всегда квадратный — выбор соотношения только запутывал бы.
-  $("editor-ratios").classList.toggle("hidden", target === "avatar");
+  $("editor-ratios").classList.toggle("hidden", square);
   for (const button of $("editor-ratios").querySelectorAll("button")) {
     button.classList.toggle("active", Number(button.dataset.ratio) === editor.ratio);
   }
@@ -2173,6 +2426,22 @@ for (const id of ["editor-brightness", "editor-contrast", "editor-saturation", "
 
 $("editor-send").addEventListener("click", async () => {
   const quality = Number($("editor-quality").value) / 100;
+
+  if (editor.target === "channel-icon") {
+    const { data, tooBig } = renderPhoto(AVATAR_MAX_BASE64, quality);
+    if (tooBig) {
+      toast("Значок не помещается — уменьшите кадр");
+      return;
+    }
+    closeEditor();
+    await submit({
+      type: "channel_update",
+      channel: openChannel,
+      icon: { mime: "image/jpeg", base64: data },
+    });
+    toast("Значок канала загружается…");
+    return;
+  }
 
   if (editor.target === "avatar") {
     const { data, tooBig } = renderPhoto(AVATAR_MAX_BASE64, quality);
@@ -2678,6 +2947,12 @@ function renderDecor() {
     });
     colors.appendChild(button);
   }
+
+  const preview = $("profile-decor-preview");
+  const previewColor = profileColor(state.color) || "var(--muted)";
+  preview.style.setProperty("--decor-color", previewColor);
+  preview.querySelector("span").textContent = state.username ? state.username.slice(0, 2).toUpperCase() : "ME";
+  preview.querySelector("i").textContent = emblemGlyph(state.emblem);
 }
 
 // --- панель владельца сервера ---------------------------------------------------
@@ -2787,6 +3062,15 @@ $("admin-users-next").addEventListener("click", () => {
 // Выбор значка и цвета рисуется сразу: ждать ответа сервера, чтобы показать
 // список из двенадцати картинок, незачем.
 renderDecor();
+syncWindowTitle();
+
+let scaleResizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(scaleResizeTimer);
+  scaleResizeTimer = setTimeout(() => {
+    if (preferences.autoScale) applyPreferences();
+  }, 120);
+});
 
 for (const [id, command] of [["window-minimize", "window_minimize"],
                             ["window-maximize", "window_toggle_maximize"],
@@ -2815,22 +3099,23 @@ function compareVersions(left, right) {
 async function checkForUpdates(showFailure = false) {
   const status = $("update-status");
   const download = $("update-download");
-  if (status) status.textContent = `Версия ${APP_VERSION} · проверяем обновления…`;
+  appVersion = await invoke("app_version").catch(() => appVersion);
+  if (status) status.textContent = `Версия ${appVersion} · проверяем обновления…`;
   try {
     const response = await fetch(RELEASES_URL, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const release = (await response.json()).windows;
-    const available = release && compareVersions(release.version, APP_VERSION) > 0;
+    const available = release && compareVersions(release.version, appVersion) > 0;
     if (status) status.textContent = available
       ? `Доступна версия ${release.version}`
-      : `Версия ${APP_VERSION} · установлена последняя`;
+      : `Версия ${appVersion} · установлена последняя`;
     if (download) {
       download.classList.toggle("hidden", !available);
       if (release?.url) download.dataset.url = release.url;
     }
     if (available) toast(`Доступно обновление Obsidian ${release.version}`);
   } catch {
-    if (status) status.textContent = `Версия ${APP_VERSION} · не удалось проверить`;
+    if (status) status.textContent = `Версия ${appVersion} · не удалось проверить`;
     if (showFailure) toast("Не удалось проверить обновления");
   }
 }
@@ -3036,7 +3321,7 @@ function renderSearchHit(event) {
     }
     submit({ type: "directory_set", device: event.device, standing: "approved" });
     hideSearchResult();
-    $("new-peer").value = "";
+    $("omni").value = "";
     selectConversation(event.device);
   });
   const dismiss = document.createElement("button");
@@ -3128,18 +3413,22 @@ function requestCard(device, entry) {
   return card;
 }
 
+/** Переключает раздел списка. Отдельной функцией: ссылка на канал открывает
+ *  вкладку «Публичные» сама, не дожидаясь нажатия. */
+function openTab(list) {
+  for (const other of document.querySelectorAll("#section-tabs button[data-list]")) {
+    const chosen = other.dataset.list === list;
+    other.classList.toggle("active", chosen);
+    other.setAttribute("aria-selected", String(chosen));
+  }
+  $("conversations").classList.toggle("hidden", list !== "chats");
+  $("requests").classList.toggle("hidden", list !== "requests");
+  $("channels-pane").classList.toggle("hidden", list !== "channels");
+  if (list === "channels") submit({ type: "channel_list" });
+}
+
 for (const tab of document.querySelectorAll("#section-tabs button[data-list]")) {
-  tab.addEventListener("click", () => {
-    for (const other of document.querySelectorAll("#section-tabs button[data-list]")) {
-      const chosen = other === tab;
-      other.classList.toggle("active", chosen);
-      other.setAttribute("aria-selected", String(chosen));
-    }
-    $("conversations").classList.toggle("hidden", tab.dataset.list !== "chats");
-    $("requests").classList.toggle("hidden", tab.dataset.list !== "requests");
-    $("channels-pane").classList.toggle("hidden", tab.dataset.list !== "channels");
-    if (tab.dataset.list === "channels") submit({ type: "channel_list" });
-  });
+  tab.addEventListener("click", () => openTab(tab.dataset.list));
 }
 
 // --- каналы ---------------------------------------------------------------------
@@ -3156,6 +3445,7 @@ for (const tab of document.querySelectorAll("#section-tabs button[data-list]")) 
 const channels = new Map();
 let openChannel = null;
 let channelOldest = null;
+let channelSettingsModal = null;
 
 function renderChannelList() {
   const list = $("channels");
@@ -3176,7 +3466,7 @@ function renderChannelList() {
 
     const avatar = document.createElement("span");
     avatar.className = "conversation-avatar";
-    avatar.textContent = channel.title.slice(0, 2).toUpperCase();
+    paintChannelIcon(avatar, channel);
 
     const copy = document.createElement("span");
     copy.className = "conversation-copy";
@@ -3217,13 +3507,24 @@ function renderChannel(report) {
   showChannelPanel(true);
 
   $("channel-title").textContent = channel.title;
-  $("channel-handle").textContent = `@${channel.handle}${channel.owner ? " · ваш канал" : ""}`;
+  $("channel-handle").textContent = `@${channel.handle}`;
+  const role = channelRole(channel);
+  if (role !== "reader") {
+    const tag = document.createElement("span");
+    tag.className = "channel-role";
+    tag.textContent = role === "owner" ? "ваш канал" : "вы пишете";
+    $("channel-handle").append(" ", tag);
+  }
   $("channel-about").textContent = channel.about ?? "";
-  $("channel-composer").classList.toggle("hidden", !channel.owner);
+  paintChannelIcon($("channel-icon"), channel);
+  // Поле ввода — у тех, кто пишет: у владельца и у позванных им в редакцию.
+  $("channel-composer").classList.toggle("hidden", role === "reader");
 
   const subscribe = $("channel-subscribe");
   subscribe.classList.toggle("hidden", Boolean(channel.owner));
   subscribe.textContent = channel.subscribed ? "Отписаться" : "Подписаться";
+  $("channel-settings").classList.toggle("hidden", !channel.owner);
+  $("channel-delete").classList.toggle("hidden", !channel.owner);
 
   const feed = $("channel-feed");
   if (report.posts.length === 0 && channelOldest === null) {
@@ -3242,6 +3543,35 @@ function renderChannel(report) {
     ? report.posts[report.posts.length - 1].seq : channelOldest;
   $("channel-more").classList.toggle("hidden", !report.more);
   renderChannelList();
+}
+
+/**
+ * Роль в канале.
+ *
+ * Сервер присылает её полем `role`; `owner` остаётся для старых сборок, где
+ * поля ещё нет, — иначе после обновления клиента к неподнятому серверу у
+ * владельца пропало бы поле ввода.
+ */
+function channelRole(channel) {
+  return channel.role ?? (channel.owner ? "owner" : "reader");
+}
+
+/** Публичная ссылка на канал — то, чем делятся вместо адреса устройства. */
+function channelLink(channel) {
+  return `https://getobsidian.xyz/channel/${channel.handle}`;
+}
+
+function paintChannelIcon(node, channel) {
+  if (channel.iconBase64 && channel.iconMime) {
+    node.textContent = "";
+    node.style.backgroundImage = `url(data:${channel.iconMime};base64,${channel.iconBase64})`;
+    node.classList.add("has-avatar");
+    return;
+  }
+  const text = (channel.title || channel.handle).slice(0, 2).toUpperCase();
+  node.textContent = text;
+  node.classList.remove("has-avatar");
+  node.style.backgroundImage = avatarGradient(text, "");
 }
 
 function postNode(post, channel) {
@@ -3271,6 +3601,159 @@ function postNode(post, channel) {
   return item;
 }
 
+// --- перенос аккаунта -----------------------------------------------------------
+
+/*
+  Файл переноса — это ключи и вся история под отдельным паролем. Ядро отдаёт
+  его строкой, окно только сохраняет: путь выбирает человек, а не библиотека.
+*/
+$("export-account").addEventListener("click", async () => {
+  const password = $("export-password").value;
+  if (password.length < 8) {
+    toast("Пароль файла — от восьми знаков");
+    return;
+  }
+  $("export-status").textContent = "Собираем файл…";
+  await submit({ type: "account_export", password });
+});
+
+$("import-account").addEventListener("click", () => {
+  if ($("import-password").value.length < 8) {
+    toast("Введите пароль файла переноса");
+    return;
+  }
+  $("import-file").click();
+});
+
+$("import-file").addEventListener("change", async () => {
+  const file = $("import-file").files?.[0];
+  $("import-file").value = "";
+  if (!file) return;
+  const password = $("import-password").value;
+  $("import-password").value = "";
+  let contents;
+  try {
+    contents = (await file.text()).trim();
+  } catch {
+    toast("Не удалось прочитать файл");
+    return;
+  }
+  confirmAction("Перенести аккаунт сюда?",
+    "Ключи и история из файла лягут в эту базу. Со старого устройства после этого писать нельзя: состояние шифрования у копий разойдётся.",
+    () => submit({ type: "account_import", password, data: contents }));
+});
+
+$("channel-link").addEventListener("click", () => {
+  const channel = channels.get(openChannel);
+  if (channel) copyText(channelLink(channel), "Ссылка на канал скопирована");
+});
+
+/**
+ * Настройки канала: название, описание, значок и редакция.
+ *
+ * Имя канала (`@handle`) здесь не меняется намеренно: на нём держится ссылка,
+ * которой уже могли поделиться. Нужно другое имя — это другой канал.
+ */
+$("channel-settings").addEventListener("click", () => {
+  const channel = channels.get(openChannel);
+  if (!channel || !channel.owner) return;
+
+  const modal = document.createElement("div");
+  modal.className = "modal";
+  modal.innerHTML = `<div class="modal-card"><div class="modal-header"><h2>Настройки канала</h2></div>`
+    + `<div class="group-form">`
+    + `<input data-title type="text" maxlength="64" placeholder="Название" />`
+    + `<input data-about type="text" maxlength="280" placeholder="Описание" />`
+    + `<div class="setting-actions">`
+    + `<button class="ghost-button" data-icon type="button">Сменить значок</button>`
+    + `<button class="ghost-button" data-icon-clear type="button">Убрать значок</button>`
+    + `<button class="ghost-button" data-link type="button">Скопировать ссылку</button>`
+    + `</div>`
+    + `<small class="decor-label">Кто пишет, кроме вас</small>`
+    + `<ul class="channel-admins" data-admins></ul>`
+    + `<input data-invite type="text" placeholder="Позвать писать: @имя, OBS-код или адрес" />`
+    + `</div>`
+    + `<p class="modal-copy">Позванный пишет посты, но не может ни переименовать канал, ни закрыть его, ни позвать других.</p>`
+    + `<div class="setting-actions peer-actions">`
+    + `<button class="ghost-button" data-no>Закрыть</button>`
+    + `<button class="ghost-button" data-yes>Сохранить</button></div></div>`;
+
+  modal.querySelector("[data-title]").value = channel.title;
+  modal.querySelector("[data-about]").value = channel.about ?? "";
+
+  const admins = modal.querySelector("[data-admins]");
+  const paintAdmins = () => {
+    const current = channels.get(openChannel);
+    admins.replaceChildren();
+    const list = current?.admins ?? [];
+    if (list.length === 0) {
+      const empty = document.createElement("li");
+      empty.className = "channel-empty-admins";
+      empty.textContent = "Пока никого — пишете только вы.";
+      admins.appendChild(empty);
+      return;
+    }
+    for (const code of list) {
+      const row = document.createElement("li");
+      const name = document.createElement("span");
+      name.textContent = code;
+      const drop = document.createElement("button");
+      drop.type = "button";
+      drop.textContent = "Убрать";
+      drop.addEventListener("click", () =>
+        submit({ type: "channel_admin", channel: current.id, who: code, admin: false }));
+      row.append(name, drop);
+      admins.appendChild(row);
+    }
+  };
+  paintAdmins();
+  // Список обновляется ответом сервера, а не на месте: право писать выдаёт он.
+  modal.__paintAdmins = paintAdmins;
+  channelSettingsModal = modal;
+
+  modal.querySelector("[data-link]").addEventListener("click", () =>
+    copyText(channelLink(channel), "Ссылка на канал скопирована"));
+  modal.querySelector("[data-icon]").addEventListener("click", () => $("channel-icon-file").click());
+  modal.querySelector("[data-icon-clear]").addEventListener("click", () =>
+    submit({ type: "channel_update", channel: channel.id, icon: null }));
+
+  modal.querySelector("[data-invite]").addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const who = event.target.value.trim();
+    if (!who) return;
+    event.target.value = "";
+    submit({ type: "channel_admin", channel: channel.id, who });
+  });
+
+  const close = () => {
+    channelSettingsModal = null;
+    modal.remove();
+  };
+  modal.querySelector("[data-no]").addEventListener("click", close);
+  modal.querySelector("[data-yes]").addEventListener("click", () => {
+    const title = modal.querySelector("[data-title]").value.trim();
+    const about = modal.querySelector("[data-about]").value.trim();
+    if (!title) {
+      toast("Название не может быть пустым");
+      return;
+    }
+    submit({ type: "channel_update", channel: channel.id, title, about });
+    close();
+  });
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) close();
+  });
+  document.body.appendChild(modal);
+});
+
+$("channel-icon-file").addEventListener("change", () => {
+  const file = $("channel-icon-file").files?.[0];
+  $("channel-icon-file").value = "";
+  // Тот же редактор, что у аватара: значок канала тоже квадратный.
+  if (file) openEditor(file, "channel-icon");
+});
+
 $("channel-create").addEventListener("click", () => {
   const handle = prompt("Короткое имя публичного канала латиницей, например notes.\n\nВажно: посты такого канала лежат на сервере без шифрования и видны всем, кто знает имя.");
   if (!handle) return;
@@ -3294,6 +3777,14 @@ $("channel-subscribe").addEventListener("click", () => {
   const channel = channels.get(openChannel);
   if (!channel) return;
   submit({ type: "channel_subscribe", channel: channel.id, subscribe: !channel.subscribed });
+});
+
+$("channel-delete").addEventListener("click", () => {
+  const channel = channels.get(openChannel);
+  if (!channel) return;
+  confirmAction("Закрыть канал?",
+    `@${channel.handle} исчезнет вместе со всеми постами и подписками. Отменить это нечем.`,
+    () => submit({ type: "channel_delete", channel: channel.id }));
 });
 
 $("channel-more").addEventListener("click", () => {
@@ -3552,6 +4043,20 @@ function confirmAction(title, detail, onYes) {
 }
 
 // --- меню сообщения ---------------------------------------------------------------
+
+/*
+  Системное меню WebView2 («Обновить», «Сохранить как…», «Просмотреть код»)
+  в мессенджере не к месту: оно выдаёт браузер под окном и предлагает то, чего
+  в приложении нет. Своё меню есть у сообщений; везде остальном правая кнопка
+  просто ничего не делает.
+
+  Исключение — поля ввода: там системное меню даёт вставку из буфера, и
+  заменить его нечем.
+*/
+document.addEventListener("contextmenu", (event) => {
+  if (event.target.closest("input, textarea")) return;
+  event.preventDefault();
+});
 
 let replyingTo = null;
 

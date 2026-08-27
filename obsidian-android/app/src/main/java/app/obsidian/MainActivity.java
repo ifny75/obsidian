@@ -31,13 +31,13 @@ import android.view.Window;
 import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -59,6 +59,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Calendar;
 
 import app.obsidian.core.Commands;
 
@@ -67,7 +70,6 @@ public final class MainActivity extends Activity implements Events.Listener {
 
     private static final String SERVER_URL = "wss://getobsidian.xyz/ws";
     private static final String RELEASES_URL = "https://getobsidian.xyz/v1/releases/latest";
-    private static final String APP_VERSION = "0.5.6";
     /** Сколько сообщений поднимать за раз. Остальное — по прокрутке вверх. */
     private static final int HISTORY_PAGE = 40;
 
@@ -81,6 +83,23 @@ public final class MainActivity extends Activity implements Events.Listener {
      * запечатанной базы.
      */
     private final Map<String, ChatPage> pages = new LinkedHashMap<>();
+
+    /** Превью списка живут только в памяти; исходник остаётся в шифрованной БД. */
+    private static final class ConversationPreview {
+        String text;
+        boolean outgoing;
+        long timestamp;
+        int unread;
+
+        ConversationPreview(String text, boolean outgoing, long timestamp) {
+            this.text = text;
+            this.outgoing = outgoing;
+            this.timestamp = timestamp;
+        }
+    }
+
+    private final Map<String, ConversationPreview> previews = new LinkedHashMap<>();
+    private final Set<String> previewRequests = new HashSet<>();
 
     /** Правила приватности целиком — тот же документ, что лежит в ядре. */
     private JSONObject privacy;
@@ -201,6 +220,7 @@ public final class MainActivity extends Activity implements Events.Listener {
     private LinearLayout contactList;
     private LinearLayout messages;
     private ScrollView messagesScroll;
+    private View scrollToBottom;
     private EditText composer;
     private TextView peerName;
     private TextView peerAvatar;
@@ -246,6 +266,8 @@ public final class MainActivity extends Activity implements Events.Listener {
     private File voiceFile;
     private long voiceStartedAt;
     private final Handler ui = new Handler(Looper.getMainLooper());
+    private View inAppBanner;
+    private Runnable dismissBanner;
     private Runnable voiceTicker;
     private MediaPlayer voicePlayer;
     private SharedPreferences appearancePreferences;
@@ -298,6 +320,7 @@ public final class MainActivity extends Activity implements Events.Listener {
         contactList = findViewById(R.id.contact_list);
         messages = findViewById(R.id.messages);
         messagesScroll = findViewById(R.id.messages_scroll);
+        scrollToBottom = findViewById(R.id.scroll_to_bottom);
         composer = findViewById(R.id.composer);
         peerName = findViewById(R.id.peer_name);
         peerAvatar = findViewById(R.id.peer_avatar);
@@ -342,6 +365,11 @@ public final class MainActivity extends Activity implements Events.Listener {
         findViewById(R.id.reset_legacy).setOnClickListener(v -> confirmResetLegacyDatabase());
         entrySubmit.setOnClickListener(v -> register());
         findViewById(R.id.send).setOnClickListener(v -> send());
+        scrollToBottom.setOnClickListener(v -> scrollToLatest(true));
+        composer.setOnFocusChangeListener((view, focused) -> {
+            if (focused) ui.postDelayed(() -> scrollToLatest(false), 180);
+        });
+        composer.setOnClickListener(v -> ui.postDelayed(() -> scrollToLatest(false), 120));
         findViewById(R.id.open_chat).setOnClickListener(v -> openNewChat());
         myDevice.setOnClickListener(v -> copyDevice());
         myChatCode.setOnClickListener(v -> copyChatCode());
@@ -361,6 +389,7 @@ public final class MainActivity extends Activity implements Events.Listener {
         findViewById(R.id.channel_find).setOnClickListener(v -> askFindChannel());
         findViewById(R.id.channel_subscribe).setOnClickListener(v -> toggleSubscription());
         findViewById(R.id.channel_send).setOnClickListener(v -> publishPost());
+        findViewById(R.id.channel_close).setOnClickListener(v -> closeChannel());
         findViewById(R.id.nav_settings).setOnClickListener(v -> switchTab(screenSettings));
         findViewById(R.id.nav_profile).setOnClickListener(v -> switchTab(screenProfile));
         findViewById(R.id.username_back).setOnClickListener(v -> goBack());
@@ -471,8 +500,15 @@ public final class MainActivity extends Activity implements Events.Listener {
             startEventDelivery();
         } else if (ObsidianService.core().isOpen()) {
             startLocalPolling();
-            toast(getString(R.string.background_limited));
+            showBanner(getString(R.string.notifications_disabled_title),
+                    getString(R.string.notifications_disabled_hint), this::openNotificationSettings);
         }
+    }
+
+    private void openNotificationSettings() {
+        Intent settings = new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName());
+        startActivity(settings);
     }
 
     private void configureWindow() {
@@ -492,6 +528,9 @@ public final class MainActivity extends Activity implements Events.Listener {
             Insets ime = windowInsets.getInsets(WindowInsets.Type.ime());
             view.setPadding(dp(16), bars.top + dp(8), dp(16),
                     Math.max(bars.bottom, ime.bottom) + dp(8));
+            if (ime.bottom > 0 && screenConversation.getVisibility() == View.VISIBLE) {
+                ui.post(() -> scrollToLatest(false));
+            }
             return windowInsets;
         });
         root.requestApplyInsets();
@@ -601,6 +640,7 @@ public final class MainActivity extends Activity implements Events.Listener {
         // человек упрётся в пустоту: обращение к ядру асинхронное, и «дожать до
         // края и ждать» читается как зависание.
         messagesScroll.setOnScrollChangeListener((view, x, y, oldX, oldY) -> {
+            updateScrollToBottom(y);
             if (y >= oldY || currentPeer == null) return;
             String conversation = conversations.get(currentPeer);
             if (conversation != null && y < messagesScroll.getHeight()) loadOlder(conversation);
@@ -1322,7 +1362,7 @@ public final class MainActivity extends Activity implements Events.Listener {
                     JSONObject release = new JSONObject(bytes.toString("UTF-8")).getJSONObject("android");
                     String latest = release.getString("version");
                     String url = release.getString("url");
-                    if (compareVersions(latest, APP_VERSION) > 0) {
+                    if (compareVersions(latest, appVersion()) > 0) {
                         runOnUiThread(() -> new AlertDialog.Builder(this)
                                 .setTitle("Доступно обновление " + latest)
                                 .setMessage("Скачать новую Public Beta? Установка начнётся только после подтверждения Android.")
@@ -1338,6 +1378,23 @@ public final class MainActivity extends Activity implements Events.Listener {
                 if (connection != null) connection.disconnect();
             }
         }, "obsidian-update-check").start();
+    }
+
+    /**
+     * Версия сборки — из манифеста, а не второй копией в коде.
+     *
+     * Единственный её источник — `versionName` в build.gradle.kts: копия здесь
+     * уже расходилась с собранным APK, и проверка обновлений сравнивала номер
+     * релиза не с тем, что стоит у человека.
+     */
+    private String appVersion() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (PackageManager.NameNotFoundException impossible) {
+            // Собственный пакет всегда на месте; ноль просто не даст предложить
+            // обновление на основании мусора.
+            return "0.0.0";
+        }
     }
 
     private static int compareVersions(String left, String right) {
@@ -1730,8 +1787,16 @@ public final class MainActivity extends Activity implements Events.Listener {
         for (int i = 0; i < items.length(); i++) {
             JSONObject item = items.optJSONObject(i);
             if (item != null) {
-                conversations.put(item.optString("peer_device"), item.optString("conversation"));
+                String peer = item.optString("peer_device");
+                String conversation = item.optString("conversation");
+                conversations.put(peer, conversation);
                 if (profilesSupported) submit(Commands.profileGet(item.optString("peer_device")));
+                if (!conversation.isEmpty() && !previews.containsKey(peer)
+                        && previewRequests.add(conversation)) {
+                    // Последней записью может быть служебная отметка read.
+                    // Берём небольшой хвост и выбираем первое настоящее сообщение.
+                    submit(Commands.history(conversation, 8, null));
+                }
             }
         }
         renderPeers();
@@ -1749,12 +1814,16 @@ public final class MainActivity extends Activity implements Events.Listener {
         JSONObject content = parseContent(body);
         if ("read".equals(content.optString("type"))) {
             applyRead(content.optJSONArray("ids"));
-        } else if (peer.equals(currentPeer)) {
+            return;
+        }
+        boolean opened = peer.equals(currentPeer)
+                && screenConversation.getVisibility() == View.VISIBLE;
+        updatePreview(peer, body, false, event.optLong("server_ts"), !opened);
+        renderPeers();
+        if (opened) {
             addBubble(body, false);
             String id = content.optString("id");
             if (!id.isEmpty()) sendRead(peer, java.util.Collections.singleton(id));
-        } else {
-            toast(getString(R.string.new_message, shortHex(peer)));
         }
     }
 
@@ -1762,6 +1831,16 @@ public final class MainActivity extends Activity implements Events.Listener {
         String conversation = event.optString("conversation");
         if (TextUtils.isEmpty(conversation)) return;
         JSONArray items = event.optJSONArray("messages");
+
+        if (previewRequests.remove(conversation)) {
+            String peer = peerOf(conversation);
+            if (peer != null) {
+                ConversationPreview preview = previewFromHistory(items);
+                if (preview != null) previews.put(peer, preview);
+                renderPeers();
+            }
+            return;
+        }
 
         ChatPage entry = page(conversation);
         entry.loading = false;
@@ -2106,19 +2185,19 @@ public final class MainActivity extends Activity implements Events.Listener {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(dp(12), dp(10), dp(12), dp(10));
+            row.setPadding(dp(12), dp(10), dp(14), dp(10));
             row.setBackgroundResource(R.drawable.panel_glass);
             LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(66));
+                    LinearLayout.LayoutParams.MATCH_PARENT, dp(76));
             rowParams.bottomMargin = dp(8);
             row.setLayoutParams(rowParams);
 
             TextView avatar = new TextView(this);
             avatar.setGravity(Gravity.CENTER);
             avatar.setTextColor(Color.WHITE);
-            avatar.setBackgroundResource(R.drawable.input_glass);
-            avatar.setLayoutParams(new LinearLayout.LayoutParams(dp(44), dp(44)));
-            applyAvatar(avatar, profile, initials(peer));
+            avatar.setTextSize(17);
+            avatar.setLayoutParams(new LinearLayout.LayoutParams(dp(52), dp(52)));
+            applyAvatar(avatar, profile, initials(displayName(peer)));
 
             LinearLayout copy = new LinearLayout(this);
             copy.setOrientation(LinearLayout.VERTICAL);
@@ -2128,16 +2207,48 @@ public final class MainActivity extends Activity implements Events.Listener {
             TextView title = new TextView(this);
             title.setText(nameWithEmblem(peer));
             title.setTextColor(Color.WHITE);
-            title.setTextSize(15);
+            title.setTextSize(16);
+            title.setMaxLines(1);
+            title.setEllipsize(TextUtils.TruncateAt.END);
             TextView subtitle = new TextView(this);
-            subtitle.setText(profile != null && !profile.chatCode.isEmpty()
-                    ? profile.chatCode : shortHex(peer));
+            ConversationPreview preview = previews.get(peer);
+            subtitle.setText(previewText(preview));
             subtitle.setTextColor(getColor(R.color.obsidian_muted));
-            subtitle.setTextSize(11);
+            subtitle.setTextSize(12);
+            subtitle.setMaxLines(1);
+            subtitle.setEllipsize(TextUtils.TruncateAt.END);
             copy.addView(title);
             copy.addView(subtitle);
             row.addView(avatar);
             row.addView(copy);
+
+            LinearLayout meta = new LinearLayout(this);
+            meta.setOrientation(LinearLayout.VERTICAL);
+            meta.setGravity(Gravity.END);
+            TextView time = new TextView(this);
+            time.setText(previewTime(preview));
+            time.setTextColor(getColor(R.color.obsidian_dim));
+            time.setTextSize(10);
+            time.setGravity(Gravity.END);
+            meta.addView(time);
+            if (preview != null && preview.unread > 0) {
+                TextView badge = new TextView(this);
+                badge.setText(preview.unread > 99 ? "99+" : String.valueOf(preview.unread));
+                badge.setTextColor(Color.rgb(5, 5, 5));
+                badge.setTextSize(10);
+                badge.setGravity(Gravity.CENTER);
+                GradientDrawable dot = new GradientDrawable();
+                dot.setColor(accentColor());
+                dot.setCornerRadius(dp(99));
+                badge.setBackground(dot);
+                LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(
+                        Math.max(dp(22), dp(12 + badge.getText().length() * 6)), dp(22));
+                badgeParams.topMargin = dp(7);
+                badgeParams.gravity = Gravity.END;
+                badge.setLayoutParams(badgeParams);
+                meta.addView(badge);
+            }
+            row.addView(meta);
             row.setOnClickListener(v -> selectPeer(peer));
             contactList.addView(row);
         }
@@ -2152,6 +2263,8 @@ public final class MainActivity extends Activity implements Events.Listener {
         }
 
         currentPeer = peer;
+        ConversationPreview preview = previews.get(peer);
+        if (preview != null) preview.unread = 0;
         updateConversationHeader(peer);
         open(screenConversation);
 
@@ -2197,7 +2310,7 @@ public final class MainActivity extends Activity implements Events.Listener {
     private void updateConversationHeader(String peer) {
         Profile profile = profiles.get(peer);
         peerName.setText(nameWithEmblem(peer));
-        applyAvatar(peerAvatar, profile, initials(peer));
+        applyAvatar(peerAvatar, profile, initials(displayName(peer)));
     }
 
     private String displayName(String peer) {
@@ -2213,14 +2326,22 @@ public final class MainActivity extends Activity implements Events.Listener {
     }
 
     private String initials(String value) {
-        return value == null || value.length() < 2 ? "--" : value.substring(0, 2).toUpperCase(Locale.ROOT);
+        if (value == null) return "--";
+        String clean = value.replace("@", "").trim();
+        if (clean.isEmpty()) return "--";
+        String[] words = clean.split("\\s+");
+        if (words.length > 1) {
+            return (words[0].substring(0, 1) + words[1].substring(0, 1))
+                    .toUpperCase(Locale.ROOT);
+        }
+        return clean.substring(0, Math.min(2, clean.length())).toUpperCase(Locale.ROOT);
     }
 
     private void applyAvatar(TextView view, Profile profile, String fallback) {
         int tint = profile == null ? 0 : profileColor(profile.color);
         if (profile == null || profile.avatarBase64.isEmpty()) {
             view.setText(fallback);
-            view.setBackground(avatarPlaceholder(tint));
+            view.setBackground(avatarPlaceholder(tint, fallback));
             return;
         }
         try {
@@ -2230,7 +2351,7 @@ public final class MainActivity extends Activity implements Events.Listener {
             view.setBackground(roundedAvatar(bitmap));
         } catch (RuntimeException error) {
             view.setText(fallback);
-            view.setBackground(avatarPlaceholder(tint));
+            view.setBackground(avatarPlaceholder(tint, fallback));
         }
     }
 
@@ -2252,12 +2373,52 @@ public final class MainActivity extends Activity implements Events.Listener {
      * оказалась бы негодной. Подложка заметна при любом цвете.
      */
     private GradientDrawable avatarPlaceholder(int tint) {
+        return avatarPlaceholder(tint, "OB");
+    }
+
+    private void updateScrollToBottom(int scrollY) {
+        View content = messagesScroll.getChildAt(0);
+        if (content == null) return;
+        int remaining = content.getHeight() - messagesScroll.getHeight() - scrollY;
+        boolean show = remaining > dp(120);
+        if (show == (scrollToBottom.getVisibility() == View.VISIBLE)) return;
+        if (show) {
+            scrollToBottom.setVisibility(View.VISIBLE);
+            scrollToBottom.setAlpha(0f);
+            scrollToBottom.setTranslationX(dp(18));
+            scrollToBottom.animate().alpha(1f).translationX(0f).setDuration(160).start();
+        } else {
+            scrollToBottom.animate().alpha(0f).translationX(dp(18)).setDuration(130)
+                    .withEndAction(() -> scrollToBottom.setVisibility(View.GONE)).start();
+        }
+    }
+
+    private void scrollToLatest(boolean smooth) {
+        View content = messagesScroll.getChildAt(0);
+        if (content == null) return;
+        int bottom = Math.max(0, content.getHeight() - messagesScroll.getHeight());
+        if (smooth) messagesScroll.smoothScrollTo(0, bottom);
+        else messagesScroll.scrollTo(0, bottom);
+        scrollToBottom.setVisibility(View.GONE);
+    }
+
+    private GradientDrawable avatarPlaceholder(int tint, String seed) {
         boolean light = "light".equals(themeName());
-        int base = light ? Color.rgb(232, 232, 229) : Color.rgb(24, 24, 24);
-        int line = light ? Color.rgb(219, 219, 214) : Color.rgb(45, 45, 45);
+        int[][] palette = {
+                {Color.rgb(139, 111, 246), Color.rgb(94, 79, 219)},
+                {Color.rgb(255, 122, 84), Color.rgb(238, 74, 79)},
+                {Color.rgb(255, 185, 82), Color.rgb(255, 132, 61)},
+                {Color.rgb(80, 204, 171), Color.rgb(45, 153, 188)},
+                {Color.rgb(92, 142, 247), Color.rgb(114, 89, 222)},
+                {Color.rgb(230, 94, 177), Color.rgb(154, 81, 210)},
+        };
+        int index = Math.abs((seed == null ? 0 : seed.hashCode()) % palette.length);
+        int start = tint == 0 ? palette[index][0] : blend(tint, Color.WHITE, 0.78f);
+        int end = tint == 0 ? palette[index][1] : blend(tint, Color.BLACK, 0.78f);
         GradientDrawable shape = new GradientDrawable();
-        shape.setColor(tint == 0 ? base : blend(tint, base, 0.30f));
-        shape.setStroke(dp(1), tint == 0 ? line : blend(tint, line, 0.55f));
+        shape.setOrientation(GradientDrawable.Orientation.TL_BR);
+        shape.setColors(new int[]{start, end});
+        shape.setStroke(dp(1), light ? 0x22FFFFFF : 0x26FFFFFF);
         shape.setCornerRadius(avatarRadius());
         return shape;
     }
@@ -2311,6 +2472,9 @@ public final class MainActivity extends Activity implements Events.Listener {
                 .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f))
                 .start();
         messagesScroll.post(() -> messagesScroll.fullScroll(View.FOCUS_DOWN));
+        if (outgoing && currentPeer != null) {
+            updatePreview(currentPeer, body, true, System.currentTimeMillis(), false);
+        }
     }
 
     /**
@@ -3072,7 +3236,145 @@ public final class MainActivity extends Activity implements Events.Listener {
     }
 
     private void toast(String text) {
-        Toast.makeText(this, text, Toast.LENGTH_SHORT).show();
+        showBanner(null, text, null);
+    }
+
+    /** Своя нижняя плашка вместо системного Android Toast. */
+    private void showBanner(String title, String text, Runnable action) {
+        FrameLayout root = findViewById(R.id.app_root);
+        if (inAppBanner != null) root.removeView(inAppBanner);
+        if (dismissBanner != null) ui.removeCallbacks(dismissBanner);
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(10), dp(8), dp(12), dp(8));
+        GradientDrawable glass = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[]{Color.rgb(35, 35, 35), Color.rgb(20, 20, 20)});
+        glass.setCornerRadius(dp(16));
+        glass.setStroke(dp(1), blend(accentColor(), Color.TRANSPARENT, 0.45f));
+        card.setBackground(glass);
+        card.setElevation(dp(14));
+
+        TextView icon = new TextView(this);
+        boolean warning = text.toLowerCase(Locale.ROOT).matches(
+                ".*(ошиб|не удалось|недоступ|связ|подключ|сервер|огранич).*" );
+        icon.setText(warning ? "!" : "✓");
+        icon.setTextColor(warning ? getColor(R.color.obsidian_danger) : accentColor());
+        icon.setTextSize(14);
+        icon.setGravity(Gravity.CENTER);
+        GradientDrawable iconGlass = new GradientDrawable();
+        iconGlass.setColor(warning ? 0x1AF0736B : 0x1A75E0A7);
+        iconGlass.setCornerRadius(dp(99));
+        icon.setBackground(iconGlass);
+        card.addView(icon, new LinearLayout.LayoutParams(dp(28), dp(28)));
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        copyParams.leftMargin = dp(9);
+        copy.setLayoutParams(copyParams);
+        if (title != null && !title.isEmpty()) {
+            TextView heading = new TextView(this);
+            heading.setText(title);
+            heading.setTextColor(Color.WHITE);
+            heading.setTextSize(12);
+            heading.setMaxLines(1);
+            copy.addView(heading);
+        }
+        TextView message = new TextView(this);
+        message.setText(text);
+        message.setTextColor(title == null ? Color.WHITE : getColor(R.color.obsidian_muted));
+        message.setTextSize(title == null ? 12 : 11);
+        message.setMaxLines(1);
+        message.setEllipsize(TextUtils.TruncateAt.END);
+        copy.addView(message);
+        card.addView(copy);
+        if (action != null) card.setOnClickListener(v -> {
+            dismissBanner();
+            action.run();
+        });
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM);
+        params.setMargins(dp(32), 0, dp(32),
+                tabBar != null && tabBar.getVisibility() == View.VISIBLE ? dp(86) : dp(14));
+        root.addView(card, params);
+        inAppBanner = card;
+        card.setAlpha(0f);
+        card.setTranslationY(dp(24));
+        card.animate().alpha(1f).translationY(0f).setDuration(220).start();
+        dismissBanner = this::dismissBanner;
+        ui.postDelayed(dismissBanner, title == null ? 2600 : 4200);
+    }
+
+    private void dismissBanner() {
+        View banner = inAppBanner;
+        if (banner == null) return;
+        inAppBanner = null;
+        banner.animate().alpha(0f).translationY(dp(16)).setDuration(180)
+                .withEndAction(() -> {
+                    if (banner.getParent() instanceof ViewGroup) {
+                        ((ViewGroup) banner.getParent()).removeView(banner);
+                    }
+                }).start();
+    }
+
+    private void updatePreview(String peer, String body, boolean outgoing, long timestamp,
+            boolean unread) {
+        ConversationPreview old = previews.get(peer);
+        ConversationPreview next = new ConversationPreview(messagePreview(body), outgoing,
+                normalizeTimestamp(timestamp));
+        next.unread = old == null ? 0 : old.unread;
+        if (unread) next.unread++;
+        previews.put(peer, next);
+    }
+
+    private ConversationPreview previewFromHistory(JSONArray items) {
+        if (items == null) return null;
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item == null) continue;
+            JSONObject content = parseContent(item.optString("body"));
+            if ("read".equals(content.optString("type"))) continue;
+            return new ConversationPreview(messagePreview(item.optString("body")),
+                    item.optBoolean("outgoing"), normalizeTimestamp(item.optLong("created_at")));
+        }
+        return null;
+    }
+
+    private String previewText(ConversationPreview preview) {
+        if (preview == null) return getString(R.string.preview_empty);
+        return (preview.outgoing ? "Вы: " : "") + preview.text;
+    }
+
+    private String messagePreview(String body) {
+        JSONObject content = parseContent(body);
+        switch (content.optString("type")) {
+            case "image": return getString(R.string.preview_image);
+            case "voice": return getString(R.string.preview_voice);
+            default:
+                String text = content.optString("text").trim();
+                return text.isEmpty() ? getString(R.string.preview_message) : text;
+        }
+    }
+
+    private long normalizeTimestamp(long timestamp) {
+        return timestamp > 0 && timestamp < 1_000_000_000_000L ? timestamp * 1000L : timestamp;
+    }
+
+    private String previewTime(ConversationPreview preview) {
+        if (preview == null || preview.timestamp <= 0) return "";
+        Calendar now = Calendar.getInstance();
+        Calendar then = Calendar.getInstance();
+        then.setTimeInMillis(preview.timestamp);
+        boolean today = now.get(Calendar.YEAR) == then.get(Calendar.YEAR)
+                && now.get(Calendar.DAY_OF_YEAR) == then.get(Calendar.DAY_OF_YEAR);
+        return new SimpleDateFormat(today ? "HH:mm" : "dd.MM", Locale.getDefault())
+                .format(new Date(preview.timestamp));
     }
 
     /** Кладёт строку в буфер обмена и подтверждает это человеку. */
@@ -3997,7 +4299,7 @@ public final class MainActivity extends Activity implements Events.Listener {
         avatar.setGravity(Gravity.CENTER);
         avatar.setTextColor(Color.WHITE);
         avatar.setLayoutParams(new LinearLayout.LayoutParams(dp(44), dp(44)));
-        applyAvatar(avatar, profiles.get(device), initials(device));
+        applyAvatar(avatar, profiles.get(device), initials("@" + handle));
         row.addView(avatar);
 
         LinearLayout copy = new LinearLayout(this);
@@ -4193,6 +4495,7 @@ public final class MainActivity extends Activity implements Events.Listener {
                 + (owner ? " · " + getString(R.string.channel_yours) : ""));
         findViewById(R.id.channel_composer).setVisibility(owner ? View.VISIBLE : View.GONE);
 
+        findViewById(R.id.channel_close).setVisibility(owner ? View.VISIBLE : View.GONE);
         Button subscribe = findViewById(R.id.channel_subscribe);
         subscribe.setVisibility(owner ? View.GONE : View.VISIBLE);
         subscribe.setText(channel.optBoolean("subscribed")
@@ -4257,6 +4560,18 @@ public final class MainActivity extends Activity implements Events.Listener {
         return row;
     }
 
+    private void closeChannel() {
+        JSONObject channel = channels.get(openChannel);
+        if (channel == null) return;
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.channel_close)
+                .setMessage(R.string.channel_close_hint)
+                .setPositiveButton(R.string.channel_close,
+                        (dialog, which) -> submit(Commands.channelDelete(openChannel)))
+                .setNegativeButton(R.string.cancel, null)
+                .show();
+    }
+
     private void toggleSubscription() {
         JSONObject channel = channels.get(openChannel);
         if (channel == null) return;
@@ -4293,6 +4608,16 @@ public final class MainActivity extends Activity implements Events.Listener {
                 channels.put(found.optString("id"), found);
                 renderChannelList();
                 openChannelFeed(found.optString("id"), null);
+            }
+        }
+        String closed = report.optString("closed", "");
+        if (!closed.isEmpty()) {
+            channels.remove(closed);
+            renderChannelList();
+            if (closed.equals(openChannel)) {
+                openChannel = null;
+                toast(getString(R.string.channel_closed));
+                goBack();
             }
         }
         JSONObject opened = report.optJSONObject("opened");

@@ -206,6 +206,18 @@ export function handleMessage(deps: Deps, sock: Socket, conn: ConnData, msg: Uin
         requireAuth(conn);
         onChannelFind(deps, sock, conn, body);
         return;
+      case OP.CHANNEL_DELETE:
+        requireAuth(conn);
+        onChannelDelete(deps, sock, conn, body);
+        return;
+      case OP.CHANNEL_UPDATE:
+        requireAuth(conn);
+        onChannelUpdate(deps, sock, conn, body);
+        return;
+      case OP.CHANNEL_ADMIN:
+        requireAuth(conn);
+        onChannelAdmin(deps, sock, conn, body);
+        return;
       case OP.CHANNEL_DELETE_POST:
         requireAuth(conn);
         onChannelDeletePost(deps, sock, conn, body);
@@ -761,16 +773,36 @@ const MAX_ABOUT = 280;
 const MAX_POST = 4096;
 const FEED_PAGE = 30;
 
+/** Владелец и редакция пишут, остальные читают. */
+function mayPublish(deps: Deps, channel: { id: Uint8Array; owner: Uint8Array },
+  identity: Uint8Array): boolean {
+  return constantTimeEqual(channel.owner, identity)
+    || deps.store.isChannelAdmin(channel.id, identity);
+}
+
 function channelView(deps: Deps, row: { id: Uint8Array; owner: Uint8Array; handle: string;
-  title: string; about: string | null; created_at: number; updated_at: number },
+  title: string; about: string | null; icon_mime?: string | null; icon_base64?: string | null;
+  created_at: number; updated_at: number },
   identity: Uint8Array): Record<string, unknown> {
+  const owner = constantTimeEqual(row.owner, identity);
   return {
     id: toHex(row.id),
     handle: row.handle,
     title: row.title,
     about: row.about,
-    owner: constantTimeEqual(row.owner, identity),
+    iconMime: row.icon_mime ?? null,
+    iconBase64: row.icon_base64 ?? null,
+    owner,
+    // Роль важнее флага «владелец»: интерфейсу нужно знать, показывать ли
+    // поле ввода, а писать могут двое разных по правам людей.
+    role: owner ? "owner" : deps.store.isChannelAdmin(row.id, identity) ? "admin" : "reader",
     ownerCode: deps.store.ensureProfile(row.owner, deps.now()).chat_code,
+    // Состав редакции показываем только владельцу: читателю он не нужен, а
+    // список тех, кто ведёт канал, — это лишние связи между людьми.
+    admins: owner
+      ? deps.store.channelAdmins(row.id)
+        .map((admin) => deps.store.ensureProfile(admin, deps.now()).chat_code)
+      : undefined,
     subscribed: deps.store.isSubscribed(row.id, identity),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -834,9 +866,10 @@ function onChannelPublish(deps: Deps, sock: Socket, conn: ConnData, body: Uint8A
   if (!payload || typeof payload !== "object") throw new BadInput("post payload required");
   const channel = channelFrom(deps, sock, payload.channel);
   if (!channel) return;
-  if (!constantTimeEqual(channel.owner, conn.identity!)) {
-    // Писать в канал может только тот, кто его ведёт. Остальные читают.
-    sock.send(errorFrame("channel_not_owner", "only the owner posts here"), true);
+  if (!mayPublish(deps, channel, conn.identity!)) {
+    // Писать в канал может владелец и те, кого он позвал в редакцию.
+    // Остальные читают: это лента, а не переписка.
+    sock.send(errorFrame("channel_not_writer", "only the owner and admins post here"), true);
     return;
   }
   const text = String(payload.body ?? "").trim();
@@ -931,6 +964,129 @@ function onChannelDeletePost(deps: Deps, sock: Socket, conn: ConnData, body: Uin
   sock.send(jsonFrame(OP.CHANNEL_OK, {
     channel: toHex(channel.id),
     removed: removed ? payload.post : null,
+  }), true);
+}
+
+function onChannelDelete(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as { channel?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("channel required");
+  const channel = channelFrom(deps, sock, payload.channel);
+  if (!channel) return;
+  if (!constantTimeEqual(channel.owner, conn.identity!)) {
+    sock.send(errorFrame("channel_not_owner", "only the owner removes this channel"), true);
+    return;
+  }
+
+  // Читателям говорим до удаления: после — уже некому и не о чем. Владельца
+  // среди них нет: ему тем же опкодом уходит собственный ответ ниже.
+  const readers = deps.store.channelReaderDevices(channel.id, conn.identity!);
+  deps.store.deleteChannel(channel.id);
+  const gone = jsonFrame(OP.CHANNEL_OK, { closed: toHex(channel.id), handle: channel.handle });
+  for (const device of readers) deps.registry.deliver(toHex(device), gone);
+
+  sock.send(jsonFrame(OP.CHANNEL_OK, {
+    closed: toHex(channel.id),
+    channels: deps.store.channelsFor(conn.identity!)
+      .map((row) => channelView(deps, row, conn.identity!)),
+  }), true);
+}
+
+/**
+ * Правка канала владельцем: название, описание, значок.
+ *
+ * Имя канала (`handle`) не меняется: по нему построена ссылка, и переезд
+ * сломал бы её у всех, кто уже поделился. Заводится новый канал.
+ */
+function onChannelUpdate(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as {
+    channel?: unknown; title?: unknown; about?: unknown; icon?: unknown;
+  };
+  if (!payload || typeof payload !== "object") throw new BadInput("channel required");
+  const channel = channelFrom(deps, sock, payload.channel);
+  if (!channel) return;
+  if (!constantTimeEqual(channel.owner, conn.identity!)) {
+    sock.send(errorFrame("channel_not_owner", "only the owner edits this channel"), true);
+    return;
+  }
+
+  const patch: { title?: string; about?: string | null; icon?: { mime: string; base64: string } | null } = {};
+  if (payload.title !== undefined) {
+    const title = String(payload.title).trim();
+    if (title.length === 0 || title.length > MAX_TITLE) throw new BadInput("bad channel title");
+    patch.title = title;
+  }
+  if (payload.about !== undefined) {
+    patch.about = payload.about === null ? null : String(payload.about).trim().slice(0, MAX_ABOUT);
+  }
+  if (payload.icon !== undefined) {
+    if (payload.icon === null) {
+      patch.icon = null;
+    } else {
+      const icon = payload.icon as { mime?: unknown; base64?: unknown };
+      const mime = String(icon.mime ?? "");
+      const base64 = String(icon.base64 ?? "");
+      if (!AVATAR_MIMES.has(mime)) throw new BadInput("bad icon type");
+      let decoded: Uint8Array;
+      try {
+        decoded = Buffer.from(base64, "base64");
+      } catch {
+        throw new BadInput("bad icon");
+      }
+      if (decoded.byteLength === 0 || decoded.byteLength > MAX_AVATAR_BYTES) {
+        throw new BadInput("icon too large");
+      }
+      patch.icon = { mime, base64 };
+    }
+  }
+
+  deps.store.updateChannel(channel.id, patch, deps.now());
+  const updated = deps.store.channelById(channel.id)!;
+  // Читателям — новое состояние: у них в списке висит прежнее название.
+  const view = jsonFrame(OP.CHANNEL_OK, { updated: channelView(deps, updated, updated.owner) });
+  for (const device of deps.store.channelReaderDevices(channel.id, conn.identity!)) {
+    deps.registry.deliver(toHex(device), view);
+  }
+  sock.send(jsonFrame(OP.CHANNEL_OK, {
+    updated: channelView(deps, updated, conn.identity!),
+    channels: deps.store.channelsFor(conn.identity!)
+      .map((row) => channelView(deps, row, conn.identity!)),
+  }), true);
+}
+
+/**
+ * Редакция канала: кто ещё может писать.
+ *
+ * Состав меняет только владелец. Позванный получает право писать, но не
+ * править канал и не звать других: иначе «дать написать пост» незаметно
+ * означало бы «отдать канал».
+ */
+function onChannelAdmin(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as { channel?: unknown; who?: unknown; admin?: unknown };
+  if (!payload || typeof payload !== "object") throw new BadInput("channel required");
+  const channel = channelFrom(deps, sock, payload.channel);
+  if (!channel) return;
+  if (!constantTimeEqual(channel.owner, conn.identity!)) {
+    sock.send(errorFrame("channel_not_owner", "only the owner changes the writers"), true);
+    return;
+  }
+
+  const identity = deps.store.identityByReference(String(payload.who ?? "").trim());
+  if (!identity) {
+    sock.send(errorFrame("channel_no_such_user", "no such person"), true);
+    return;
+  }
+  if (constantTimeEqual(identity, channel.owner)) {
+    // Владелец и так пишет; строка в таблице только запутала бы список.
+    sock.send(errorFrame("channel_owner_writes", "the owner already writes here"), true);
+    return;
+  }
+
+  if (payload.admin === false) deps.store.removeChannelAdmin(channel.id, identity);
+  else deps.store.addChannelAdmin(channel.id, identity, deps.now());
+
+  const updated = deps.store.channelById(channel.id)!;
+  sock.send(jsonFrame(OP.CHANNEL_OK, {
+    updated: channelView(deps, updated, conn.identity!),
   }), true);
 }
 

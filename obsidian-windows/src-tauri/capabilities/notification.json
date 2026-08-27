@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "notification",
+  "description": "Разрешения карточки уведомления. Ей нужно только слушать событие со следующим сообщением: закрывается она собственной командой, а та в разрешениях не нуждается.",
+  "windows": [
+    "notification"
+  ],
+  "permissions": [
+    "core:event:default"
+  ]
+}

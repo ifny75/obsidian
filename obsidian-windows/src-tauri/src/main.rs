@@ -9,6 +9,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -21,8 +22,17 @@ use windows::Win32::Security::Cryptography::{
     CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
 };
 
+/// Не показывать консоль при запуске сторонней программы.
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 /// Канал, по которому события ядра доезжают до окна.
 const EVENT_CHANNEL: &str = "obsidian:event";
+
+/// Окно-карточка уведомления. Одно на все уведомления, см. `show_desktop_notification`.
+const NOTIFICATION_LABEL: &str = "notification";
+
+/// Канал, по которому карточке приезжает следующее уведомление.
+const NOTIFICATION_CHANNEL: &str = "obsidian:notification";
 
 #[derive(Default)]
 struct Core {
@@ -289,13 +299,176 @@ fn window_drag(window: tauri::Window) -> Result<(), String> {
     window.start_dragging().map_err(|err| err.to_string())
 }
 
+/// Отдельное always-on-top окно: уведомление видно поверх рабочего стола и
+/// других программ, даже когда главное окно Obsidian находится сзади.
+///
+/// Окно одно на все уведомления и переиспользуется: второе сообщение меняет
+/// содержимое уже открытой карточки, а не заводит рядом ещё одну. Так карточки
+/// не наползают друг на друга, а WebView2 создаётся один раз за сеанс.
+///
+/// **Команда обязана быть `async`.** Синхронную Tauri выполняет на главном
+/// потоке, а `build()` там встаёт намертво: он ждёт ответа от цикла сообщений,
+/// который сам же и держит. Окно при этом создаётся, но остаётся скрытым и
+/// никогда не показывается — проверено, выглядит как «уведомления молчат».
+#[tauri::command]
+async fn show_desktop_notification(app: AppHandle, payload: serde_json::Value) -> Result<(), String> {
+    let card = CardGeometry::from(&payload);
+
+    if let Some(window) = app.get_webview_window(NOTIFICATION_LABEL) {
+        // Размер и угол могли поменяться в настройках, пока карточка висела.
+        place_notification(&window, card)?;
+        return window
+            .emit_to(NOTIFICATION_LABEL, NOTIFICATION_CHANNEL, payload)
+            .map_err(|err| format!("не обновить уведомление: {err}"));
+    }
+
+    // Полезная нагрузка уезжает в окно скриптом инициализации, а не событием:
+    // событие пришлось бы ловить уже после загрузки страницы, и первая карточка
+    // успела бы мигнуть пустой.
+    let script = format!(
+        "window.__OBSIDIAN_NOTIFICATION__ = {};",
+        serde_json::to_string(&payload).map_err(|err| err.to_string())?
+    );
+    let window = tauri::WebviewWindowBuilder::new(
+        &app,
+        NOTIFICATION_LABEL,
+        tauri::WebviewUrl::App("notification.html".into()),
+    )
+    .title("Obsidian")
+    .inner_size(card.width, card.height)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(false)
+    // Карточка не забирает фокус: уведомление не должно перебивать набор текста
+    // в том окне, где человек сейчас работает.
+    .focused(false)
+    .visible(false)
+    .initialization_script(&script)
+    .build()
+    .map_err(|err| format!("не открыть уведомление: {err}"))?;
+
+    place_notification(&window, card)?;
+    window
+        .show()
+        .map_err(|err| format!("не показать уведомление: {err}"))
+}
+
+/// Закрывает карточку. Зовёт её же страница — после того как доиграет анимация
+/// ухода: закрывать окно из Rust по таймеру значило бы обрывать её на середине.
+#[tauri::command]
+async fn dismiss_desktop_notification(app: AppHandle) -> Result<(), String> {
+    match app.get_webview_window(NOTIFICATION_LABEL) {
+        Some(window) => window
+            .close()
+            .map_err(|err| format!("не закрыть уведомление: {err}")),
+        // Уже закрыто — например, вторым щелчком по крестику.
+        None => Ok(()),
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CardGeometry {
+    width: f64,
+    height: f64,
+    bottom: bool,
+}
+
+impl CardGeometry {
+    fn from(payload: &serde_json::Value) -> Self {
+        // Те же границы, что у ползунка в настройках.
+        let scale = payload
+            .get("size")
+            .and_then(|value| value.as_f64())
+            .unwrap_or(100.0)
+            .clamp(85.0, 130.0)
+            / 100.0;
+        Self {
+            width: 370.0 * scale,
+            // Высота строки беседы: аватар 41 плюс поля — карточка повторяет
+            // ту же плотность, что список бесед в приложении.
+            height: 96.0 * scale,
+            bottom: payload.get("position").and_then(|value| value.as_str()) == Some("bottom"),
+        }
+    }
+}
+
+/// Ставит карточку в угол рабочей области — то есть не под панель задач.
+fn place_notification(window: &tauri::WebviewWindow, card: CardGeometry) -> Result<(), String> {
+    window
+        .set_size(tauri::LogicalSize::new(card.width, card.height))
+        .map_err(|err| err.to_string())?;
+
+    let monitor = window
+        .primary_monitor()
+        .map_err(|err| err.to_string())?
+        .ok_or("не найден основной монитор")?;
+    let area = monitor.work_area();
+    let factor = monitor.scale_factor();
+
+    // Работаем в физических пикселях: work_area отдаётся в них, и переводить
+    // его в логические, чтобы тут же вернуть обратно, незачем.
+    let margin = (18.0 * factor).round() as i32;
+    let width = (card.width * factor).round() as i32;
+    let height = (card.height * factor).round() as i32;
+    let x = area.position.x + area.size.width as i32 - width - margin;
+    let y = if card.bottom {
+        area.position.y + area.size.height as i32 - height - margin
+    } else {
+        area.position.y + margin
+    };
+
+    window
+        .set_position(tauri::PhysicalPosition::new(x, y))
+        .map_err(|err| err.to_string())
+}
+
+/// Кладёт файл переноса аккаунта рядом с документами человека.
+///
+/// Содержимое приходит уже запечатанным: ядро отдало его строкой, и здесь оно
+/// только пишется на диск. Разбирать или проверять его тут нечем и незачем —
+/// граница доверия проходит по ядру.
+#[tauri::command]
+fn save_account_export(app: AppHandle, contents: String) -> Result<String, String> {
+    let folder = app
+        .path()
+        .document_dir()
+        .or_else(|_| app.path().home_dir())
+        .map_err(|err| format!("нет каталога для файла: {err}"))?;
+    std::fs::create_dir_all(&folder).map_err(|err| format!("не создать каталог: {err}"))?;
+
+    // Имя со временем: второй экспорт не должен молча затирать первый — по
+    // нему человек ещё может восстанавливаться.
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs())
+        .unwrap_or(0);
+    let path = folder.join(format!("obsidian-account-{stamp}.obsidian"));
+    std::fs::write(&path, contents).map_err(|err| format!("не записать файл: {err}"))?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Версия клиента. Единственный её источник — `version` в `Cargo.toml`: окно
+/// спрашивает номер здесь, а не хранит свою копию, иначе строка в настройках
+/// разъезжается с собранным бинарём — и обновление предлагается вечно.
+#[tauri::command]
+fn app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
 #[tauri::command]
 fn open_update(url: String) -> Result<(), String> {
     if !url.starts_with("https://getobsidian.xyz/downloads/") {
         return Err("недопустимый адрес обновления".into());
     }
+    // CREATE_NO_WINDOW: запуск чужой программы из оконного приложения иначе
+    // моргает консолью поверх всего. Уведомления от этого уже избавились —
+    // здесь та же причина.
     std::process::Command::new("rundll32.exe")
         .args(["url.dll,FileProtocolHandler", &url])
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map(|_| ())
         .map_err(|err| format!("не открыть загрузку: {err}"))
@@ -328,6 +501,10 @@ fn main() {
             window_toggle_maximize,
             window_close,
             window_drag,
+            show_desktop_notification,
+            dismiss_desktop_notification,
+            app_version,
+            save_account_export,
             open_update
         ])
         .run(tauri::generate_context!())

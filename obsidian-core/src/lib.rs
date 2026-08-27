@@ -15,6 +15,7 @@ pub mod directory;
 pub mod error;
 pub mod ffi;
 pub mod keys;
+pub mod migrate;
 pub mod mls;
 pub mod passphrase;
 pub mod privacy;

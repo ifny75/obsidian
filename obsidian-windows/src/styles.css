@@ -108,6 +108,49 @@ body[data-dividers="none"] .sidebar,body[data-dividers="none"] .chat-header,body
 @media(max-width:920px){.app-shell{grid-template-columns:275px 1fr}.sidebar-top{padding-left:12px;padding-right:12px}.message-list{padding-left:20px;padding-right:20px}.peer-copy b{max-width:38vw}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 
+/* Desktop polish: больше воздуха и читаемый масштаб на широких экранах. */
+.settings-body{grid-template-columns:220px minmax(0,760px);justify-content:center;gap:28px;padding-left:24px;padding-right:24px}
+.settings-content{width:100%;max-width:760px}
+.settings-header{height:54px}
+.settings-header h2{visibility:hidden}
+.titlebar-title{font-size:11.5px;white-space:nowrap}
+
+/* Вкладки в боковой панели работают как цельный переключатель на всю ширину. */
+.section-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;margin:10px 12px 8px;padding:3px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--surface) 72%,transparent)}
+.section-tabs button{justify-content:center;width:100%;height:31px;padding:0 5px;border:0;border-radius:9px;font-size:9px;letter-spacing:.045em;text-transform:none}
+.section-tabs button.active{border-color:transparent;background:var(--surface-2);box-shadow:0 1px 5px rgba(0,0,0,.24)}
+
+/* Значок и цвет собраны в один компактный блок с живым предпросмотром. */
+.decor-picker{display:grid;grid-template-columns:64px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--surface) 72%,transparent)}
+.profile-decor-preview{position:relative;width:58px;height:58px;display:grid;place-items:center;border:1px solid color-mix(in srgb,var(--decor-color,var(--muted)) 45%,var(--line));border-radius:18px;background:color-mix(in srgb,var(--decor-color,var(--surface-2)) 22%,var(--surface-2));font-size:14px;font-weight:700}
+.profile-decor-preview i{position:absolute;right:-4px;bottom:-4px;min-width:23px;height:23px;display:grid;place-items:center;padding:0 4px;border:3px solid var(--panel-solid);border-radius:50%;background:var(--decor-color,var(--surface-2));color:#fff;font-size:12px;font-style:normal}
+.profile-decor-preview i:empty{display:none}
+.decor-controls{gap:7px;min-width:0}.decor-label{display:block;margin:0 0 5px 2px;color:var(--faint);font-size:8.5px;text-transform:uppercase;letter-spacing:.08em}
+.decor-grid{display:grid;grid-template-columns:repeat(12,minmax(24px,1fr));gap:4px}
+.decor-grid button{width:100%;min-width:24px;height:27px;border-radius:7px;font-size:12px}
+.decor-grid button i{width:13px;height:13px}
+
+/* Кастомные уведомления о сообщениях. */
+.desktop-notifications{position:fixed;top:calc(var(--titlebar) + 16px);right:18px;z-index:80;display:flex;flex-direction:column;gap:9px;width:min(370px,calc(100vw - 36px));pointer-events:none}
+.desktop-notifications.bottom{top:auto;bottom:18px;flex-direction:column-reverse}
+.desktop-notification{--notification-accent:#70a8ff;position:relative;display:grid;grid-template-columns:52px minmax(0,1fr) 24px;align-items:center;gap:12px;min-height:88px;padding:13px 12px;border:1px solid color-mix(in srgb,var(--notification-accent) 22%,var(--line));border-radius:15px;background:color-mix(in srgb,var(--notification-bg,#141821) 94%,transparent);box-shadow:0 18px 52px rgba(0,0,0,.48);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);pointer-events:auto;transform-origin:top right;animation:desktop-notification-in .24s cubic-bezier(.2,.85,.25,1) both}
+.desktop-notification.leaving{animation:desktop-notification-out .18s ease both}
+.desktop-notification-avatar{width:52px;height:52px;display:grid;place-items:center;border-radius:50%;border:1px solid color-mix(in srgb,var(--notification-accent) 38%,white 8%);background:linear-gradient(145deg,color-mix(in srgb,var(--notification-accent) 82%,white),color-mix(in srgb,var(--notification-accent) 72%,#292044));color:#fff;font-size:18px;font-weight:600;background-position:center;background-size:cover}
+.desktop-notification-copy{min-width:0}.desktop-notification-copy b,.desktop-notification-copy span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.desktop-notification-copy b{font-size:13px}.desktop-notification-copy span{margin-top:4px;color:color-mix(in srgb,var(--notification-accent) 78%,white);font-size:11.5px}
+.desktop-notification-close{width:24px;height:24px;padding:0;border:0;border-radius:7px;background:transparent;color:#7e8795;font-size:20px;line-height:1}.desktop-notification-close:hover{background:rgba(255,255,255,.06);color:#fff}
+@keyframes desktop-notification-in{from{opacity:0;transform:translateX(24px) scale(.96)}}
+@keyframes desktop-notification-out{to{opacity:0;transform:translateX(20px) scale(.97)}}
+/* Предпросмотр обязан совпадать с настоящей карточкой (notification.css):
+   те же токены, полоска акцента слева, без обводки. Свои цвета он показывал
+   карточку, которой давно нет. */
+.notification-preview{position:relative;display:grid;grid-template-columns:41px minmax(0,1fr);align-items:center;gap:11px;margin:12px 0 10px;padding:12px 12px 12px 16px;overflow:hidden;border-radius:calc(var(--radius) + 5px);background:var(--panel-solid);box-shadow:0 2px 10px rgba(0,0,0,.34),0 18px 48px rgba(0,0,0,.42)}
+.notification-preview::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
+.notification-preview-avatar{width:41px;height:41px;display:grid;place-items:center;border-radius:50%;background:var(--surface-2);color:var(--text);font-size:11px;font-weight:600}.notification-preview b,.notification-preview small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.notification-preview b{font-size:12.5px;font-weight:600}.notification-preview small{margin-top:3px;color:var(--muted);font-size:10.5px}
+body.square-avatars .notification-preview-avatar{border-radius:10px}
+.notification-colors{display:flex;gap:8px;margin-top:10px}.notification-colors button{width:31px;height:31px;padding:0;border:4px solid var(--panel-solid);outline:1px solid var(--line);border-radius:10px;background:#141821}.notification-colors button:nth-child(2){background:#261d3b}.notification-colors button:nth-child(3){background:#15243c}.notification-colors button:nth-child(4){background:#15322b}.notification-colors button.active{outline:2px solid var(--accent)}
+
+@media(max-width:980px){.settings-body{grid-template-columns:180px minmax(0,1fr);gap:16px}.decor-grid{grid-template-columns:repeat(6,minmax(26px,1fr))}}
+
 /* --- восстановление и голосовые ---------------------------------------------- */
 .link-button{width:100%;margin-top:11px;padding:6px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:11px;text-decoration:underline;text-underline-offset:3px}
 .link-button:hover{color:var(--text)}
@@ -316,12 +359,11 @@ body[data-wallpaper="rays"]{--wallpaper-image:
 }
 @media(max-height:680px){
   .sidebar-top{padding-top:10px;padding-bottom:6px}
-  .search-field,.new-chat-form{height:36px;margin-top:8px}
+  .omni-field{height:36px;margin-top:8px}
   .section-tabs{padding-top:6px}
   .conversation-button{padding-top:5px;padding-bottom:5px}
   .conversation-avatar{width:34px;height:34px}
   .sidebar-bottom{padding:5px 8px}
-  .settings-header{height:52px}
   .settings-body{padding-bottom:14px}
   .settings-nav,.settings-content{padding-top:14px}
 }
@@ -330,9 +372,6 @@ body[data-wallpaper="rays"]{--wallpaper-image:
 .chat-panel::before{transition:opacity .25s ease}
 
 /* Группы и каналы: та же строка списка, но со своей меткой. */
-.group-create{width:100%;height:34px;margin-top:7px;border:1px solid var(--line);border-radius:var(--radius);
-  background:transparent;color:var(--muted);font-size:11px;transition:background .16s,color .16s,border-color .16s}
-.group-create:hover{background:var(--surface);color:var(--text);border-color:var(--line-strong)}
 .conversation-avatar.group{border-radius:11px;font-size:12px}
 .kind-tag{margin-left:6px;padding:1px 5px;border:1px solid var(--line);border-radius:5px;
   color:var(--muted);font-size:8.5px;vertical-align:middle}
@@ -649,3 +688,67 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
 .entry-explainer li b{color:var(--text);font-weight:600}
 .entry-explainer p{color:var(--muted);font-size:11px;line-height:1.6}
 .entry-explainer a{color:var(--text);text-decoration:underline;text-underline-offset:3px}
+
+/* --- ПК-интерфейс: одно поле, «+», аватары как на телефоне ------------------ */
+
+.brand-actions{display:flex;align-items:center;gap:4px;flex:none}
+/* Плюс — тот же крест, повёрнутый на 45°: отдельного файла для этого не нужно. */
+.icon-plus{--icon:url("assets/svg/cross.svg");transform:rotate(45deg)}
+
+/* Одно поле вместо двух: пока в нём просто текст — оно фильтрует список,
+   как только текст похож на адрес, код или @имя — справа появляется кнопка
+   «начать диалог». Два поля рядом заставляли выбирать, в какое печатать. */
+.omni-field{display:flex;align-items:center;gap:9px;height:41px;margin-top:13px;padding:0 4px 0 11px;
+  border:1px solid var(--line);border-radius:var(--radius);background:rgba(255,255,255,.025);
+  transition:border-color .16s,box-shadow .16s}
+.omni-field:focus-within{border-color:color-mix(in srgb,var(--accent) 62%,var(--line));
+  box-shadow:0 0 0 2px var(--bg),0 0 0 4px color-mix(in srgb,var(--accent) 55%,transparent)}
+.omni-field>.ui-icon{width:15px;height:15px;flex:none;color:var(--faint)}
+.omni-field input{width:100%;min-width:0;height:100%;padding:0;border:0;outline:0;
+  background:transparent;box-shadow:none!important;font-size:11.5px}
+.omni-field .icon-button{width:33px;height:33px;flex:none}
+
+/* Аватар-подложка: тот же градиент, что в мобильном клиенте, и тот же выбор
+   цвета по имени — один человек выглядит одинаково на телефоне и на ПК. */
+.conversation-avatar,.peer-avatar,.profile-avatar,.preview-avatar,.profile-avatar-large{
+  border:0;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.28)}
+.conversation-avatar.has-avatar,.peer-avatar.has-avatar,.profile-avatar.has-avatar{color:transparent}
+
+/* Значок и цвет: сетка подстраивается под ширину колонки, кнопки квадратные.
+   Фиксированные 12 колонок в узкой колонке настроек складывались в две
+   растянутые полосы — ровно то, что видно на снимке. */
+/* Значок и цвет: строка занимает всю ширину карточки, а не половину.
+   В двухколоночной строке настроек на picker оставалось ~180px, значки
+   складывались в две растянутые полосы — то, что на снимке выглядит кривым.
+   Сама сетка значков осталась прежней: 32px, flex-wrap. */
+.decor-row{grid-template-columns:minmax(0,1fr);align-items:stretch}
+.decor-row>span{margin-bottom:4px}
+.decor-picker{align-items:start}
+
+/* Настройки без верхней полосы: крест лежит поверх содержимого, полоса с
+   блюром отнимала высоту и ничего не сообщала — заголовок и так есть в теле. */
+.settings-close{position:absolute;top:14px;left:14px;z-index:3;width:40px;height:40px;padding:0;
+  display:grid;place-items:center;border:0;border-radius:12px;background:transparent;color:var(--muted);
+  transition:background .16s,color .16s}
+.settings-close:hover{background:var(--surface);color:var(--text)}
+.settings-close:active{transform:scale(.96)}
+.settings-close .ui-icon{width:15px;height:15px}
+.settings-body{padding-top:8px}
+
+/* --- Канал: значок, роли, редакция ----------------------------------------- */
+
+.channel-head{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:12px}
+.channel-head-copy{min-width:0}
+.channel-icon{width:44px;height:44px;display:grid;place-items:center;flex:none;
+  border-radius:14px;background-position:center;background-size:cover;
+  color:#fff;font-size:13px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.28)}
+.channel-icon.has-avatar{color:transparent}
+.channel-role{margin-left:6px;padding:1px 6px;border:1px solid var(--line);border-radius:5px;
+  color:var(--muted);font-size:8.5px;text-transform:uppercase;letter-spacing:.06em}
+.channel-admins{margin:10px 0 0;padding:0;list-style:none}
+.channel-admins li{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:7px 0;border-top:1px solid var(--line);font-size:11px}
+.channel-admins li:first-child{border-top:0}
+.channel-admins button{padding:4px 8px;border:1px solid var(--line);border-radius:8px;
+  background:transparent;color:var(--danger);font-size:10px}
+.channel-empty-admins{margin:10px 0 0;color:var(--faint);font-size:10.5px}

@@ -38,3 +38,7 @@ obsidian-site/
 *.db-shm
 *.tar.gz
 deploy/migration-backup/
+
+# Снимки экрана из ручных проверок: отладочный мусор, а не исходники.
+artifacts-*.png
+deploy/qa-current/

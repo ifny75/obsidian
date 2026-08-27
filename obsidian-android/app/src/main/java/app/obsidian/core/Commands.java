@@ -295,6 +295,12 @@ public final class Commands {
         return out.append('}').toString();
     }
 
+    public static String channelDelete(String channel) {
+        StringBuilder out = new StringBuilder("{\"type\":\"channel_delete\",\"channel\":");
+        quote(out, channel);
+        return out.append('}').toString();
+    }
+
     // --- панель владельца -------------------------------------------------------
 
     /** {@code offset} — с какого места списка продолжать. */

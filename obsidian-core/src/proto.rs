@@ -63,6 +63,9 @@ pub mod op {
     pub const CHANNEL_SUB: u8 = 0x38;
     pub const CHANNEL_FIND: u8 = 0x39;
     pub const CHANNEL_DELETE_POST: u8 = 0x3a;
+    pub const CHANNEL_DELETE: u8 = 0x3b;
+    pub const CHANNEL_UPDATE: u8 = 0x3c;
+    pub const CHANNEL_ADMIN: u8 = 0x3d;
 }
 
 #[derive(Debug, Deserialize)]

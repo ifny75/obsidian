@@ -158,6 +158,31 @@ fn handle_local(command: &Command, store: &Store, sink: &EventSink) -> bool {
             Err(_) => fail(sink, "no_identity", "личности в этой базе ещё нет"),
         },
 
+        Command::AccountExport { password } => {
+            let built = store
+                .export_archive()
+                .and_then(|archive| {
+                    let count = archive.messages.len() as u64;
+                    crate::migrate::seal(&password, &archive).map(|file| (file, count))
+                });
+            match built {
+                Ok((file, messages)) => sink(Event::AccountExported {
+                    data: hex::encode(file),
+                    messages,
+                }),
+                Err(err) => fail(sink, "account_export", &err.to_string()),
+            }
+        }
+        Command::AccountImport { password, data } => {
+            let restored = hex::decode(&data)
+                .map_err(|_| CoreError::BadFrame)
+                .and_then(|file| crate::migrate::open(&password, &file))
+                .and_then(|archive| store.import_archive(&archive));
+            match restored {
+                Ok(messages) => sink(Event::AccountImported { messages: messages as u64 }),
+                Err(err) => fail(sink, "account_import", &err.to_string()),
+            }
+        }
         Command::Storage => match store.counts() {
             Ok((conversations, messages)) => sink(Event::Storage {
                 database_bytes: store.footprint(),
@@ -336,6 +361,9 @@ async fn run(mut commands: mpsc::UnboundedReceiver<Command>, store: Store, sink:
             | Command::ChannelSubscribe { .. }
             | Command::ChannelFind { .. }
             | Command::ChannelDeletePost { .. }
+            | Command::ChannelDelete { .. }
+            | Command::ChannelUpdate { .. }
+            | Command::ChannelAdmin { .. }
             | Command::AdminAction { .. }
             | Command::RecoverySetup { .. }
             | Command::DeleteMessage { .. }
@@ -1603,6 +1631,31 @@ async fn pump(
                     Command::ChannelDeletePost { channel, post } => {
                         send(&mut socket, proto::channel_frame(op::CHANNEL_DELETE_POST,
                             &serde_json::json!({ "channel": channel, "post": post }))?).await?;
+                    }
+                    Command::ChannelDelete { channel } => {
+                        send(&mut socket, proto::channel_frame(op::CHANNEL_DELETE,
+                            &serde_json::json!({ "channel": channel }))?).await?;
+                    }
+                    Command::ChannelUpdate { channel, title, about, icon } => {
+                        // Только тронутые поля: сервер отличает «не менять» от
+                        // «очистить» по наличию ключа, а не по пустому значению.
+                        let mut payload = serde_json::Map::new();
+                        payload.insert("channel".into(), channel.into());
+                        if let Some(title) = title {
+                            payload.insert("title".into(), title.into());
+                        }
+                        if let Some(about) = about {
+                            payload.insert("about".into(), about.into());
+                        }
+                        if let Some(icon) = icon {
+                            payload.insert("icon".into(), icon);
+                        }
+                        send(&mut socket, proto::channel_frame(op::CHANNEL_UPDATE,
+                            &serde_json::Value::Object(payload))?).await?;
+                    }
+                    Command::ChannelAdmin { channel, who, admin } => {
+                        send(&mut socket, proto::channel_frame(op::CHANNEL_ADMIN,
+                            &serde_json::json!({ "channel": channel, "who": who, "admin": admin }))?).await?;
                     }
                     Command::AdminGet { offset } => {
                         send(&mut socket, proto::admin_get_frame(offset)?).await?;
