@@ -9,9 +9,11 @@ User=obsidian-site
 Group=obsidian-site
 WorkingDirectory=/opt/obsidian-site
 Environment=PATH=/opt/node-24/bin:/usr/bin:/bin
-Environment=HOST=127.0.0.1
 Environment=PORT=3000
-ExecStart=/opt/node-24/bin/npm run start -- --host 127.0.0.1
+# Именно --hostname: у vinext флаг называется так, а --host он молча
+# игнорирует и слушает 0.0.0.0. Переменную HOST он не читает вовсе.
+# Наружу сайт отдаёт только cloudflared, снаружи порт открывать нечему.
+ExecStart=/opt/node-24/bin/npm run start -- --hostname 127.0.0.1
 Restart=always
 RestartSec=5
 

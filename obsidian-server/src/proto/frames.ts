@@ -191,4 +191,6 @@ export const CLOSE = {
   PROTOCOL: 1002,
   POLICY: 1008,
   TOO_BIG: 1009,
+  /** Сервер перегружен этим адресом — 1013 «try again later». */
+  BUSY: 1013,
 } as const;

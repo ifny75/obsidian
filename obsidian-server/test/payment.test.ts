@@ -19,6 +19,7 @@ import { NonceStore } from "../src/auth/nonce.ts";
 import { SessionStore } from "../src/auth/sessions.ts";
 import { Registry, type Socket } from "../src/ws/registry.ts";
 import { RateLimiter } from "../src/util/ratelimit.ts";
+import { ConnectionCounter } from "../src/util/connections.ts";
 import { authMessage, deviceCertMessage } from "../src/auth/verify.ts";
 import { fromHex, random, toHex } from "../src/util/bytes.ts";
 import type { ChainScan, ChainSource, ChainTransfer } from "../src/ton/source.ts";
@@ -100,6 +101,7 @@ function makeDeps(store: Store): Deps {
     searchLimiter: new RateLimiter(1000, 3_600_000),
     sendLimiter: new RateLimiter(1000, 60_000),
     postLimiter: new RateLimiter(1000, 60_000),
+    connections: new ConnectionCounter(),
     now: () => Date.now(),
   };
 }

@@ -9,8 +9,9 @@ import { NonceStore } from "../src/auth/nonce.ts";
 import { SessionStore } from "../src/auth/sessions.ts";
 import { Registry, type Socket } from "../src/ws/registry.ts";
 import { RateLimiter } from "../src/util/ratelimit.ts";
+import { ConnectionCounter } from "../src/util/connections.ts";
 import { authMessage, deviceCertMessage, verify } from "../src/auth/verify.ts";
-import { handleMessage, handleOpen, newConnData, type ConnData, type Deps } from "../src/ws/session.ts";
+import { handleClose, handleMessage, handleOpen, newConnData, type ConnData, type Deps } from "../src/ws/session.ts";
 import { ID_LEN, KEY_LEN, OP, frame, jsonFrame } from "../src/proto/frames.ts";
 import { ascii, concat, fromHex, random, toHex } from "../src/util/bytes.ts";
 
@@ -81,6 +82,7 @@ function makeDeps(store: Store): Deps {
     searchLimiter: new RateLimiter(1000, 3_600_000),
     sendLimiter: new RateLimiter(1000, 60_000),
     postLimiter: new RateLimiter(1000, 60_000),
+    connections: new ConnectionCounter(),
     now: () => Date.now(),
   };
 }
@@ -248,6 +250,41 @@ test("доставка онлайн: SEND_OK отправителю, ENVELOPE п
   assert.equal(store.countPending(bob.devPub, Date.now()), 1);
   handleMessage(deps, b.sock, b.conn, frame(OP.ACK, envelopeId));
   assert.equal(store.countPending(bob.devPub, Date.now()), 0);
+  store.close();
+});
+
+test("перебор соединений с одного адреса упирается в потолок", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  const limit = config.maxConnectionsPerIp;
+
+  const held = [];
+  for (let i = 0; i < limit; i += 1) {
+    const sock = new FakeSocket();
+    const conn = newConnData("198.51.100.4");
+    handleOpen(deps, sock, conn);
+    assert.equal(sock.closed, null, `соединение ${i} обязано открыться`);
+    assert.ok(sock.has(OP.HELLO));
+    held.push({ sock, conn });
+  }
+
+  const extra = new FakeSocket();
+  const extraConn = newConnData("198.51.100.4");
+  handleOpen(deps, extra, extraConn);
+  assert.equal(extra.closed?.code, 1013);
+  // HELLO лишнему не отдаём: перебирающему не нужен ответ, ему нужен наш сокет.
+  assert.ok(!extra.has(OP.HELLO));
+
+  // Другой адрес не задет: потолок на адрес, а не на сервер.
+  const other = new FakeSocket();
+  handleOpen(deps, other, newConnData("203.0.113.9"));
+  assert.equal(other.closed, null);
+
+  // Освободили один — место снова есть.
+  handleClose(deps, held[0]!.sock, held[0]!.conn);
+  const again = new FakeSocket();
+  handleOpen(deps, again, newConnData("198.51.100.4"));
+  assert.equal(again.closed, null);
   store.close();
 });
 

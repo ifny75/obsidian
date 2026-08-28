@@ -6,6 +6,7 @@ import type { NonceStore } from "../auth/nonce.ts";
 import type { SessionStore } from "../auth/sessions.ts";
 import { authMessage, deviceCertMessage, verify } from "../auth/verify.ts";
 import type { RateLimiter } from "../util/ratelimit.ts";
+import type { ConnectionCounter } from "../util/connections.ts";
 import { BadInput, ascii, concat, constantTimeEqual, fromHex, random, toHex } from "../util/bytes.ts";
 import {
   CLOSE,
@@ -47,6 +48,7 @@ export interface Deps {
   searchLimiter: RateLimiter;
   sendLimiter: RateLimiter;
   postLimiter: RateLimiter;
+  connections: ConnectionCounter;
   now: () => number;
 }
 
@@ -69,6 +71,8 @@ export interface ConnData {
    * отсутствия которой всё и затевалось.
    */
   admitted: Set<string>;
+  /** Учтён ли этот сокет в счётчике адреса. Снимается ровно один раз. */
+  counted: boolean;
 }
 
 export function newConnData(ip: string): ConnData {
@@ -82,10 +86,23 @@ export function newConnData(ip: string): ConnData {
     token: null,
     paymentRef: null,
     admitted: new Set(),
+    counted: false,
   };
 }
 
 export function handleOpen(deps: Deps, sock: Socket, conn: ConnData): void {
+  // Считаем до HELLO: перебирающему не нужен даже ответ, ему нужен наш сокет.
+  //
+  // Сначала проверка, потом учёт: отвергнутый сокет учитывать нельзя. Он к нам
+  // не подключился, а `counted` у него остаётся снятым — и позже, когда uWS
+  // позовёт close на им же закрытое соединение, из счётчика не вычтется чужое.
+  if (deps.connections.count(conn.ip) >= config.maxConnectionsPerIp) {
+    sock.end(CLOSE.BUSY, "too many connections");
+    return;
+  }
+  deps.connections.add(conn.ip);
+  conn.counted = true;
+
   const now = deps.now();
   conn.nonce = deps.nonces.issue(now);
   sock.send(
@@ -104,6 +121,12 @@ export function handleOpen(deps: Deps, sock: Socket, conn: ConnData): void {
 }
 
 export function handleClose(deps: Deps, sock: Socket, conn: ConnData): void {
+  // Только если этот сокет действительно был учтён: close приходит и на те,
+  // что мы закрыли сами, и вычесть их дважды значило бы уйти в минус.
+  if (conn.counted) {
+    conn.counted = false;
+    deps.connections.remove(conn.ip);
+  }
   if (conn.devicePubHex) deps.registry.remove(conn.devicePubHex, sock);
   if (conn.paymentRef) deps.registry.unwatchPayment(conn.paymentRef, sock);
   if (conn.token) deps.sessions.revoke(conn.token);

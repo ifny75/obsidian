@@ -13,6 +13,12 @@ function str(name: string, fallback: string): string {
   return raw === undefined || raw === "" ? fallback : raw;
 }
 
+function list(name: string, fallback: string[]): string[] {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  return raw.split(",").map((item) => item.trim()).filter((item) => item !== "");
+}
+
 function bool(name: string, fallback: boolean): boolean {
   const raw = process.env[name];
   if (raw === undefined || raw === "") return fallback;
@@ -68,6 +74,23 @@ export const config = {
    * невелик, и без ограничителя его перебрали бы целиком за вечер.
    */
   maxSearchPerMinute: num("OBSIDIAN_MAX_SEARCH_PER_MIN", 20),
+  /**
+   * Одновременных сокетов с одного адреса.
+   *
+   * 32 — с запасом на общий NAT: за одним адресом живёт целая квартира, общежитие
+   * или офис, и резать их до единиц значит выключить мессенджер честным людям.
+   * От перебора это всё равно защищает: тысячу висящих сокетов с одной машины
+   * больше не открыть.
+   */
+  maxConnectionsPerIp: num("OBSIDIAN_MAX_CONNECTIONS_PER_IP", 32),
+  /**
+   * Доверять ли `CF-Connecting-IP`.
+   *
+   * Заголовок ставит Cloudflare, и подделать его может кто угодно, кто дотянется
+   * до сервера мимо туннеля. Поэтому он принимается только от петли: cloudflared
+   * ходит с localhost. Появится другой обратный прокси — его адрес сюда.
+   */
+  trustedProxies: list("OBSIDIAN_TRUSTED_PROXIES", ["127.0.0.1", "::1", "::ffff:127.0.0.1"]),
 
   /**
    * Отправка. До этого «сколько угодно и как быстро угодно» было единственной

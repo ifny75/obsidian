@@ -6,6 +6,7 @@ import { Store } from "./db/index.ts";
 import { NonceStore } from "./auth/nonce.ts";
 import { SessionStore } from "./auth/sessions.ts";
 import { RateLimiter } from "./util/ratelimit.ts";
+import { ConnectionCounter, clientAddress } from "./util/connections.ts";
 import { Registry, type Socket } from "./ws/registry.ts";
 import {
   handleClose,
@@ -27,11 +28,12 @@ const recoveryLimiter = new RateLimiter(config.maxRecoveryPerHour, 3_600_000);
 const searchLimiter = new RateLimiter(config.maxSearchPerMinute, 60_000);
 const sendLimiter = new RateLimiter(config.maxSendPerMinute, 60_000);
 const postLimiter = new RateLimiter(config.maxPostsPerMinute, 60_000);
+const connections = new ConnectionCounter();
 const now = () => Date.now();
 
 const deps: Deps = {
   store, nonces, sessions, registry,
-  authLimiter, recoveryLimiter, searchLimiter, sendLimiter, postLimiter, now,
+  authLimiter, recoveryLimiter, searchLimiter, sendLimiter, postLimiter, connections, now,
 };
 
 const app = uWS.App();
@@ -48,11 +50,22 @@ app.ws<ConnData>("/ws", {
     const key = req.getHeader("sec-websocket-key");
     const protocol = req.getHeader("sec-websocket-protocol");
     const extensions = req.getHeader("sec-websocket-extensions");
-    // За Cloudflare Tunnel настоящий адрес приходит заголовком. Используется
-    // только для счётчика в памяти и никуда не пишется.
-    const ip =
-      req.getHeader("cf-connecting-ip") ||
-      Buffer.from(res.getRemoteAddressAsText()).toString("utf8");
+    /*
+      За Cloudflare Tunnel настоящий адрес приходит заголовком. Используется
+      только для счётчиков в памяти и никуда не пишется.
+
+      Заголовку верим не всегда: поставить `CF-Connecting-IP` может кто угодно,
+      кто дотянулся до сервера мимо туннеля, и тогда он назначает себе любой
+      адрес — а все ограничители по IP превращаются в украшение. Верим только
+      тому, кто пришёл с петли: cloudflared ходит именно оттуда. Кто пришёл
+      иначе — учитывается по своему настоящему адресу, что бы он о себе ни
+      написал.
+    */
+    const ip = clientAddress(
+      Buffer.from(res.getRemoteAddressAsText()).toString("utf8"),
+      req.getHeader("cf-connecting-ip"),
+      config.trustedProxies,
+    );
     res.upgrade<ConnData>(newConnData(ip), key, protocol, extensions, context);
   },
 
@@ -142,7 +155,7 @@ const cleanup = setInterval(() => {
   searchLimiter.sweep(ts);
   sendLimiter.sweep(ts);
   postLimiter.sweep(ts);
-  log.info("sweep", { ...swept, online: registry.onlineDevices });
+  log.info("sweep", { ...swept, online: registry.onlineDevices, addresses: connections.addresses });
 }, config.cleanupIntervalSec * 1000);
 cleanup.unref();
 
