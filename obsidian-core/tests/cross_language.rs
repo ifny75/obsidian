@@ -320,7 +320,13 @@ fn a_password_restores_identity_and_the_server_never_sees_the_key() {
     let identity = extract(&registered, "identity").unwrap();
     let old_device = extract(&registered, "device").unwrap();
 
-    old.submit(Command::RecoverySetup { login: LOGIN.into(), password: PASSWORD.into() }).unwrap();
+    old.submit(Command::RecoverySetup {
+        login: LOGIN.into(),
+        password: PASSWORD.into(),
+        totp: None,
+        code: None,
+    })
+    .unwrap();
     wait_for(&events, "recovery_saved").expect("сервер не принял посылку");
 
     // --- Сервер хранит шифротекст: identity-ключа в его базе нет ни в каком виде.
@@ -345,6 +351,7 @@ fn a_password_restores_identity_and_the_server_never_sees_the_key() {
             url: url.clone(),
             login: "  ALICE  ".into(), // регистр и пробелы не должны решать
             password: PASSWORD.into(),
+            code: None,
         })
         .unwrap();
     wait_for(&fresh_events, "authenticated").expect("сервер не принял восстановленное устройство");
@@ -369,6 +376,7 @@ fn a_password_restores_identity_and_the_server_never_sees_the_key() {
             url: url.clone(),
             login: LOGIN.into(),
             password: "совершенно другой пароль".into(),
+            code: None,
         })
         .unwrap();
     let refusal = wait_for(&wrong_events, "recovery_not_found").expect("неверный пароль прошёл");
@@ -379,9 +387,10 @@ fn a_password_restores_identity_and_the_server_never_sees_the_key() {
     let (miss_sink, miss_events) = event_sink("чужой логин");
     let miss = Engine::start(path(&workdir, "miss.db"), b"pw".to_vec(), miss_sink).expect("core");
     miss.submit(Command::RecoverPassword {
-        url,
+        url: url.clone(),
         login: "nobody".into(),
         password: PASSWORD.into(),
+        code: None,
     })
     .unwrap();
     assert!(
@@ -389,7 +398,106 @@ fn a_password_restores_identity_and_the_server_never_sees_the_key() {
         "ответ обязан быть неотличим от неверного пароля"
     );
 
+    // --- Второй фактор: с ним посылку не отдают по одному паролю.
+    //
+    // Код считает сам сервер — его реализация сверена с эталонными векторами
+    // RFC 6238. Считать его здесь второй раз значило бы проверять свою же
+    // арифметику против неё самой.
+    let secret = obsidian_core::totp::new_secret(LOGIN).base32;
+    let Some(code) = totp_code(&server_dir, &secret) else {
+        return skip("не удалось посчитать одноразовый код (нет node?)");
+    };
+    old.submit(Command::RecoverySetup {
+        login: LOGIN.into(),
+        password: PASSWORD.into(),
+        totp: Some(secret.clone()),
+        code: Some(code),
+    })
+    .unwrap();
+    wait_for(&events, "recovery_saved").expect("сервер не принял посылку со вторым фактором");
+
+    // Пароль верен, кода нет — посылку не отдают.
+    let (nocode_sink, nocode_events) = event_sink("без кода");
+    let nocode = Engine::start(path(&workdir, "nocode.db"), b"pw".to_vec(), nocode_sink)
+        .expect("core");
+    nocode
+        .submit(Command::RecoverPassword {
+            url: url.clone(),
+            login: LOGIN.into(),
+            password: PASSWORD.into(),
+            code: None,
+        })
+        .unwrap();
+    assert!(
+        wait_for(&nocode_events, "recovery_totp_required").is_some(),
+        "посылка отдана без одноразового кода"
+    );
+
+    // Чужой код — тоже нет.
+    let (badcode_sink, badcode_events) = event_sink("чужой код");
+    let badcode = Engine::start(path(&workdir, "badcode.db"), b"pw".to_vec(), badcode_sink)
+        .expect("core");
+    badcode
+        .submit(Command::RecoverPassword {
+            url: url.clone(),
+            login: LOGIN.into(),
+            password: PASSWORD.into(),
+            code: Some("000000".into()),
+        })
+        .unwrap();
+    assert!(
+        wait_for(&badcode_events, "recovery_totp_wrong").is_some(),
+        "посылка отдана по неверному коду"
+    );
+
+    // Верный код — отдают, и личность та же.
+    let Some(fresh_code) = totp_code(&server_dir, &secret) else {
+        return skip("не удалось посчитать одноразовый код");
+    };
+    let (totp_sink, totp_events) = event_sink("со вторым фактором");
+    let with_totp = Engine::start(path(&workdir, "totp.db"), b"pw".to_vec(), totp_sink)
+        .expect("core");
+    with_totp
+        .submit(Command::RecoverPassword {
+            url,
+            login: LOGIN.into(),
+            password: PASSWORD.into(),
+            code: Some(fresh_code),
+        })
+        .unwrap();
+    wait_for(&totp_events, "authenticated").expect("верный код не пустил");
+    let by_totp = wait_for(&totp_events, "registered").unwrap();
+    assert_eq!(
+        extract(&by_totp, "identity").unwrap(),
+        identity,
+        "личность обязана совпасть и на этом пути"
+    );
+
     let _ = std::fs::remove_dir_all(&workdir);
+}
+
+/// Одноразовый код считает реализация сервера — та, что сверена с RFC 6238.
+fn totp_code(server_dir: &Path, secret_base32: &str) -> Option<String> {
+    let script = format!(
+        "import {{ codeFor, decodeBase32, STEP_SECONDS }} from './src/auth/totp.ts';\n\
+         const secret = decodeBase32('{secret_base32}');\n\
+         process.stdout.write(codeFor(secret, Math.floor(Date.now() / 1000 / STEP_SECONDS)));",
+    );
+    let output = Proc::new("node")
+        .arg("--input-type=module")
+        .arg("-e")
+        .arg(script)
+        .current_dir(server_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    let code = String::from_utf8(output.stdout).ok()?.trim().to_owned();
+    if code.len() == 6 && code.bytes().all(|b| b.is_ascii_digit()) {
+        Some(code)
+    } else {
+        None
+    }
 }
 
 // --- вспомогательное ---------------------------------------------------------

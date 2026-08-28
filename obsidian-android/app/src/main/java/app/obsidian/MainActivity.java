@@ -1722,7 +1722,10 @@ public final class MainActivity extends Activity implements Events.Listener {
                         .setPositiveButton("Готово", null).show();
                 break;
             case "recovery_code":
-                showRecoveryCode(event.optString("code"));
+                // Ядро отдаёт обе записи одного ключа. Показываем слова: их
+                // читают глазами, а строку из 55 символов переписывают по
+                // одному знаку и ошибаются.
+                showRecoveryCode(event.optString("words", event.optString("code")));
                 break;
             case "recovery_saved":
                 recoveryPasswordSave.setEnabled(true);

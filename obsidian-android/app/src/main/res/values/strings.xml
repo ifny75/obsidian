@@ -109,12 +109,12 @@
 
     <!-- Настройки восстановления -->
     <string name="recovery_section">Восстановление</string>
-    <string name="recovery_code_title">Код восстановления</string>
-    <string name="recovery_code_hint">55 символов, равносильны аккаунту. Запишите на бумагу и держите отдельно от телефона. В переписку, скриншот и облако — нельзя.</string>
-    <string name="recovery_code_show">Показать код</string>
+    <string name="recovery_code_title">Фраза восстановления</string>
+    <string name="recovery_code_hint">Двадцать четыре слова, равносильны аккаунту. Запишите на бумагу и держите отдельно от телефона. В переписку, скриншот и облако — нельзя.</string>
+    <string name="recovery_code_show">Показать фразу</string>
     <string name="recovery_code_hide">Скрыть</string>
     <string name="recovery_code_copy">Скопировать</string>
-    <string name="recovery_code_copied">Код скопирован — вставьте в надёжное место и очистите буфер</string>
+    <string name="recovery_code_copied">Фраза скопирована — вставьте в надёжное место и очистите буфер</string>
     <string name="recovery_password_title">Восстановление по логину и паролю</string>
     <string name="recovery_password_hint">Запасной путь, если код потерян. Сервер сохранит запечатанную копию ключа: открыть её можно только этим паролем, и стойкость способа равна стойкости пароля. Код надёжнее — включайте это как второй способ, а не вместо.</string>
     <string name="recovery_password_enable">Включить</string>
