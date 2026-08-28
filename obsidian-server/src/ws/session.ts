@@ -830,6 +830,8 @@ function channelView(deps: Deps, row: { id: Uint8Array; owner: Uint8Array; handl
         .map((admin) => deps.store.ensureProfile(admin, deps.now()).chat_code)
       : undefined,
     subscribed: deps.store.isSubscribed(row.id, identity),
+    // Счётчики для карточки канала: подписчики и посты.
+    ...deps.store.channelCounts(row.id),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1234,7 +1236,10 @@ const RECOVERY_SEALED_LEN = 72;
  */
 function onRecoverySet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
   const payload = parseJsonBody(body) as
-    { loginId?: unknown; verifier?: unknown; sealed?: unknown; clear?: unknown; totp?: unknown };
+    {
+      loginId?: unknown; verifier?: unknown; sealed?: unknown;
+      clear?: unknown; totp?: unknown; totpCode?: unknown;
+    };
   if (!payload || typeof payload !== "object") throw new BadInput("recovery payload required");
 
   if (payload.clear === true) {
@@ -1262,6 +1267,20 @@ function onRecoverySet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Arra
       throw new BadInput("bad totp secret");
     }
     totpSecret = decoded;
+
+    /*
+      Код обязателен вместе с секретом.
+
+      Иначе человек включает второй фактор, ошибается при переносе секрета в
+      приложение — и узнаёт об этом через полгода, когда восстановление уже
+      понадобилось, а посылку ему больше не отдадут. Проверка здесь стоит
+      ровно одну строку и снимает целый класс потерянных аккаунтов.
+    */
+    const proof = typeof payload.totpCode === "string" ? payload.totpCode : "";
+    if (!verifyTotp(totpSecret, proof, deps.now())) {
+      sock.send(errorFrame("totp_code_wrong", "one-time code does not match the secret"), true);
+      return;
+    }
   }
 
   if (!deps.store.setRecovery(loginId, conn.identity!, verifier, sealed, deps.now(), totpSecret)) {

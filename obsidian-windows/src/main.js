@@ -3251,12 +3251,29 @@ function usernameStatus(text) {
   $("username-status").textContent = text;
 }
 
+/** Личная ссылка. Тот же вид, что у канала: домен, раздел, имя. */
+function usernameLink(name) {
+  return `https://getobsidian.xyz/u/${name}`;
+}
+
 function renderUsername() {
   $("username-input").value = state.username ?? "";
   $("username-clear").disabled = !state.username;
   $("username-copy").disabled = !state.username;
   $("username-save").textContent = state.username ? "Сменить" : "Занять";
+
+  // Ссылка появляется только когда имя занято: показывать адрес, который ещё
+  // никому не принадлежит, значит обещать несуществующее.
+  const link = $("username-link");
+  link.classList.toggle("hidden", !state.username);
+  if (state.username) {
+    $("username-link-text").textContent = usernameLink(state.username).replace(/^https:\/\//, "");
+  }
 }
+
+$("username-link").addEventListener("click", () => {
+  if (state.username) copyText(usernameLink(state.username), "Ссылка скопирована");
+});
 
 // --- поиск по юзернейму ---------------------------------------------------------
 
@@ -3643,6 +3660,107 @@ $("import-file").addEventListener("change", async () => {
     () => submit({ type: "account_import", password, data: contents }));
 });
 
+/**
+ * Карточка канала.
+ *
+ * То же, что показывает Telegram по нажатию на шапку: чем канал является,
+ * по какой ссылке он открывается и сколько его читают. Отдельным окном, а не
+ * строкой в шапке: сведений набирается на экран, и в шапке им тесно.
+ */
+function openChannelInfo() {
+  const channel = channels.get(openChannel);
+  if (!channel) return;
+
+  const role = channelRole(channel);
+  const modal = document.createElement("div");
+  modal.className = "modal";
+
+  const rows = [
+    ["Подписчики", plural(channel.subscribers ?? 0, "человек", "человека", "человек")],
+    ["Постов", String(channel.posts ?? 0)],
+  ];
+  // Состав редакции знает только владелец — сервер её остальным и не отдаёт.
+  if (role === "owner" && Array.isArray(channel.admins)) {
+    rows.push(["Редакция", channel.admins.length === 0
+      ? "только вы"
+      : plural(channel.admins.length, "человек", "человека", "человек")]);
+  }
+  rows.push(["Заведён", new Date(channel.createdAt).toLocaleDateString("ru-RU")]);
+
+  modal.innerHTML = `<div class="modal-card channel-info">`
+    + `<div class="channel-info-head">`
+    + `<span class="channel-icon" data-icon></span>`
+    + `<div><b data-title></b><small data-subs></small></div>`
+    + `</div>`
+    + `<button class="link-preview" data-link type="button" title="Скопировать ссылку">`
+    + `<span class="link-preview-copy"><small>Ссылка на канал</small><b data-link-text></b></span>`
+    + `<span class="ui-icon icon-discussion"></span></button>`
+    + `<p class="channel-info-about" data-about></p>`
+    + `<dl class="channel-info-rows">`
+    + rows.map(([name, value]) =>
+      `<div><dt>${name}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")
+    + `</dl>`
+    + `<div class="setting-actions peer-actions">`
+    + `<button class="ghost-button" data-close>Закрыть</button>`
+    + (role === "reader" && channel.subscribed
+      ? `<button class="ghost-button danger" data-leave>Отписаться</button>` : "")
+    + (role === "owner"
+      ? `<button class="ghost-button" data-settings>Настроить</button>` : "")
+    + `</div></div>`;
+
+  modal.querySelector("[data-title]").textContent = channel.title;
+  modal.querySelector("[data-subs]").textContent =
+    plural(channel.subscribers ?? 0, "подписчик", "подписчика", "подписчиков");
+  modal.querySelector("[data-link-text]").textContent = channelLink(channel).replace(/^https:\/\//, "");
+  const about = modal.querySelector("[data-about]");
+  about.textContent = channel.about ?? "";
+  about.classList.toggle("hidden", !channel.about);
+  paintChannelIcon(modal.querySelector("[data-icon]"), channel);
+
+  const close = () => modal.remove();
+  modal.querySelector("[data-close]").addEventListener("click", close);
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) close();
+  });
+  modal.querySelector("[data-link]").addEventListener("click", () =>
+    copyText(channelLink(channel), "Ссылка на канал скопирована"));
+  modal.querySelector("[data-leave]")?.addEventListener("click", () => {
+    submit({ type: "channel_subscribe", channel: channel.id, subscribe: false });
+    close();
+  });
+  modal.querySelector("[data-settings]")?.addEventListener("click", () => {
+    close();
+    $("channel-settings").click();
+  });
+
+  document.body.appendChild(modal);
+}
+
+/** Число со словом в нужном падеже: «1 подписчик», «2 подписчика», «5 подписчиков». */
+function plural(count, one, few, many) {
+  const tail = count % 100;
+  const last = count % 10;
+  if (tail > 10 && tail < 20) return `${count} ${many}`;
+  if (last === 1) return `${count} ${one}`;
+  if (last >= 2 && last <= 4) return `${count} ${few}`;
+  return `${count} ${many}`;
+}
+
+function escapeHtml(raw) {
+  return String(raw).replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[ch]);
+}
+
+$("channel-open-info").addEventListener("click", openChannelInfo);
+$("channel-open-info-copy").addEventListener("click", openChannelInfo);
+$("channel-open-info-copy").addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    openChannelInfo();
+  }
+});
+
 $("channel-link").addEventListener("click", () => {
   const channel = channels.get(openChannel);
   if (channel) copyText(channelLink(channel), "Ссылка на канал скопирована");
@@ -3754,23 +3872,77 @@ $("channel-icon-file").addEventListener("change", () => {
   if (file) openEditor(file, "channel-icon");
 });
 
+/** Тот же формат, что проверяет сервер. Держим рядом, чтобы не расходились. */
+const CHANNEL_HANDLE = /^[a-z][a-z0-9_]{2,29}$/;
+
+/**
+ * Заведение канала.
+ *
+ * Раньше это были два `prompt()` подряд — окна браузера, в которых нельзя ни
+ * показать ссылку, ни объяснить, что канал открытый. Здесь человек видит
+ * будущий адрес прямо во время набора имени: адрес — это то, чем он будет
+ * делиться, и узнавать его постфактум неправильно.
+ */
 $("channel-create").addEventListener("click", () => {
-  const handle = prompt("Короткое имя публичного канала латиницей, например notes.\n\nВажно: посты такого канала лежат на сервере без шифрования и видны всем, кто знает имя.");
-  if (!handle) return;
-  const title = prompt("Название канала:");
-  if (!title) return;
-  submit({
-    type: "channel_create",
-    handle: handle.trim().replace(/^@/, "").toLowerCase(),
-    title: title.trim(),
-    about: null,
+  const modal = document.createElement("div");
+  modal.className = "modal";
+  modal.innerHTML = `<div class="modal-card"><div class="modal-header"><h2>Новый канал</h2></div>`
+    + `<div class="group-form">`
+    + `<div class="handle-field"><i>@</i><input data-handle type="text" placeholder="notes" `
+    + `maxlength="30" autocomplete="off" spellcheck="false" /></div>`
+    + `<div class="link-preview static"><span class="link-preview-copy">`
+    + `<small>Ссылка на канал</small><b data-link>getobsidian.xyz/channel/…</b></span></div>`
+    + `<input data-title type="text" placeholder="Название" maxlength="64" />`
+    + `<input data-about type="text" placeholder="Описание, необязательно" maxlength="280" />`
+    + `</div>`
+    + `<p class="modal-copy">Канал — открытая лента. Посты лежат на сервере <b>без шифрования</b>`
+    + ` и видны всем, кто знает ссылку. Личная переписка работает иначе.</p>`
+    + `<div class="setting-actions peer-actions">`
+    + `<button class="ghost-button" data-no>Отмена</button>`
+    + `<button class="ghost-button" data-yes disabled>Завести</button></div></div>`;
+
+  const handleInput = modal.querySelector("[data-handle]");
+  const link = modal.querySelector("[data-link]");
+  const create = modal.querySelector("[data-yes]");
+
+  const refresh = () => {
+    const handle = handleInput.value.trim().replace(/^@/, "").toLowerCase();
+    const valid = CHANNEL_HANDLE.test(handle);
+    link.textContent = handle === ""
+      ? "getobsidian.xyz/channel/…"
+      : `getobsidian.xyz/channel/${handle}`;
+    link.classList.toggle("bad", handle !== "" && !valid);
+    create.disabled = !valid || modal.querySelector("[data-title]").value.trim() === "";
+  };
+  handleInput.addEventListener("input", refresh);
+  modal.querySelector("[data-title]").addEventListener("input", refresh);
+
+  const close = () => modal.remove();
+  modal.querySelector("[data-no]").addEventListener("click", close);
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) close();
   });
+  create.addEventListener("click", () => {
+    const about = modal.querySelector("[data-about]").value.trim();
+    submit({
+      type: "channel_create",
+      handle: handleInput.value.trim().replace(/^@/, "").toLowerCase(),
+      title: modal.querySelector("[data-title]").value.trim(),
+      about: about === "" ? null : about,
+    });
+    close();
+  });
+
+  document.body.appendChild(modal);
+  handleInput.focus();
 });
 
 $("channel-find").addEventListener("click", () => {
-  const handle = prompt("Имя канала, например @notes:");
+  const handle = prompt("Имя канала или ссылка на него:");
   if (!handle) return;
-  submit({ type: "channel_find", handle: handle.trim() });
+  // Человеку прислали ссылку целиком — незачем заставлять его вырезать имя.
+  const name = handle.trim().replace(/^.*\/channel\//, "").replace(/^@/, "");
+  submit({ type: "channel_find", handle: name });
 });
 
 $("channel-subscribe").addEventListener("click", () => {

@@ -189,8 +189,10 @@
         -->
         <section id="channel-panel" class="channel-panel hidden">
           <header class="channel-head">
-            <span id="channel-icon" class="channel-icon">—</span>
-            <div class="channel-head-copy">
+            <button id="channel-open-info" class="channel-head-button" type="button" title="Сведения о канале">
+              <span id="channel-icon" class="channel-icon">—</span>
+            </button>
+            <div class="channel-head-copy channel-head-button" id="channel-open-info-copy" role="button" tabindex="0">
               <b id="channel-title">—</b>
               <small id="channel-handle">@—</small>
             </div>
@@ -275,6 +277,13 @@
                 <button id="username-copy" class="ghost-button" type="button">Скопировать</button>
                 <button id="username-clear" class="ghost-button" type="button">Освободить</button>
               </div>
+              <button id="username-link" class="link-preview hidden" type="button" title="Скопировать ссылку">
+                <span class="link-preview-copy">
+                  <small>Ваша ссылка</small>
+                  <b id="username-link-text">—</b>
+                </span>
+                <span class="ui-icon icon-discussion"></span>
+              </button>
               <p id="username-status" class="recovery-status"></p>
             </div>
           </div>

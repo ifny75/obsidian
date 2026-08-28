@@ -234,11 +234,21 @@ pub fn json_frame<T: Serialize>(opcode: u8, value: &T) -> Result<Vec<u8>> {
 
 /// Кладёт посылку на сервер. Требует пройденного AUTH: строка привязывается
 /// к личности из сессии, а не к присланной в кадре.
-pub fn recovery_set_frame(login_id: &[u8], verifier: &[u8], sealed: &[u8]) -> Result<Vec<u8>> {
+pub fn recovery_set_frame(
+    login_id: &[u8],
+    verifier: &[u8],
+    sealed: &[u8],
+    totp: Option<&str>,
+    code: Option<&str>,
+) -> Result<Vec<u8>> {
     json_frame(op::RECOVERY_SET, &serde_json::json!({
         "loginId": hex::encode(login_id),
         "verifier": hex::encode(verifier),
         "sealed": hex::encode(sealed),
+        // Секрет и подтверждающий код едут вместе: сервер обязан убедиться, что
+        // приложение выдаёт верные коды, до того как запрёт ими посылку.
+        "totp": totp,
+        "totpCode": code,
     }))
 }
 
@@ -250,10 +260,11 @@ pub fn recovery_forget_frame() -> Result<Vec<u8>> {
 
 /// Просит посылку обратно. `token` — доказательство знания пароля; сервер
 /// сверяет его хеш со своим и только тогда отвечает.
-pub fn recovery_get_frame(login_id: &[u8], token: &[u8]) -> Result<Vec<u8>> {
+pub fn recovery_get_frame(login_id: &[u8], token: &[u8], code: Option<&str>) -> Result<Vec<u8>> {
     json_frame(op::RECOVERY_GET, &serde_json::json!({
         "loginId": hex::encode(login_id),
         "token": hex::encode(token),
+        "code": code,
     }))
 }
 

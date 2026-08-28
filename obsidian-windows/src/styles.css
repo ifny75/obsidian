@@ -752,3 +752,49 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
 .channel-admins button{padding:4px 8px;border:1px solid var(--line);border-radius:8px;
   background:transparent;color:var(--danger);font-size:10px}
 .channel-empty-admins{margin:10px 0 0;color:var(--faint);font-size:10.5px}
+
+/* --- ссылки, карточка канала, заведение канала ------------------------------ */
+
+/* Блок со ссылкой: её показывают, а не прячут за кнопкой «скопировать» —
+   человек должен видеть, чем именно он поделится. */
+.link-preview{width:100%;display:grid;grid-template-columns:minmax(0,1fr) 18px;align-items:center;gap:10px;
+  padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius);
+  background:rgba(255,255,255,.025);color:var(--text);text-align:left;
+  transition:border-color .16s,background .16s}
+.link-preview:hover{border-color:var(--line-strong);background:var(--surface)}
+.link-preview.static{cursor:default}
+.link-preview.static:hover{border-color:var(--line);background:rgba(255,255,255,.025)}
+.link-preview .ui-icon{width:15px;height:15px;color:var(--faint)}
+.link-preview-copy{min-width:0}
+.link-preview-copy small{display:block;color:var(--faint);font-size:9px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase}
+.link-preview-copy b{display:block;margin-top:5px;overflow:hidden;font-size:12px;font-weight:500;
+  text-overflow:ellipsis;white-space:nowrap}
+/* Имя не по формату — адрес не сложится, и говорим об этом сразу. */
+.link-preview-copy b.bad{color:var(--danger)}
+
+/* Поле имени канала: «@» пришит к полю, чтобы его не набирали руками. */
+.handle-field{display:flex;align-items:center;gap:2px;height:38px;padding:0 11px;
+  border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.035)}
+.handle-field i{color:var(--faint);font-style:normal;font-size:13px}
+.handle-field input{width:100%;min-width:0;height:100%;border:0;outline:0;background:transparent;
+  box-shadow:none!important;font-size:13px}
+
+/* Шапка канала открывает карточку — как в Telegram. */
+.channel-head-button{border:0;background:transparent;padding:0;cursor:pointer;text-align:left}
+.channel-head-button:hover .channel-icon{border-color:var(--muted)}
+.channel-head-copy.channel-head-button:hover b{text-decoration:underline;text-underline-offset:3px}
+
+.channel-info{width:min(420px,100%)}
+.channel-info-head{display:grid;grid-template-columns:56px minmax(0,1fr);align-items:center;gap:13px;
+  margin-bottom:16px}
+.channel-info-head .channel-icon{width:56px;height:56px;font-size:18px}
+.channel-info-head b{display:block;font:600 15px/1.3 "Unbounded",sans-serif;letter-spacing:-.03em}
+.channel-info-head small{display:block;margin-top:4px;color:var(--muted);font-size:11px}
+.channel-info-about{margin:14px 0 0;color:var(--muted);font-size:12px;line-height:1.6}
+.channel-info-rows{margin:16px 0 0;padding:0;border-top:1px solid var(--line)}
+.channel-info-rows>div{display:flex;align-items:center;justify-content:space-between;gap:14px;
+  padding:11px 0;border-bottom:1px solid var(--line)}
+.channel-info-rows dt{color:var(--muted);font-size:11.5px}
+.channel-info-rows dd{margin:0;font-size:11.5px;font-weight:500}
+

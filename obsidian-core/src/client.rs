@@ -159,6 +159,17 @@ fn handle_local(command: &Command, store: &Store, sink: &EventSink) -> bool {
             Err(_) => fail(sink, "no_identity", "личности в этой базе ещё нет"),
         },
 
+        Command::TotpSecret { login } => {
+            // Сети не нужно: секрет заводится на устройстве и до подтверждения
+            // кодом никуда не уходит.
+            let secret = crate::totp::new_secret(&login);
+            sink(Event::TotpSecret {
+                readable: crate::totp::readable(&secret.base32),
+                secret: secret.base32,
+                url: secret.url,
+            });
+        }
+
         Command::AccountExport { password } => {
             let built = store
                 .export_archive()
@@ -325,8 +336,8 @@ async fn run(mut commands: mpsc::UnboundedReceiver<Command>, store: Store, sink:
                 Ok(()) => session(&url, Entry::Existing, &store, &sink, &mut commands).await,
                 Err(err) => fail(&sink, recovery_code_of(&err), &err.to_string()),
             },
-            Command::RecoverPassword { url, login, password } => {
-                match recover_with_password(&store, &url, &login, &password).await {
+            Command::RecoverPassword { url, login, password, code } => {
+                match recover_with_password(&store, &url, &login, &password, code.as_deref()).await {
                     Ok(()) => session(&url, Entry::Existing, &store, &sink, &mut commands).await,
                     Err(err) => fail(&sink, password_code_of(&err), &err.to_string()),
                 }
@@ -653,23 +664,37 @@ async fn grant_missing(
 ///
 /// Пароль отсюда не уходит никуда, кроме Argon2id: на сервер отправляются
 /// только хеш логина, хеш доказательства и шифротекст.
-fn seal_recovery(store: &Store, login: &str, password: &str) -> Result<(String, Vec<u8>)> {
+fn seal_recovery(
+    store: &Store,
+    login: &str,
+    password: &str,
+    totp: Option<&str>,
+    code: Option<&str>,
+) -> Result<(String, Vec<u8>)> {
     let credentials = store.load_credentials()?;
     let sealed = crate::passphrase::seal(login, password, &credentials.identity)?;
     let frame = proto::recovery_set_frame(
         &sealed.login_id,
         &crate::passphrase::verifier(&sealed.token),
         &sealed.sealed,
+        totp,
+        code,
     )?;
     Ok((crate::passphrase::normalize_login(login)?, frame))
 }
 
 /// Кладёт в пустую базу личность, распечатанную по логину и паролю.
-async fn recover_with_password(store: &Store, url: &str, login: &str, password: &str) -> Result<()> {
+async fn recover_with_password(
+    store: &Store,
+    url: &str,
+    login: &str,
+    password: &str,
+    code: Option<&str>,
+) -> Result<()> {
     if store.has_credentials()? {
         return Err(CoreError::Rejected("identity_exists".into()));
     }
-    let identity = fetch_sealed_identity(url, login, password).await?;
+    let identity = fetch_sealed_identity(url, login, password, code).await?;
     store.save_credentials(&Credentials { identity, device: keys::SecretKey::generate() })
 }
 
@@ -684,13 +709,18 @@ async fn recover_with_password(store: &Store, url: &str, login: &str, password: 
 /// Это осознанно: параллельно всё равно ничего не происходит, а вынос в
 /// отдельный поток стоил бы `block_in_place`, которого на однопоточном
 /// рантайме нет.
-async fn fetch_sealed_identity(url: &str, login: &str, password: &str) -> Result<keys::SecretKey> {
+async fn fetch_sealed_identity(
+    url: &str,
+    login: &str,
+    password: &str,
+    code: Option<&str>,
+) -> Result<keys::SecretKey> {
     let (login_id, token, key) = crate::passphrase::request(login, password)?;
 
     let (mut socket, _) = connect_async(crate::edge::ws_request(url)?)
         .await
         .map_err(|err| CoreError::Transport(err.to_string()))?;
-    send(&mut socket, proto::recovery_get_frame(&login_id, &token)?).await?;
+    send(&mut socket, proto::recovery_get_frame(&login_id, &token, code)?).await?;
 
     let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
     let sealed = loop {
@@ -1237,7 +1267,9 @@ async fn pump(
     let mut pending: HashMap<[u8; ID_LEN], Claim> = HashMap::new();
     // Логин, посылку по которому сервер ещё не подтвердил. Пустое значение при
     // RECOVERY_OK означает, что подтверждают удаление, а не установку.
-    let mut pending_recovery: Option<String> = None;
+    // Логин и «включался ли второй фактор» — чтобы ответить о том, что
+    // именно сохранилось, а не просто «сохранено».
+    let mut pending_recovery: Option<(String, bool)> = None;
     // Имя, которое сервер ещё не подтвердил, и имя, по которому идёт поиск.
     // Сервер видит только хеши и вернуть читаемое имя не может — его помнит
     // эта сторона.
@@ -1363,7 +1395,7 @@ async fn pump(
                     }
                     if matches!(proto::split(&data), Ok((op::RECOVERY_OK, _))) {
                         match pending_recovery.take() {
-                            Some(login) => sink(Event::RecoverySaved { login }),
+                            Some((login, totp)) => sink(Event::RecoverySaved { login, totp }),
                             None => sink(Event::RecoveryForgotten),
                         }
                         continue;
@@ -1673,13 +1705,20 @@ async fn pump(
                             fail(sink, "profiles_unavailable", "server does not support profiles yet");
                         }
                     }
-                    Command::RecoverySetup { login, password } => {
+                    Command::RecoverySetup { login, password, totp, code } => {
                         if !authenticated {
                             fail(sink, "not_authenticated", "войдите, прежде чем включать восстановление");
+                        } else if totp.is_some() && code.as_deref().unwrap_or("").is_empty() {
+                            // Включать второй фактор без подтверждения нельзя:
+                            // ошибка при переносе секрета обнаружилась бы только
+                            // тогда, когда восстановление уже понадобилось.
+                            fail(sink, "totp_code_required", "подтвердите код из приложения");
                         } else {
-                            match seal_recovery(store, &login, &password) {
+                            match seal_recovery(
+                                store, &login, &password, totp.as_deref(), code.as_deref(),
+                            ) {
                                 Ok((normalized, frame)) => {
-                                    pending_recovery = Some(normalized);
+                                    pending_recovery = Some((normalized, totp.is_some()));
                                     send(&mut socket, frame).await?;
                                 }
                                 Err(err) => fail(sink, password_code_of(&err), &err.to_string()),

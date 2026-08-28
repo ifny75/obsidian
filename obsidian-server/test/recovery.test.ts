@@ -149,11 +149,18 @@ test("одноразовый код закрывает выдачу посылк
   const loginId = random(32);
   const token = random(32);
   const secret = random(20);
-  const box = { ...sealedBox(loginId, token), totp: encodeBase32(secret) };
+  const now = deps.now();
+  const step = Math.floor(now / 1000 / STEP_SECONDS);
+
+  // Включить второй фактор без подтверждения нельзя: иначе человек запрёт
+  // посылку секретом, который его приложение не выдаёт.
+  const unproven = { ...sealedBox(loginId, token), totp: encodeBase32(secret) };
+  handleMessage(deps, sock, conn, jsonFrame(OP.RECOVERY_SET, unproven));
+  assert.equal(sock.latestJson(OP.ERROR).code, "totp_code_wrong");
+
+  const box = { ...unproven, totpCode: codeFor(secret, step) };
   handleMessage(deps, sock, conn, jsonFrame(OP.RECOVERY_SET, box));
   assert.equal(sock.latestJson(OP.RECOVERY_OK).totp, true);
-
-  const now = deps.now();
 
   // Пароль верен, кода нет — посылку не отдаём.
   const first = connect(deps);
@@ -167,10 +174,9 @@ test("одноразовый код закрывает выдачу посылк
   assert.ok(!second.sock.has(OP.RECOVERY_BLOB), "посылка утекла с чужим кодом");
 
   // Верный код из приложения — отдаём.
-  const counter = Math.floor(now / 1000 / STEP_SECONDS);
   const third = connect(deps);
   handleMessage(deps, third.sock, third.conn,
-    recoveryGet(loginId, token, codeFor(secret, counter)));
+    recoveryGet(loginId, token, codeFor(secret, step)));
   assert.equal(third.sock.latestJson(OP.RECOVERY_BLOB).sealed, box.sealed);
   store.close();
 });
@@ -182,8 +188,11 @@ test("про второй фактор узнаёт только тот, кто 
 
   const loginId = random(32);
   const token = random(32);
+  const secret = random(20);
   handleMessage(deps, sock, conn, jsonFrame(OP.RECOVERY_SET, {
-    ...sealedBox(loginId, token), totp: encodeBase32(random(20)),
+    ...sealedBox(loginId, token),
+    totp: encodeBase32(secret),
+    totpCode: codeFor(secret, Math.floor(deps.now() / 1000 / STEP_SECONDS)),
   }));
 
   // Неверный пароль — обычный recovery_not_found, без намёка на то, что логин

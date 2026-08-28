@@ -308,6 +308,22 @@ export class Store {
   }
 
   /** Каналы, которые человек ведёт или читает. */
+  /**
+   * Сколько у канала подписчиков и постов.
+   *
+   * Числа, а не списки: сколько людей читает открытую ленту — сведение о ленте,
+   * а кто именно — связь между людьми, и её сервер не рассказывает.
+   */
+  channelCounts(channel: Bytes): { subscribers: number; posts: number } {
+    const row = this.#db
+      .prepare(
+        `SELECT (SELECT COUNT(*) FROM channel_subs  s WHERE s.channel = ?1) AS subscribers,
+                (SELECT COUNT(*) FROM channel_posts p WHERE p.channel = ?1) AS posts`,
+      )
+      .get(channel) as { subscribers: number; posts: number };
+    return row;
+  }
+
   /** Сколько каналов завёл этот человек — своих, не считая подписок. */
   countOwnedChannels(owner: Bytes): number {
     const row = this.#db

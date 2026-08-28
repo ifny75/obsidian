@@ -23,5 +23,6 @@ pub mod privacy;
 pub mod proto;
 pub mod recovery;
 pub mod store;
+pub mod totp;
 
 pub use error::{CoreError, Result};
