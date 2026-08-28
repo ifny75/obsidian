@@ -17,9 +17,14 @@
   только поведение интерфейса.
 -->
 <script>
+  /** Канал, по которому ядро отдаёт события. Остальные — служебные. */
+  const EVENT_CHANNEL = "obsidian:event";
+
   const bridge = {
     commands: [],
     listeners: [],
+    /** Обработчики по каналам: { "obsidian:open-chat": [fn, …] }. */
+    channels: {},
     // Сценарий: сколько сообщений «лежит в базе» у каждой беседы.
     store: new Map(),
     historyCalls: 0,
@@ -55,6 +60,11 @@
     for (const fn of bridge.listeners) fn({ payload: JSON.stringify(event) });
   }
   window.__emit = emit;
+
+  /** Служебное событие в конкретный канал — как их шлёт Rust, а не ядро. */
+  window.__emitTo = (channel, payload) => {
+    for (const fn of bridge.channels[channel] ?? []) fn({ payload });
+  };
 
   window.__TAURI__ = {
     core: {
@@ -148,8 +158,11 @@
       },
     },
     event: {
-      listen(_name, fn) {
-        bridge.listeners.push(fn);
+      // Канал запоминаем: Tauri вызывает обработчик только для своего канала,
+      // и стенд, раздающий всё всем, проверял бы не то, что работает.
+      listen(name, fn) {
+        (bridge.channels[name] ??= []).push(fn);
+        if (name === EVENT_CHANNEL) bridge.listeners.push(fn);
         return Promise.resolve(() => {});
       },
     },

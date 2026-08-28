@@ -700,6 +700,12 @@
       </div>
     </div>
 
+    <!-- Полоса отката: удаление выполняется не сразу, и всё это время его
+         можно вернуть — кнопкой или по Ctrl+Z. -->
+    <div id="undo-bar" class="undo-bar" role="status">
+      <span>Удалено</span>
+      <button id="undo-button" type="button">Отменить</button>
+    </div>
     <footer id="log" class="toast" role="status"></footer>
     <script src="main.js"></script>
   </body>

@@ -34,6 +34,9 @@ const NOTIFICATION_LABEL: &str = "notification";
 /// Канал, по которому карточке приезжает следующее уведомление.
 const NOTIFICATION_CHANNEL: &str = "obsidian:notification";
 
+/// Канал, по которому карточка просит открыть беседу.
+const OPEN_CHAT_CHANNEL: &str = "obsidian:open-chat";
+
 #[derive(Default)]
 struct Core {
     engine: Mutex<Option<Engine>>,
@@ -356,6 +359,28 @@ async fn show_desktop_notification(app: AppHandle, payload: serde_json::Value) -
         .map_err(|err| format!("не показать уведомление: {err}"))
 }
 
+/// Открыть беседу, о которой было уведомление.
+///
+/// Зовёт карточка по щелчку. Одного события мало: главное окно может быть
+/// свёрнуто или закрыто другими программами — сначала поднимаем его, иначе
+/// беседа откроется там, куда человек не смотрит.
+#[tauri::command]
+async fn open_chat_from_notification(app: AppHandle, device: String) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        window.show().map_err(|err| err.to_string())?;
+        window.set_focus().map_err(|err| err.to_string())?;
+        window
+            .emit(OPEN_CHAT_CHANNEL, device)
+            .map_err(|err| err.to_string())?;
+    }
+    // Карточка своё дело сделала — убираем, чтобы не висела поверх беседы.
+    if let Some(card) = app.get_webview_window(NOTIFICATION_LABEL) {
+        let _ = card.close();
+    }
+    Ok(())
+}
+
 /// Закрывает карточку. Зовёт её же страница — после того как доиграет анимация
 /// ухода: закрывать окно из Rust по таймеру значило бы обрывать её на середине.
 #[tauri::command]
@@ -503,6 +528,7 @@ fn main() {
             window_drag,
             show_desktop_notification,
             dismiss_desktop_notification,
+            open_chat_from_notification,
             app_version,
             save_account_export,
             open_update

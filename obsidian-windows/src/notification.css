@@ -61,6 +61,10 @@ button:active{transform:scale(.96)}
   -webkit-mask:url("assets/svg/cross.svg") center/contain no-repeat;
   mask:url("assets/svg/cross.svg") center/contain no-repeat}
 
+/* Карточка ведёт в беседу — курсор об этом говорит, подсветка подтверждает. */
+.card.clickable{cursor:pointer}
+.card.clickable:hover{background:color-mix(in srgb,var(--panel-solid) 92%,white)}
+.card[data-theme="light"].clickable:hover{background:color-mix(in srgb,var(--panel-solid) 94%,black)}
 .card.arriving{animation:in .24s cubic-bezier(.2,.85,.25,1) both}
 .card.leaving{animation:out .18s ease both}
 @keyframes in{from{opacity:0;transform:translateX(30px) scale(.97)}}

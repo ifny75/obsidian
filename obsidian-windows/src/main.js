@@ -160,8 +160,11 @@ function notificationText(content) {
   return "Новое сообщение";
 }
 
-function showDesktopNotification({ title, text, device = null }) {
-  const profile = device ? profileFor(device) : null;
+function showDesktopNotification({ title, text, device = null, avatarOf = null }) {
+  // Аватар — того, кто написал; беседа по щелчку — та, где он написал. В
+  // группе это разные вещи.
+  const face = avatarOf ?? device;
+  const profile = face ? profileFor(face) : null;
   // Звук играет сама карточка, а не это окно: уведомление — это она, и звучать
   // должно ровно то, что показалось. Окно приложения при этом может быть
   // свёрнуто или закрыто на другой рабочий стол.
@@ -169,9 +172,11 @@ function showDesktopNotification({ title, text, device = null }) {
     payload: {
       title,
       text,
-      initials: device ? initials(device) : "O",
+      initials: face ? initials(face) : "O",
       avatarMime: profile?.avatar_mime ?? null,
       avatarBase64: profile?.avatar_base64 ?? null,
+      // Кому принадлежит уведомление: по щелчку карточка откроет эту беседу.
+      device,
       color: preferences?.notificationColor ?? "graphite",
       size: preferences?.notificationSize ?? 85,
       position: preferences?.notificationPosition ?? "top",
@@ -599,6 +604,26 @@ function applyAvatar(node, device) {
   node.style.backgroundImage = avatarGradient(text, profileColor(profile?.color));
 }
 
+/**
+ * Когда в беседе последний раз что-то происходило.
+ *
+ * Пока этого не было, список стоял в порядке, в котором беседы попали в Map, —
+ * то есть в случайном для человека. Найти того, кто написал минуту назад,
+ * приходилось глазами по всему списку.
+ */
+function touchConversation(key, at = Date.now()) {
+  const entry = state.conversations.get(key);
+  if (entry) entry.updatedAt = Math.max(entry.updatedAt ?? 0, at);
+  // Ключ группы в списке — с префиксом; в state.groups она лежит по своему id.
+  const group = state.groups.get(key.startsWith(GROUP_PREFIX) ? key.slice(GROUP_PREFIX.length) : key);
+  if (group) group.updatedAt = Math.max(group.updatedAt ?? 0, at);
+}
+
+/** Беседа без единого сообщения не должна прыгать наверх: ей нечем. */
+function recency(entry) {
+  return entry.updatedAt ?? 0;
+}
+
 function renderConversations() {
   const list = $("conversations");
   // Адрес и код в поле — это не запрос к списку: список не фильтруем.
@@ -607,7 +632,12 @@ function renderConversations() {
   list.innerHTML = "";
   let visible = 0;
 
-  for (const [id, group] of state.groups) {
+  // Группы и диалоги живут в одном списке, но раскладываются раздельно —
+  // сортируем каждый набор по своей свежести.
+  const groupsByRecency = [...state.groups].sort((a, b) => recency(b[1]) - recency(a[1]));
+  const chatsByRecency = [...state.conversations].sort((a, b) => recency(b[1]) - recency(a[1]));
+
+  for (const [id, group] of groupsByRecency) {
     const searchable = `${group.title} ${group.kind}`.toLowerCase();
     if (query && !searchable.includes(query)) continue;
     visible += 1;
@@ -651,7 +681,7 @@ function renderConversations() {
     list.appendChild(item);
   }
 
-  for (const [peer, entry] of state.conversations) {
+  for (const [peer, entry] of chatsByRecency) {
     const profile = profileFor(peer);
     const searchable = `${peer} ${profile?.handle ?? ""} ${profile?.chat_code ?? ""}`.toLowerCase();
     if (query && !searchable.includes(query)) continue;
@@ -908,6 +938,12 @@ function atBottom(list) {
  * выдёргивало бы его из середины переписки, которую он читает.
  */
 function appendMessage({ outgoing, body, created_at, from }, conversation, { cache = true } = {}) {
+  // Отмечаем здесь, а не по месту вызова: точек вызова четыре, и забыть одну —
+  // значит получить беседу, которая наверх не поднимается только в одном
+  // случае из четырёх. Такое ищется долго.
+  const key = state.groups.has(conversation) ? groupKey(conversation) : peerOf(conversation);
+  if (key) touchConversation(key, created_at ?? Date.now());
+
   const group = state.groups.get(conversation);
   const author = from ?? peerOf(conversation) ?? state.current;
   const built = buildMessage({ outgoing, body, created_at }, author);
@@ -1353,7 +1389,10 @@ const handlers = {
     showDesktopNotification({
       title: displayName(event.sender_device || peer),
       text: notificationText(content),
-      device: event.sender_device || peer,
+      // В группе щелчок ведёт в группу, а не в личную переписку с тем, кто
+      // написал: человек нажимает на уведомление о разговоре, который видел.
+      device: group ? peer : (event.sender_device || peer),
+      avatarOf: event.sender_device || peer,
     });
 
     // В кэш беседы кладём в любом случае — но только если он уже поднят. Иначе
@@ -1750,6 +1789,17 @@ function openBackupWizard(words) {
 }
 
 /** Открыт ли мастер: пока он на экране, его нельзя перебивать. */
+/**
+ * Пришло ли событие из поля ввода.
+ *
+ * Через `event.target` напрямую нельзя: когда фокуса нет ни на чём, целью
+ * оказывается сам документ, у которого нет `closest`, и обработчик падает
+ * молча — вместе со всем, что стояло после него.
+ */
+function inTextField(target) {
+  return target instanceof Element && Boolean(target.closest("input, textarea"));
+}
+
 function backupWizardOpen() {
   return !$("screen-backup").classList.contains("hidden");
 }
@@ -2209,7 +2259,57 @@ $("settings-reset").addEventListener("click", () => {
 });
 applyPreferences();
 
+/*
+  Вставка картинки из буфера.
+
+  Слушаем на документе, а не на поле ввода: снимок экрана делают и вставляют не
+  целясь курсором, и требовать сперва щёлкнуть по полю — лишний шаг там, где
+  его никто не ждёт. Если в буфере текст, обработчик молча уходит и вставка
+  идёт как обычно.
+*/
+/*
+  Щелчок по уведомлению открывает беседу.
+
+  Окно к этому моменту уже поднято командой в Rust: событие только выбирает
+  беседу. Если её ещё нет в списке — заводим, иначе уведомление о первом
+  сообщении от нового собеседника вело бы в пустоту.
+*/
+listen("obsidian:open-chat", ({ payload }) => {
+  const peer = typeof payload === "string" ? payload : payload?.device;
+  if (!peer) return;
+  if (!state.conversations.has(peer) && !isGroupKey(peer)) {
+    state.conversations.set(peer, { conversation: null, unread: 0 });
+    renderConversations();
+  }
+  selectConversation(peer);
+});
+
+document.addEventListener("paste", (event) => {
+  // В настройках и модальных окнах вставлять картинку в переписку не нужно.
+  if (!settingsPage.classList.contains("hidden")) return;
+  if (document.querySelector(".modal:not(.hidden)")) return;
+  if (!state.current) return;
+
+  const file = [...(event.clipboardData?.items ?? [])]
+    .find((item) => item.kind === "file" && item.type.startsWith("image/"))
+    ?.getAsFile();
+  if (!file) return;
+
+  event.preventDefault();
+  // Тот же редактор, что и у кнопки: вставка не должна быть вторым путём
+  // отправки со своими правилами сжатия и своим качеством.
+  openEditor(file, "message");
+});
+
 document.addEventListener("keydown", (event) => {
+  // Ctrl+Z возвращает последнее удалённое. В поле ввода не перехватываем:
+  // там та же комбинация отменяет набор текста, и это ожидаемее.
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+    if (inTextField(event.target)) return;
+    if (undoLast()) event.preventDefault();
+    return;
+  }
+
   if (event.key !== "Escape") return;
   // Закрываем по одному слою за нажатие: Escape в открытом окне исключений не
   // должен заодно захлопывать и настройки под ним.
@@ -4388,7 +4488,7 @@ function confirmAction(title, detail, onYes) {
   заменить его нечем.
 */
 document.addEventListener("contextmenu", (event) => {
-  if (event.target.closest("input, textarea")) return;
+  if (inTextField(event.target)) return;
   event.preventDefault();
 });
 
@@ -4458,6 +4558,8 @@ document.addEventListener("scroll", closeMessageMenu, true);
  * невозможно. Поэтому вопрос включён по умолчанию.
  */
 function confirmDelete(id, forBoth) {
+  // Откат делает вопрос лишним: человек уже видит, что произошло, и может
+  // вернуть. Настройку уважаем — кому спокойнее с вопросом, тот его оставит.
   if (!preferences.confirmDelete) return deleteMessage(id, forBoth);
   const message = forBoth
     ? "Ваша копия исчезнет сразу. Собеседнику уйдёт просьба удалить свою — выполнит её его приложение, и проверить это невозможно."
@@ -4466,10 +4568,84 @@ function confirmDelete(id, forBoth) {
     () => deleteMessage(id, forBoth));
 }
 
+/**
+ * Отложенное действие, которое можно отменить.
+ *
+ * Удаление — единственное здесь, что нельзя переиграть: сообщение уходит из
+ * локальной базы, а при «удалить у обоих» ещё и просьба уезжает собеседнику.
+ * Спрашивать подтверждение заранее — плохой размен: диалог мешает каждый раз,
+ * а ошибаются редко. Поэтому наоборот — действие выполняется не сразу, а через
+ * несколько секунд, и всё это время его можно вернуть.
+ *
+ * Ждём не в интерфейсе, а до отправки команды: пока таймер идёт, ядро о
+ * удалении не знает вовсе, и откат ничего не восстанавливает — просто не
+ * случается.
+ */
+const UNDO_WINDOW_MS = 6000;
+let pendingUndo = null;
+
+function deferWithUndo(label, run, revert) {
+  // Второе действие подряд не отменяет первое: доводим предыдущее до конца.
+  flushUndo();
+  const timer = setTimeout(() => {
+    pendingUndo = null;
+    run();
+    hideUndo();
+  }, UNDO_WINDOW_MS);
+  pendingUndo = { run, revert, timer };
+  showUndo(label);
+}
+
+/** Выполнить отложенное немедленно — например, перед другим действием. */
+function flushUndo() {
+  if (!pendingUndo) return;
+  clearTimeout(pendingUndo.timer);
+  const { run } = pendingUndo;
+  pendingUndo = null;
+  hideUndo();
+  run();
+}
+
+function undoLast() {
+  if (!pendingUndo) return false;
+  clearTimeout(pendingUndo.timer);
+  const { revert } = pendingUndo;
+  pendingUndo = null;
+  hideUndo();
+  revert?.();
+  toast("Отменено");
+  return true;
+}
+
+function showUndo(label) {
+  const node = $("undo-bar");
+  node.querySelector("span").textContent = label;
+  node.classList.add("visible");
+}
+
+function hideUndo() {
+  $("undo-bar").classList.remove("visible");
+}
+
+$("undo-button").addEventListener("click", undoLast);
+
 function deleteMessage(id, forBoth) {
   const conversation = conversationOf(state.current);
   if (!conversation) return;
-  submit({ type: "delete_message", conversation, id, for_both: forBoth });
+
+  // Сообщение убираем с глаз сразу — иначе отложенное удаление выглядело бы
+  // как «кнопка не сработала». Узлы держим, чтобы вернуть их при откате.
+  const nodes = [...document.querySelectorAll(`[data-message-id="${CSS.escape(id)}"]`)];
+  const anchors = nodes.map((node) => ({ node, next: node.nextSibling, parent: node.parentNode }));
+  for (const node of nodes) node.remove();
+
+  deferWithUndo(
+    forBoth ? "Сообщение удаляется у обоих" : "Сообщение удаляется",
+    () => submit({ type: "delete_message", conversation, id, for_both: forBoth }),
+    () => {
+      for (const { node, next, parent } of anchors) parent?.insertBefore(node, next);
+    },
+  );
 }
 
 function startReply(id, text) {

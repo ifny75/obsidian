@@ -17,6 +17,8 @@ const accents = { violet: "#a98cff", blue: "#70a8ff", green: "#67d4a3" };
 
 let closing = false;
 let timer = null;
+/** Чья беседа за этим уведомлением. Пусто — открывать нечего. */
+let device = null;
 
 function dismiss() {
   if (closing) return;
@@ -27,10 +29,23 @@ function dismiss() {
   setTimeout(() => invoke("dismiss_desktop_notification"), 180);
 }
 
-document.getElementById("close").addEventListener("click", dismiss);
+document.getElementById("close").addEventListener("click", (event) => {
+  // Крестик закрывает карточку, а не открывает беседу.
+  event.stopPropagation();
+  dismiss();
+});
+
+card.addEventListener("click", () => {
+  if (!device || closing) return;
+  closing = true;
+  clearTimeout(timer);
+  invoke("open_chat_from_notification", { device });
+});
 
 function paint(payload) {
   if (closing) return;
+  device = payload.device ?? null;
+  card.classList.toggle("clickable", Boolean(device));
   card.dataset.theme = payload.theme || "dark";
   card.style.setProperty("--accent", accents[payload.color] || payload.accent || "#f4f4f4");
   card.style.setProperty("--radius", `${payload.radius ?? 13}px`);

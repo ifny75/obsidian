@@ -834,3 +834,14 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
 
 #backup-skip{display:block;width:100%;margin-top:14px}
 
+/* Полоса отката: рядом с тостом, но со своей кнопкой и живёт дольше. */
+.undo-bar{position:fixed;left:50%;bottom:22px;z-index:51;display:flex;align-items:center;gap:14px;
+  padding:9px 10px 9px 15px;border:1px solid var(--line);border-radius:11px;
+  background:var(--panel-solid);box-shadow:var(--shadow);font-size:11.5px;
+  opacity:0;pointer-events:none;transform:translate(-50%,15px);
+  transition:opacity .18s,transform .18s}
+.undo-bar.visible{opacity:1;pointer-events:auto;transform:translate(-50%,0)}
+.undo-bar button{padding:5px 11px;border:1px solid var(--line);border-radius:8px;
+  background:transparent;color:var(--text);font-size:11px;font-weight:500}
+.undo-bar button:hover{background:var(--surface)}
+
