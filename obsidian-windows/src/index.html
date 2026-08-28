@@ -56,6 +56,84 @@
       </div>
     </section>
 
+    <!--
+      Что делать, если это устройство пропадёт.
+
+      Экран показывается один раз, сразу после регистрации, и до главного окна.
+      Позже человек до него не дойдёт: пока всё работает, о потере устройства не
+      думают, а вспоминают о ней ровно тогда, когда уже поздно.
+
+      Пропустить можно — но не молча: цена названа прямо, потому что расплата
+      наступит не сегодня и не для нас.
+    -->
+    <section id="screen-backup" class="screen centered-screen hidden">
+      <div class="entry-card backup-card">
+        <p class="eyebrow">Шаг <span id="backup-step-now">1</span> из 2 · это можно пройти только сейчас</p>
+
+        <div id="backup-step-words">
+          <h1>Запишите фразу</h1>
+          <p class="lead">
+            Двадцать четыре слова — это и есть ваш аккаунт. По ним его вернут на любом
+            устройстве. Перепишите на бумагу и держите там, где не держите компьютер.
+            В переписку, скриншот и облако — нельзя.
+          </p>
+          <ol id="backup-words" class="backup-words"></ol>
+          <div class="setting-actions">
+            <button id="backup-words-copy" class="ghost-button" type="button">Скопировать</button>
+            <button id="backup-words-code" class="ghost-button" type="button">Показать кодом</button>
+          </div>
+          <label class="backup-confirm">
+            <input id="backup-written" type="checkbox" />
+            <span>Я переписал(а) фразу на бумагу и понимаю, что второй раз её не покажут</span>
+          </label>
+          <button id="backup-next" class="primary-button" type="button" disabled>Дальше</button>
+        </div>
+
+        <div id="backup-step-second" class="hidden">
+          <h1>Запасной вход</h1>
+          <p class="lead">
+            Если бумага потеряется. Сервер сохранит запечатанную копию ключа — открыть её
+            можно только этим паролем, и стойкость всего способа равна стойкости пароля.
+            Фраза надёжнее: включайте это вторым способом, а не вместо.
+          </p>
+          <form id="backup-form" class="entry-form" autocomplete="off">
+            <label for="backup-login">Логин</label>
+            <input id="backup-login" type="text" autocomplete="off" placeholder="Не ваше имя из переписки" />
+            <label for="backup-password">Пароль</label>
+            <input id="backup-password" type="password" autocomplete="new-password" placeholder="Минимум 10 символов" />
+
+            <label class="backup-confirm">
+              <input id="backup-totp" type="checkbox" />
+              <span>Просить код из приложения-аутентификатора</span>
+            </label>
+
+            <div id="backup-totp-box" class="backup-totp hidden">
+              <p class="backup-hint">
+                Добавьте этот секрет в Google Authenticator или любое такое же приложение
+                и введите код, который оно покажет. Без подтверждения второй фактор не
+                включится — иначе ошибка при переносе обнаружилась бы слишком поздно.
+              </p>
+              <code id="backup-totp-secret">—</code>
+              <button id="backup-totp-copy" class="ghost-button" type="button">Скопировать секрет</button>
+              <input id="backup-totp-code" type="text" inputmode="numeric" maxlength="7"
+                     autocomplete="one-time-code" placeholder="Шесть цифр из приложения" />
+            </div>
+
+            <button class="primary-button" type="submit" id="backup-save">Включить запасной вход</button>
+          </form>
+          <p id="backup-status" class="recovery-status"></p>
+          <button id="backup-skip" class="link-button" type="button">
+            Пропустить — фразы мне достаточно
+          </button>
+        </div>
+
+        <div class="security-note">
+          <span class="ui-icon icon-shield"></span>
+          <span>Ни фраза, ни пароль не уходят с устройства открытыми.</span>
+        </div>
+      </div>
+    </section>
+
     <section id="screen-entry" class="screen centered-screen hidden">
       <div class="entry-card">
         <div class="large-logo"><img src="assets/obsidian_logo.svg" alt="" /></div>
@@ -305,11 +383,11 @@
 
 <section class="settings-card" id="recovery-card">
           <div class="setting-block">
-            <b>Код восстановления</b>
-            <small>55 символов, равносильны аккаунту. Запишите на бумагу и держите там, где не держите телефон. В переписку, скриншот и облако — нельзя.</small>
+            <b>Фраза восстановления</b>
+            <small>Двадцать четыре слова, равносильны аккаунту. Запишите на бумагу и держите там, где не держите компьютер. В переписку, скриншот и облако — нельзя. Это та же запись, что показывали при регистрации: ключ один, и новую фразу выдать нельзя.</small>
             <div class="recovery-code-box hidden" id="recovery-code-box"><code id="recovery-code-text">—</code></div>
             <div class="setting-actions">
-              <button id="show-recovery-code" class="ghost-button" type="button">Показать код</button>
+              <button id="show-recovery-code" class="ghost-button" type="button">Показать фразу</button>
               <button id="copy-recovery-code" class="ghost-button hidden" type="button">Скопировать</button>
             </div>
           </div>

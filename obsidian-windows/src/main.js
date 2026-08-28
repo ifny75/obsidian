@@ -122,7 +122,10 @@ function sendRead(peer, ids) {
 }
 
 function showScreen(screen) {
-  for (const id of ["screen-boot", "screen-migrate", "screen-entry", "screen-recover", "screen-main"]) {
+  for (const id of [
+    "screen-boot", "screen-migrate", "screen-entry",
+    "screen-recover", "screen-backup", "screen-main",
+  ]) {
     $(id).classList.toggle("hidden", id !== screen);
   }
 }
@@ -1281,11 +1284,19 @@ const handlers = {
     $("nav-server").hidden = !state.admin;
     if (state.admin) submit({ type: "admin_get", offset: 0 });
     setConnection("online", event.queued > 0 ? `в сети · в очереди ${event.queued}` : "в сети");
-    showScreen("screen-main");
+    // Экран с фразой не смахиваем: AUTH_OK приходит сразу за регистрацией, и
+    // без этой проверки человек увидел бы свои 24 слова на долю секунды.
+    if (!backupWizardOpen()) showScreen("screen-main");
     submit({ type: "conversations" });
   },
 
   registered(event) {
+    // Регистрация только что прошла — значит аккаунт новый, и фразу надо
+    // показать сейчас. Второго удобного момента не будет: пока всё работает,
+    // о потере устройства не думают, а вспоминают ровно тогда, когда поздно.
+    state.freshAccount = true;
+    submit({ type: "recovery_code" });
+
     state.device = event.device;
     state.identity = event.identity;
     $("profile-identity").textContent = short(event.identity);
@@ -1567,7 +1578,7 @@ const handlers = {
   disconnected(event) {
     state.lastDisconnectReason = event.reason || "соединение прервано";
     setConnection("offline", "переподключаемся…");
-    if (state.device && $("screen-entry").classList.contains("hidden")) {
+    if (state.device && $("screen-entry").classList.contains("hidden") && !backupWizardOpen()) {
       showScreen("screen-main");
     }
     if (!$("screen-entry").classList.contains("hidden")) {
@@ -1578,18 +1589,38 @@ const handlers = {
   },
 
   recovery_code(event) {
+    state.recoveryCode = event.code;
+    state.recoveryWords = event.words;
+
+    if (state.freshAccount) {
+      // Первый показ — на своём экране, а не строкой в настройках.
+      state.freshAccount = false;
+      openBackupWizard(event.words);
+      return;
+    }
+
     $("recovery-code-box").classList.remove("hidden");
     $("copy-recovery-code").classList.remove("hidden");
-    $("recovery-code-text").textContent = event.code;
-    state.recoveryCode = event.code;
+    $("recovery-code-text").textContent = event.words;
     $("show-recovery-code").textContent = "Скрыть";
   },
 
   recovery_saved(event) {
-    setRecoveryStatus(`Восстановление включено для логина «${event.login}»`, "ok");
+    const note = event.totp
+      ? `Запасной вход включён для «${event.login}», код из приложения обязателен`
+      : `Восстановление включено для логина «${event.login}»`;
+    setRecoveryStatus(note, "ok");
     $("recovery-password").value = "";
     $("save-recovery-password").disabled = false;
     $("save-recovery-password").textContent = "Включить";
+
+    // Если это был шаг регистрации — он на этом и заканчивается.
+    if (!$("screen-backup").classList.contains("hidden")) finishBackupWizard();
+  },
+
+  totp_secret(event) {
+    state.totpSecret = event.secret;
+    $("backup-totp-secret").textContent = event.readable;
   },
 
   recovery_forgotten() {
@@ -1685,6 +1716,137 @@ function setRecoveryStatus(text, kind) {
   node.className = `recovery-status ${kind ?? ""}`.trim();
 }
 
+// --- экран «что делать, если устройство пропадёт» ------------------------------
+
+/**
+ * Показывается один раз, сразу после регистрации.
+ *
+ * Порядок шагов не случаен: сначала то, что работает без сервера и без нас
+ * (фраза), и только потом запасной вход, который зависит и от сервера, и от
+ * стойкости пароля. Если человек уйдёт после первого шага — он уйдёт с самым
+ * надёжным способом в кармане.
+ */
+function openBackupWizard(words) {
+  showScreen("screen-backup");
+  backupStep(1);
+
+  const list = $("backup-words");
+  list.replaceChildren();
+  for (const word of words.split(/\s+/)) {
+    const item = document.createElement("li");
+    item.textContent = word;
+    list.appendChild(item);
+  }
+
+  $("backup-written").checked = false;
+  $("backup-next").disabled = true;
+  $("backup-totp").checked = false;
+  $("backup-totp-box").classList.add("hidden");
+  $("backup-totp-code").value = "";
+  $("backup-login").value = "";
+  $("backup-password").value = "";
+  $("backup-status").textContent = "";
+  $("backup-status").className = "recovery-status";
+}
+
+/** Открыт ли мастер: пока он на экране, его нельзя перебивать. */
+function backupWizardOpen() {
+  return !$("screen-backup").classList.contains("hidden");
+}
+
+function backupStep(step) {
+  $("backup-step-now").textContent = String(step);
+  $("backup-step-words").classList.toggle("hidden", step !== 1);
+  $("backup-step-second").classList.toggle("hidden", step !== 2);
+}
+
+function finishBackupWizard() {
+  // Фраза со экрана уходит вместе с ним: держать её в разметке незачем.
+  $("backup-words").replaceChildren();
+  showScreen("screen-main");
+}
+
+$("backup-written").addEventListener("change", () => {
+  $("backup-next").disabled = !$("backup-written").checked;
+});
+
+$("backup-words-copy").addEventListener("click", () =>
+  copyText(state.recoveryWords, "Фраза скопирована — вставьте в надёжное место и очистите буфер"));
+
+$("backup-words-code").addEventListener("click", () => {
+  // Тот же ключ, другая запись: кому-то привычнее строка, а не слова.
+  const button = $("backup-words-code");
+  const list = $("backup-words");
+  const showingCode = list.classList.toggle("as-code");
+  button.textContent = showingCode ? "Показать словами" : "Показать кодом";
+  list.replaceChildren();
+  if (showingCode) {
+    const item = document.createElement("li");
+    item.className = "wide";
+    item.textContent = state.recoveryCode;
+    list.appendChild(item);
+    return;
+  }
+  for (const word of state.recoveryWords.split(/\s+/)) {
+    const item = document.createElement("li");
+    item.textContent = word;
+    list.appendChild(item);
+  }
+});
+
+$("backup-next").addEventListener("click", () => backupStep(2));
+
+$("backup-totp").addEventListener("change", () => {
+  const on = $("backup-totp").checked;
+  $("backup-totp-box").classList.toggle("hidden", !on);
+  // Секрет заводится на устройстве и до подтверждения кодом никуда не уходит.
+  if (on && !state.totpSecret) submit({ type: "totp_secret", login: $("backup-login").value.trim() || "obsidian" });
+});
+
+$("backup-skip").addEventListener("click", () => {
+  confirmAction(
+    "Пропустить запасной вход?",
+    "Тогда единственный способ вернуть аккаунт — фраза из 24 слов. Потеряете бумагу — "
+    + "вернуть будет нечем: ключей нет ни у нас, ни у того, кто держит сервер.",
+    () => finishBackupWizard(),
+  );
+});
+
+$("backup-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const login = $("backup-login").value.trim();
+  const password = $("backup-password").value;
+  const useTotp = $("backup-totp").checked;
+  const code = $("backup-totp-code").value.trim();
+
+  const bad = (text) => {
+    $("backup-status").textContent = text;
+    $("backup-status").className = "recovery-status bad";
+  };
+  if (login.length < 3) return bad("Логин от 3 символов");
+  if (password.length < 10) return bad("Пароль минимум 10 символов");
+  if (useTotp && !/^\d{6}$/.test(code)) return bad("Введите шесть цифр из приложения");
+
+  const button = $("backup-save");
+  button.disabled = true;
+  button.textContent = "Считаем…";
+  $("backup-status").textContent = "Выводим ключ из пароля, это занимает пару секунд…";
+  $("backup-status").className = "recovery-status";
+
+  const ok = await submit({
+    type: "recovery_setup",
+    login,
+    password,
+    totp: useTotp ? state.totpSecret : null,
+    code: useTotp ? code : null,
+  });
+  if (!ok) {
+    button.disabled = false;
+    button.textContent = "Включить запасной вход";
+    bad("Не вышло — проверьте логин и код");
+  }
+});
+
 $("show-recovery-code").addEventListener("click", () => {
   const box = $("recovery-code-box");
   if (!box.classList.contains("hidden")) {
@@ -1693,14 +1855,14 @@ $("show-recovery-code").addEventListener("click", () => {
     $("copy-recovery-code").classList.add("hidden");
     $("recovery-code-text").textContent = "—";
     state.recoveryCode = "";
-    $("show-recovery-code").textContent = "Показать код";
+    $("show-recovery-code").textContent = "Показать фразу";
     return;
   }
   submit({ type: "recovery_code" });
 });
 
 $("copy-recovery-code").addEventListener("click", () =>
-  copyText(state.recoveryCode, "Код скопирован — вставьте в надёжное место и очистите буфер"),
+  copyText(state.recoveryWords, "Фраза скопирована — вставьте в надёжное место и очистите буфер"),
 );
 
 $("save-recovery-password").addEventListener("click", async () => {
