@@ -39,7 +39,7 @@ openmls_memory_storage = "0.5.0"
 tls_codec = "0.4.2"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "net", "io-util"] }
 
 [profile.release]
 opt-level = "z"

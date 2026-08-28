@@ -686,7 +686,7 @@ async fn recover_with_password(store: &Store, url: &str, login: &str, password: 
 async fn fetch_sealed_identity(url: &str, login: &str, password: &str) -> Result<keys::SecretKey> {
     let (login_id, token, key) = crate::passphrase::request(login, password)?;
 
-    let (mut socket, _) = connect_async(url)
+    let (mut socket, _) = connect_async(crate::edge::ws_request(url)?)
         .await
         .map_err(|err| CoreError::Transport(err.to_string()))?;
     send(&mut socket, proto::recovery_get_frame(&login_id, &token)?).await?;
@@ -1070,7 +1070,9 @@ async fn connect_once(
     live: &mut Live,
     established: &mut bool,
 ) -> Result<Outcome> {
-    let (mut socket, _) = connect_async(url)
+    // Заголовки Cloudflare Access, если сборка их знает: без них закрытый
+    // периметр пришлось бы держать выключенным (§10.1).
+    let (mut socket, _) = connect_async(crate::edge::ws_request(url)?)
         .await
         .map_err(|err| CoreError::Transport(err.to_string()))?;
 

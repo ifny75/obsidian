@@ -12,6 +12,7 @@ pub mod client;
 pub mod command;
 pub mod crypto;
 pub mod directory;
+pub mod edge;
 pub mod error;
 pub mod ffi;
 pub mod keys;
