@@ -152,9 +152,10 @@ fn handle_local(command: &Command, store: &Store, sink: &EventSink) -> bool {
         }
 
         Command::RecoveryCode => match store.load_credentials() {
-            Ok(credentials) => {
-                sink(Event::RecoveryCode { code: crate::recovery::encode(&credentials.identity) })
-            }
+            Ok(credentials) => sink(Event::RecoveryCode {
+                code: crate::recovery::encode(&credentials.identity),
+                words: crate::recovery::encode_words(&credentials.identity),
+            }),
             Err(_) => fail(sink, "no_identity", "личности в этой базе ещё нет"),
         },
 

@@ -6,6 +6,7 @@ import type { NonceStore } from "../auth/nonce.ts";
 import type { SessionStore } from "../auth/sessions.ts";
 import { authMessage, deviceCertMessage, verify } from "../auth/verify.ts";
 import type { RateLimiter } from "../util/ratelimit.ts";
+import { decodeBase32, verify as verifyTotp } from "../auth/totp.ts";
 import type { ConnectionCounter } from "../util/connections.ts";
 import { BadInput, ascii, concat, constantTimeEqual, fromHex, random, toHex } from "../util/bytes.ts";
 import {
@@ -1233,7 +1234,7 @@ const RECOVERY_SEALED_LEN = 72;
  */
 function onRecoverySet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
   const payload = parseJsonBody(body) as
-    { loginId?: unknown; verifier?: unknown; sealed?: unknown; clear?: unknown };
+    { loginId?: unknown; verifier?: unknown; sealed?: unknown; clear?: unknown; totp?: unknown };
   if (!payload || typeof payload !== "object") throw new BadInput("recovery payload required");
 
   if (payload.clear === true) {
@@ -1246,11 +1247,28 @@ function onRecoverySet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Arra
   const verifier = fromHex(payload.verifier, RECOVERY_VERIFIER_LEN);
   const sealed = fromHex(payload.sealed, RECOVERY_SEALED_LEN);
 
-  if (!deps.store.setRecovery(loginId, conn.identity!, verifier, sealed, deps.now())) {
+  /*
+    Второй фактор необязателен. Секрет придумывает клиент и присылает сюда в
+    base32 — том же виде, в каком показывает человеку для переноса в
+    приложение-аутентификатор. Сервер его хранит открытым: иначе TOTP не
+    работает, обе стороны считают код из одного секрета. Ключей от переписки
+    это не касается — посылку рядом по-прежнему открывает только пароль.
+  */
+  let totpSecret: Uint8Array | null = null;
+  if (payload.totp !== undefined && payload.totp !== null && payload.totp !== "") {
+    if (typeof payload.totp !== "string") throw new BadInput("bad totp secret");
+    const decoded = decodeBase32(payload.totp);
+    if (!decoded || decoded.byteLength < 10 || decoded.byteLength > 64) {
+      throw new BadInput("bad totp secret");
+    }
+    totpSecret = decoded;
+  }
+
+  if (!deps.store.setRecovery(loginId, conn.identity!, verifier, sealed, deps.now(), totpSecret)) {
     sock.send(errorFrame("login_taken", "this login is already used by another account"), true);
     return;
   }
-  sock.send(frame(OP.RECOVERY_OK), true);
+  sock.send(jsonFrame(OP.RECOVERY_OK, { totp: totpSecret !== null }), true);
 }
 
 /**
@@ -1262,7 +1280,8 @@ function onRecoverySet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Arra
  * подсказывал бы, какие логины заняты.
  */
 function onRecoveryGet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
-  const payload = parseJsonBody(body) as { loginId?: unknown; token?: unknown };
+  const payload = parseJsonBody(body) as
+    { loginId?: unknown; token?: unknown; code?: unknown };
   if (!payload || typeof payload !== "object") throw new BadInput("recovery query required");
 
   const loginId = fromHex(payload.loginId, RECOVERY_ID_LEN);
@@ -1282,6 +1301,26 @@ function onRecoveryGet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Arra
   if (!row || !constantTimeEqual(sha256(concat(RECOVERY_VERIFIER_DOMAIN, token)), row.verifier)) {
     sock.send(errorFrame("recovery_not_found", "login or password is wrong"), true);
     return;
+  }
+
+  /*
+    Второй фактор проверяется после пароля, а не до.
+
+    Иначе ответ «нужен код» сам рассказывал бы, что такой логин существует и
+    что у него включены одноразовые коды, — причём любому спрашивающему.
+    Здесь про второй фактор узнаёт только тот, кто пароль уже знает; для него
+    это не новость.
+  */
+  if (row.totp_secret) {
+    const code = typeof payload.code === "string" ? payload.code : "";
+    if (code === "") {
+      sock.send(errorFrame("recovery_totp_required", "one-time code required"), true);
+      return;
+    }
+    if (!verifyTotp(row.totp_secret, code, now)) {
+      sock.send(errorFrame("recovery_totp_wrong", "one-time code is wrong"), true);
+      return;
+    }
   }
 
   sock.send(jsonFrame(OP.RECOVERY_BLOB, { sealed: toHex(row.sealed) }), true);

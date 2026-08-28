@@ -37,6 +37,7 @@ openmls_basic_credential = "0.5.0"
 openmls_traits = "0.5.0"
 openmls_memory_storage = "0.5.0"
 tls_codec = "0.4.2"
+bip39 = { version = "2.2.2", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "net", "io-util"] }

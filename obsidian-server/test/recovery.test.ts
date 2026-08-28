@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { ed25519 } from "@noble/curves/ed25519";
 import { sha256 } from "@noble/hashes/sha2";
 
+import { codeFor, encodeBase32, STEP_SECONDS } from "../src/auth/totp.ts";
 import { Store } from "../src/db/index.ts";
 import { NonceStore } from "../src/auth/nonce.ts";
 import { SessionStore } from "../src/auth/sessions.ts";
@@ -132,9 +133,66 @@ function sealedBox(loginId: Uint8Array, token: Uint8Array) {
   };
 }
 
-function recoveryGet(loginId: Uint8Array, token: Uint8Array): Uint8Array {
-  return jsonFrame(OP.RECOVERY_GET, { loginId: toHex(loginId), token: toHex(token) });
+function recoveryGet(loginId: Uint8Array, token: Uint8Array, code?: string): Uint8Array {
+  return jsonFrame(OP.RECOVERY_GET, {
+    loginId: toHex(loginId),
+    token: toHex(token),
+    ...(code === undefined ? {} : { code }),
+  });
 }
+
+test("одноразовый код закрывает выдачу посылки", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  const { sock, conn } = register(deps, store, makeIdentity(), "alice");
+
+  const loginId = random(32);
+  const token = random(32);
+  const secret = random(20);
+  const box = { ...sealedBox(loginId, token), totp: encodeBase32(secret) };
+  handleMessage(deps, sock, conn, jsonFrame(OP.RECOVERY_SET, box));
+  assert.equal(sock.latestJson(OP.RECOVERY_OK).totp, true);
+
+  const now = deps.now();
+
+  // Пароль верен, кода нет — посылку не отдаём.
+  const first = connect(deps);
+  handleMessage(deps, first.sock, first.conn, recoveryGet(loginId, token));
+  assert.equal(first.sock.latestJson(OP.ERROR).code, "recovery_totp_required");
+  assert.ok(!first.sock.has(OP.RECOVERY_BLOB), "посылка утекла без кода");
+
+  // Код неверный — тоже нет.
+  const second = connect(deps);
+  handleMessage(deps, second.sock, second.conn, recoveryGet(loginId, token, "000000"));
+  assert.ok(!second.sock.has(OP.RECOVERY_BLOB), "посылка утекла с чужим кодом");
+
+  // Верный код из приложения — отдаём.
+  const counter = Math.floor(now / 1000 / STEP_SECONDS);
+  const third = connect(deps);
+  handleMessage(deps, third.sock, third.conn,
+    recoveryGet(loginId, token, codeFor(secret, counter)));
+  assert.equal(third.sock.latestJson(OP.RECOVERY_BLOB).sealed, box.sealed);
+  store.close();
+});
+
+test("про второй фактор узнаёт только тот, кто знает пароль", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  const { sock, conn } = register(deps, store, makeIdentity(), "alice");
+
+  const loginId = random(32);
+  const token = random(32);
+  handleMessage(deps, sock, conn, jsonFrame(OP.RECOVERY_SET, {
+    ...sealedBox(loginId, token), totp: encodeBase32(random(20)),
+  }));
+
+  // Неверный пароль — обычный recovery_not_found, без намёка на то, что логин
+  // существует и что у него включены коды.
+  const stranger = connect(deps);
+  handleMessage(deps, stranger.sock, stranger.conn, recoveryGet(loginId, random(32)));
+  assert.equal(stranger.sock.latestJson(OP.ERROR).code, "recovery_not_found");
+  store.close();
+});
 
 test("посылка выдаётся только по верному доказательству", () => {
   const store = new Store(":memory:");

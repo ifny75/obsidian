@@ -80,6 +80,7 @@ export class Store {
     this.#db.exec(SCHEMA);
     this.#addProfileDecoration();
     this.#addChannelIcon();
+    this.#addRecoveryTotp();
   }
 
   close(): void {
@@ -124,6 +125,16 @@ export class Store {
    * значок профиля: столбцы добавляются отдельно, таблицу сносить нельзя,
    * в ней имена каналов, по которым на них ссылаются.
    */
+  #addRecoveryTotp(): void {
+    const columns = this.#db.prepare("PRAGMA table_info(recoveries)").all() as unknown as {
+      name: string;
+    }[];
+    if (columns.length === 0) return;
+    if (!columns.some((column) => column.name === "totp_secret")) {
+      this.#db.exec("ALTER TABLE recoveries ADD COLUMN totp_secret BLOB");
+    }
+  }
+
   #addChannelIcon(): void {
     const columns = this.#db.prepare("PRAGMA table_info(channels)").all() as unknown as {
       name: string;
@@ -541,7 +552,14 @@ export class Store {
    * без проверки любой зарегистрированный пользователь мог бы угадать чужой
    * логин и затереть чужую строку, лишив человека способа восстановиться.
    */
-  setRecovery(loginId: Bytes, identity: Bytes, verifier: Bytes, sealed: Bytes, now: number): boolean {
+  setRecovery(
+    loginId: Bytes,
+    identity: Bytes,
+    verifier: Bytes,
+    sealed: Bytes,
+    now: number,
+    totpSecret: Bytes | null = null,
+  ): boolean {
     return this.#tx(() => {
       const owner = this.#db
         .prepare("SELECT identity FROM recoveries WHERE login_id = ?")
@@ -552,18 +570,27 @@ export class Store {
       this.#db.prepare("DELETE FROM recoveries WHERE identity = ?").run(identity);
       this.#db
         .prepare(
-          `INSERT INTO recoveries (login_id, identity, verifier, sealed, updated_at)
-           VALUES (?, ?, ?, ?, ?)`,
+          `INSERT INTO recoveries (login_id, identity, verifier, sealed, totp_secret, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
         )
-        .run(loginId, identity, verifier, sealed, now);
+        .run(loginId, identity, verifier, sealed, totpSecret, now);
       return true;
     });
   }
 
-  getRecovery(loginId: Bytes): { verifier: Bytes; sealed: Bytes } | undefined {
+  getRecovery(loginId: Bytes): { verifier: Bytes; sealed: Bytes; totp_secret: Bytes | null }
+    | undefined {
     return this.#db
-      .prepare("SELECT verifier, sealed FROM recoveries WHERE login_id = ?")
-      .get(loginId) as { verifier: Bytes; sealed: Bytes } | undefined;
+      .prepare("SELECT verifier, sealed, totp_secret FROM recoveries WHERE login_id = ?")
+      .get(loginId) as { verifier: Bytes; sealed: Bytes; totp_secret: Bytes | null } | undefined;
+  }
+
+  /** Есть ли у этой личности второй фактор. Нужно, чтобы показать состояние. */
+  recoveryTotpEnabled(identity: Bytes): boolean {
+    const row = this.#db
+      .prepare("SELECT totp_secret FROM recoveries WHERE identity = ?")
+      .get(identity) as { totp_secret: Bytes | null } | undefined;
+    return row?.totp_secret != null;
   }
 
   deleteRecovery(identity: Bytes): void {

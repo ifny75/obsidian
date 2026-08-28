@@ -61,6 +61,10 @@ CREATE TABLE IF NOT EXISTS recoveries (
   identity   BLOB NOT NULL UNIQUE REFERENCES users(identity) ON DELETE CASCADE,
   verifier   BLOB NOT NULL,
   sealed     BLOB NOT NULL,
+  -- Секрет одноразовых кодов, если человек их включил. Лежит открытым: иначе
+  -- TOTP не работает — обе стороны считают код из одного секрета. Ключей от
+  -- переписки здесь нет, посылку рядом по-прежнему открывает только пароль.
+  totp_secret BLOB,
   updated_at INTEGER NOT NULL
 ) WITHOUT ROWID;
 
