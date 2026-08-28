@@ -45,6 +45,8 @@ export interface Deps {
   authLimiter: RateLimiter;
   recoveryLimiter: RateLimiter;
   searchLimiter: RateLimiter;
+  sendLimiter: RateLimiter;
+  postLimiter: RateLimiter;
   now: () => number;
 }
 
@@ -831,6 +833,13 @@ function onChannelCreate(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Ar
   if (!HANDLE.test(handle)) throw new BadInput("bad channel handle");
   if (title.length === 0 || title.length > MAX_TITLE) throw new BadInput("bad channel title");
 
+  // Заведение канала ничего не стоит отправителю и занимает имя навсегда:
+  // без потолка один аккаунт разбирает весь словарь коротких имён.
+  if (deps.store.countOwnedChannels(conn.identity!) >= config.maxChannelsPerIdentity) {
+    sock.send(errorFrame("channels_full", "too many channels"), true);
+    return;
+  }
+
   const created = deps.store.createChannel(random(ID_LEN), conn.identity!, handle, title, about,
     deps.now());
   if (!created) {
@@ -874,6 +883,13 @@ function onChannelPublish(deps: Deps, sock: Socket, conn: ConnData, body: Uint8A
   }
   const text = String(payload.body ?? "").trim();
   if (text.length === 0 || text.length > MAX_POST) throw new BadInput("bad post body");
+
+  // Пост живёт вечно: TTL, как у конвертов, у него нет. Значит частота —
+  // единственное, что стоит между лентой и бесконечным ростом диска.
+  if (!deps.postLimiter.allow(toHex(conn.identity!), deps.now())) {
+    sock.send(errorFrame("post_rate_limited", "slow down"), true);
+    return;
+  }
 
   const post = deps.store.addPost(random(ID_LEN), channel.id, text, deps.now());
   const frame = jsonFrame(OP.CHANNEL_POST, {
@@ -1313,11 +1329,29 @@ function normalizeHandle(raw: unknown): string | null | undefined {
 
 function onSend(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
   const now = deps.now();
+
+  // Ведро по личности, а не по соединению и не по IP: соединений человек
+  // открывает сколько хочет, а IP за Cloudflare мы знаем только со слов
+  // заголовка. Личность подтверждена подписью — обойти её нельзя, не заведя
+  // второй аккаунт по инвайту.
+  if (!deps.sendLimiter.allow(toHex(conn.identity!), now)) {
+    sock.send(errorFrame("send_rate_limited", "slow down"), true);
+    return;
+  }
+
   const parsed = parseSend(body);
 
   const recipient = deps.store.getDevice(parsed.recipientDevice);
   if (!recipient) {
     sock.send(errorFrame("unknown_recipient", "no such device"), true);
+    return;
+  }
+
+  // Потолок очереди получателя. Ведро отправителя его не заменяет: десять
+  // аккаунтов в пределах своих вёдер сложатся и всё равно зальют одного
+  // человека, а разгребать очередь ему.
+  if (deps.store.countQueued(parsed.recipientDevice, now) >= config.maxQueuedPerDevice) {
+    sock.send(errorFrame("recipient_queue_full", "recipient has too much undelivered mail"), true);
     return;
   }
 

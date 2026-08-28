@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { ed25519 } from "@noble/curves/ed25519";
 import { sha256 } from "@noble/hashes/sha2";
 
+import { config } from "../src/config.ts";
 import { Store } from "../src/db/index.ts";
 import { NonceStore } from "../src/auth/nonce.ts";
 import { SessionStore } from "../src/auth/sessions.ts";
@@ -62,6 +63,8 @@ function makeDeps(store: Store): Deps {
     authLimiter: new RateLimiter(100, 60_000),
     recoveryLimiter: new RateLimiter(100, 3600_000),
     searchLimiter: new RateLimiter(100, 60_000),
+    sendLimiter: new RateLimiter(1000, 60_000),
+    postLimiter: new RateLimiter(1000, 60_000),
     now: () => Date.now(),
   };
 }
@@ -109,6 +112,51 @@ function createChannel(deps: Deps, owner: { sock: FakeSocket; conn: any }, handl
   }));
   return owner.sock.json(OP.CHANNEL_OK).opened;
 }
+
+test("частая публикация упирается в ограничитель", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  // Пост живёт вечно, поэтому частота — единственный тормоз.
+  deps.postLimiter = new RateLimiter(2, 60_000);
+  const owner = connect(deps, store, makeIdentity(), "owner");
+  const channel = createChannel(deps, owner, "notes");
+
+  const post = (text: string) => {
+    owner.sock.clear();
+    handleMessage(deps, owner.sock, owner.conn,
+      jsonFrame(OP.CHANNEL_PUBLISH, { channel: channel.id, body: text }));
+  };
+
+  post("раз");
+  assert.ok(!owner.sock.has(OP.ERROR), "первый пост обязан пройти");
+  post("два");
+  assert.ok(!owner.sock.has(OP.ERROR), "второй пост обязан пройти");
+
+  post("три");
+  assert.equal(owner.sock.json(OP.ERROR).code, "post_rate_limited");
+  store.close();
+});
+
+test("число каналов на человека ограничено", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  const owner = connect(deps, store, makeIdentity(), "owner");
+
+  for (let i = 0; i < config.maxChannelsPerIdentity; i += 1) {
+    owner.sock.clear();
+    handleMessage(deps, owner.sock, owner.conn,
+      jsonFrame(OP.CHANNEL_CREATE, { handle: `feed${i}`, title: "Лента" }));
+    assert.ok(!owner.sock.has(OP.ERROR), `канал ${i} обязан завестись`);
+  }
+
+  owner.sock.clear();
+  handleMessage(deps, owner.sock, owner.conn,
+    jsonFrame(OP.CHANNEL_CREATE, { handle: "onemore", title: "Лента" }));
+  assert.equal(owner.sock.json(OP.ERROR).code, "channels_full");
+  // Занять имя неудавшийся канал не должен.
+  assert.equal(store.channelByHandle("onemore"), undefined);
+  store.close();
+});
 
 test("канал заводится, и владелец сразу его читает", () => {
   const store = new Store(":memory:");

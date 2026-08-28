@@ -84,11 +84,6 @@ async function waitForHealth(): Promise<void> {
   throw new Error("server did not start");
 }
 
-async function get<T>(path: string, token: string): Promise<T> {
-  const res = await fetch(BASE + path, { headers: { authorization: `Bearer ${token}` } });
-  if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
-  return (await res.json()) as T;
-}
 
 async function post<T>(path: string, headers: Record<string, string>): Promise<T> {
   const res = await fetch(BASE + path, { method: "POST", headers });
@@ -96,15 +91,6 @@ async function post<T>(path: string, headers: Record<string, string>): Promise<T
   return (await res.json()) as T;
 }
 
-async function postRaw<T>(path: string, body: Uint8Array, token: string): Promise<T> {
-  const res = await fetch(BASE + path, {
-    method: "POST",
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/octet-stream" },
-    body,
-  });
-  if (!res.ok) throw new Error(`POST ${path} -> ${res.status}`);
-  return (await res.json()) as T;
-}
 
 const steps: string[] = [];
 function ok(label: string): void {
@@ -177,27 +163,21 @@ try {
 
   ws.send(concat(new Uint8Array([OP.ACK]), envelopeId));
 
-  const dir = await get<{ devices: { devicePub: string }[] }>(
+  // Каталог, KeyPackages и blob-эндпоинты убраны: всё это умеет сокет, а по
+  // HTTP было вторым входом к тем же данным. Проверяем, что их правда нет —
+  // иначе они однажды вернутся незамеченными вместе с чужим патчем.
+  for (const path of [
     `/v1/directory/${toHex(idPub)}`,
-    authOk.token,
-  );
-  assert.equal(dir.devices.length, 1);
-  assert.equal(dir.devices[0]!.devicePub, toHex(devPub));
-  ok("каталог отдаёт устройство с сертификатом");
-
-  const unauthorized = await fetch(`${BASE}/v1/directory/${toHex(idPub)}`);
-  assert.equal(unauthorized.status, 401);
-  ok("HTTP без токена отбивается");
-
-  const blobBody = random(4096);
-  const blob = await postRaw<{ id: string }>("/v1/blobs", blobBody, authOk.token);
-  const fetched = new Uint8Array(
-    await (await fetch(`${BASE}/v1/blobs/${blob.id}`, {
+    "/v1/handle/alice",
+    "/v1/keypackages",
+    `/v1/blobs/${toHex(random(16))}`,
+  ]) {
+    const gone = await fetch(`${BASE}${path}`, {
       headers: { authorization: `Bearer ${authOk.token}` },
-    })).arrayBuffer(),
-  );
-  assert.equal(toHex(fetched), toHex(blobBody), "blob вернулся байт в байт");
-  ok("blob загружен и скачан");
+    });
+    assert.equal(gone.status, 404, `${path} обязан отсутствовать`);
+  }
+  ok("HTTP-двойники сокета убраны");
 
   ws.close();
   process.stdout.write(`\nsmoke: ${steps.length} проверок пройдено\n`);

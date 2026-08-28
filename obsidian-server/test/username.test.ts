@@ -60,6 +60,8 @@ function makeDeps(store: Store): Deps {
     authLimiter: new RateLimiter(100, 60_000),
     recoveryLimiter: new RateLimiter(100, 3600_000),
     searchLimiter: new RateLimiter(100, 60_000),
+    sendLimiter: new RateLimiter(1000, 60_000),
+    postLimiter: new RateLimiter(1000, 60_000),
     now: () => Date.now(),
   };
 }

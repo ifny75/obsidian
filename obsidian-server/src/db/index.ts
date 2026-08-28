@@ -297,6 +297,14 @@ export class Store {
   }
 
   /** Каналы, которые человек ведёт или читает. */
+  /** Сколько каналов завёл этот человек — своих, не считая подписок. */
+  countOwnedChannels(owner: Bytes): number {
+    const row = this.#db
+      .prepare("SELECT COUNT(*) AS n FROM channels WHERE owner = ?")
+      .get(owner) as { n: number };
+    return row.n;
+  }
+
   channelsFor(identity: Bytes): (ChannelRow & { subscribers: number; posts: number })[] {
     return this.#db
       .prepare(
@@ -727,6 +735,20 @@ export class Store {
       )
       .run(id, recipientDevice, payload, now, expiresAt);
     return id;
+  }
+
+  /**
+   * Сколько конвертов ждёт это устройство.
+   *
+   * Очередь — единственное место, где чужой отправитель занимает наш диск, и
+   * занимает его до ACK либо до истечения TTL. Без потолка один аккаунт топит
+   * выбранного человека: разгребать очередь тот будет дольше, чем её наливали.
+   */
+  countQueued(recipientDevice: Bytes, now: number): number {
+    const row = this.#db
+      .prepare("SELECT COUNT(*) AS n FROM envelopes WHERE recipient_device = ? AND expires_at > ?")
+      .get(recipientDevice, now) as { n: number };
+    return row.n;
   }
 
   /** Строго в порядке постановки: seq монотонен, created_at — нет. */

@@ -25,10 +25,13 @@ const registry = new Registry();
 const authLimiter = new RateLimiter(config.maxAuthPerMinutePerIp, 60_000);
 const recoveryLimiter = new RateLimiter(config.maxRecoveryPerHour, 3_600_000);
 const searchLimiter = new RateLimiter(config.maxSearchPerMinute, 60_000);
+const sendLimiter = new RateLimiter(config.maxSendPerMinute, 60_000);
+const postLimiter = new RateLimiter(config.maxPostsPerMinute, 60_000);
 const now = () => Date.now();
 
 const deps: Deps = {
-  store, nonces, sessions, registry, authLimiter, recoveryLimiter, searchLimiter, now,
+  store, nonces, sessions, registry,
+  authLimiter, recoveryLimiter, searchLimiter, sendLimiter, postLimiter, now,
 };
 
 const app = uWS.App();
@@ -137,6 +140,8 @@ const cleanup = setInterval(() => {
   authLimiter.sweep(ts);
   recoveryLimiter.sweep(ts);
   searchLimiter.sweep(ts);
+  sendLimiter.sweep(ts);
+  postLimiter.sweep(ts);
   log.info("sweep", { ...swept, online: registry.onlineDevices });
 }, config.cleanupIntervalSec * 1000);
 cleanup.unref();

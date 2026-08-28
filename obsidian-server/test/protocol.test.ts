@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { ed25519 } from "@noble/curves/ed25519";
 import { sha256 } from "@noble/hashes/sha2";
 
+import { config } from "../src/config.ts";
 import { Store } from "../src/db/index.ts";
 import { NonceStore } from "../src/auth/nonce.ts";
 import { SessionStore } from "../src/auth/sessions.ts";
@@ -78,6 +79,8 @@ function makeDeps(store: Store): Deps {
     authLimiter: new RateLimiter(1000, 60_000),
     recoveryLimiter: new RateLimiter(1000, 3_600_000),
     searchLimiter: new RateLimiter(1000, 3_600_000),
+    sendLimiter: new RateLimiter(1000, 60_000),
+    postLimiter: new RateLimiter(1000, 60_000),
     now: () => Date.now(),
   };
 }
@@ -245,6 +248,61 @@ test("доставка онлайн: SEND_OK отправителю, ENVELOPE п
   assert.equal(store.countPending(bob.devPub, Date.now()), 1);
   handleMessage(deps, b.sock, b.conn, frame(OP.ACK, envelopeId));
   assert.equal(store.countPending(bob.devPub, Date.now()), 0);
+  store.close();
+});
+
+test("частая отправка упирается в ограничитель", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  // Два письма в окно: третье должно упереться.
+  deps.sendLimiter = new RateLimiter(2, 60_000);
+  const alice = makeIdentity();
+  const bob = makeIdentity();
+  const a = register(deps, store, alice, "alice");
+  register(deps, store, bob, "bob");
+
+  const letter = () => frame(OP.SEND,
+    concat(random(ID_LEN), bob.devPub, new Uint8Array([0, 0, 0x0e, 0x10]), ascii("x")));
+
+  handleMessage(deps, a.sock, a.conn, letter());
+  handleMessage(deps, a.sock, a.conn, letter());
+  assert.ok(!a.sock.has(OP.ERROR), `первые два письма обязаны пройти: ${a.sock.opcodes()}`);
+
+  handleMessage(deps, a.sock, a.conn, letter());
+  assert.equal(a.sock.json(OP.ERROR).code, "send_rate_limited");
+  // Третье письмо до очереди не дошло.
+  assert.equal(store.countPending(bob.devPub, Date.now()), 2);
+  store.close();
+});
+
+test("переполненная очередь получателя закрыта для любого отправителя", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  const alice = makeIdentity();
+  const carol = makeIdentity();
+  const bob = makeIdentity();
+  const a = register(deps, store, alice, "alice");
+  const c = register(deps, store, carol, "carol");
+  register(deps, store, bob, "bob");
+
+  // Набиваем очередь Боба напрямую: через SEND это заняло бы тысячи кадров.
+  const now = Date.now();
+  const limit = config.maxQueuedPerDevice;
+  for (let i = 0; i < limit; i += 1) {
+    store.enqueue(bob.devPub, ascii(`old-${i}`), now, now + 3_600_000);
+  }
+
+  const letter = () => frame(OP.SEND,
+    concat(random(ID_LEN), bob.devPub, new Uint8Array([0, 0, 0x0e, 0x10]), ascii("x")));
+
+  handleMessage(deps, a.sock, a.conn, letter());
+  assert.equal(a.sock.json(OP.ERROR).code, "recipient_queue_full");
+
+  // И для другого отправителя тоже: потолок считается по получателю, иначе
+  // несколько аккаунтов сложатся и обойдут его, оставаясь каждый в своём ведре.
+  handleMessage(deps, c.sock, c.conn, letter());
+  assert.equal(c.sock.json(OP.ERROR).code, "recipient_queue_full");
+  assert.equal(store.countQueued(bob.devPub, now), limit);
   store.close();
 });
 
