@@ -635,7 +635,10 @@ public final class MainActivity extends Activity implements Events.Listener {
         cornerRadius.setProgress(Math.max(0, Math.min(16, preferences.getInt("corner_radius", 24) - 8)));
         bubbleRadius.setProgress(Math.max(0, Math.min(22, preferences.getInt("bubble_radius", 24) - 6)));
         squareAvatars.setChecked(preferences.getBoolean("square_avatars", false));
-        Switch screenPrivacy = findViewById(R.id.screen_privacy);
+        // Имя id не случайно отличается от ключа настройки: `screen_privacy`
+        // уже занят экраном приватности, и findViewById возвращал по нему
+        // ScrollView. Приложение падало на старте — см. Switch ниже.
+        Switch screenPrivacy = findViewById(R.id.hide_from_screenshots);
         screenPrivacy.setChecked(preferences.getBoolean(SCREEN_PRIVACY_KEY, true));
 
         cornerRadius.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -831,7 +834,7 @@ public final class MainActivity extends Activity implements Events.Listener {
         squareAvatars.setChecked(false);
         // Сброс возвращает и защиту экрана — к безопасному значению, а не к
         // тому, что было выбрано до него.
-        ((Switch) findViewById(R.id.screen_privacy)).setChecked(true);
+        ((Switch) findViewById(R.id.hide_from_screenshots)).setChecked(true);
         applyScreenPrivacy(true);
         applyInterfaceScale(findViewById(R.id.app_root), 1f);
         applyTheme();
@@ -1207,13 +1210,28 @@ public final class MainActivity extends Activity implements Events.Listener {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == UNLOCK_REQUEST) {
-            if (resultCode == RESULT_OK) {
-                findViewById(R.id.boot_unlock).setVisibility(View.GONE);
-                ((TextView) findViewById(R.id.boot_status)).setText(R.string.boot_status);
-                autoOpenDatabase();
+            Integer wanted = pendingLock;
+            pendingLock = null;
+            if (resultCode != RESULT_OK) {
+                // Отказались — ничего не меняем. При запуске остаёмся на
+                // заставке с кнопкой: человек мог промахнуться, а не передумать.
+                if (wanted != null) refreshAppLock();
+                return;
             }
-            // Отказались — остаёмся на заставке с кнопкой. Закрывать приложение
-            // самим незачем: человек мог промахнуться, а не передумать.
+            if (wanted != null) {
+                // Настройки: доводим до конца то, ради чего спрашивали.
+                LocalSecretStore secrets = new LocalSecretStore(this);
+                if (wanted == 0) {
+                    releaseLock(secrets);
+                } else {
+                    setLockDelay(secrets, wanted);
+                }
+                refreshAppLock();
+                return;
+            }
+            findViewById(R.id.boot_unlock).setVisibility(View.GONE);
+            ((TextView) findViewById(R.id.boot_status)).setText(R.string.boot_status);
+            autoOpenDatabase();
             return;
         }
         if ((requestCode != AVATAR_PICK_REQUEST && requestCode != PHOTO_PICK_REQUEST)
@@ -1285,6 +1303,20 @@ public final class MainActivity extends Activity implements Events.Listener {
 
     /** Код ответа системного запроса подтверждения. */
     private static final int UNLOCK_REQUEST = 4711;
+
+    /**
+     * Что сделать, когда человек подтвердит, что это он.
+     *
+     * Подтверждение спрашивается в двух разных случаях, и путать их нельзя:
+     * при запуске оно нужно, чтобы открыть базу, а в настройках — чтобы
+     * перезавести ключ под новую задержку. Раньше здесь всегда открывалась
+     * база, поэтому включение замка требовало двух попыток: первая только
+     * спрашивала пароль, а сделать то, ради чего спрашивала, забывала.
+     *
+     * null — подтверждение для открытия базы. Иначе задержка в секундах,
+     * 0 — снять замок.
+     */
+    private Integer pendingLock;
 
     /**
      * Просит систему подтвердить, что телефон в руках владельца.
@@ -1371,6 +1403,10 @@ public final class MainActivity extends Activity implements Events.Listener {
             secrets.enableLock(seconds);
             return true;
         } catch (android.security.keystore.UserNotAuthenticatedException expired) {
+            // Ключ под задержкой выдаётся только после свежего подтверждения —
+            // а свежим оно бывает лишь несколько десятков секунд. Спрашиваем и
+            // возвращаемся сюда же: см. pendingLock.
+            pendingLock = seconds;
             requestUnlock();
             return false;
         } catch (Throwable error) {
@@ -1384,12 +1420,30 @@ public final class MainActivity extends Activity implements Events.Listener {
             secrets.disableLock();
             return true;
         } catch (android.security.keystore.UserNotAuthenticatedException expired) {
+            pendingLock = 0;
             requestUnlock();
             return false;
         } catch (Throwable error) {
             toast(getString(R.string.app_lock_failed));
             return false;
         }
+    }
+
+    /** Приводит переключатель к тому, что на самом деле лежит в хранилище. */
+    private void refreshAppLock() {
+        LocalSecretStore secrets = new LocalSecretStore(this);
+        Switch lock = findViewById(R.id.app_lock);
+        if (lock == null) return;
+        boolean locked = secrets.locked();
+        if (lock.isChecked() != locked) {
+            // Слушатель здесь не нужен: состояние уже изменено в хранилище,
+            // и повторный заход только спросил бы пароль второй раз.
+            lock.setOnCheckedChangeListener(null);
+            lock.setChecked(locked);
+            wireAppLock();
+        }
+        findViewById(R.id.app_lock_after).setVisibility(locked ? View.VISIBLE : View.GONE);
+        markLockChoice(secrets.lockSeconds());
     }
 
     /** Показывает выбранную задержку: без этого три кнопки выглядят одинаково. */
