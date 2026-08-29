@@ -834,6 +834,41 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
 
 #backup-skip{display:block;width:100%;margin-top:14px}
 
+/* Кнопка «к последним»: та же, что в мобильном клиенте. Появляется, когда
+   человек ушёл вверх по истории — колесом оттуда возвращаться долго. */
+.jump-down{position:absolute;right:26px;bottom:104px;z-index:3;width:40px;height:40px;padding:0;
+  display:grid;place-items:center;border:1px solid var(--line);border-radius:50%;
+  background:var(--panel-solid);color:var(--muted);box-shadow:0 10px 26px rgba(0,0,0,.4);
+  transition:opacity .16s,transform .16s,color .16s,border-color .16s}
+.jump-down:hover{color:var(--text);border-color:var(--line-strong)}
+.jump-down.hidden{display:grid!important;opacity:0;pointer-events:none;transform:translateY(10px)}
+/* Стрелка рисуется рамкой: своего файла ради одной галки заводить не нужно. */
+.icon-chevron-down{width:9px;height:9px;background:transparent;-webkit-mask:none;mask:none;
+  border-right:2px solid currentColor;border-bottom:2px solid currentColor;
+  transform:rotate(45deg) translate(-2px,-2px)}
+.jump-badge{position:absolute;top:-3px;right:-3px;min-width:18px;height:18px;padding:0 5px;
+  display:grid;place-items:center;border-radius:99px;background:var(--accent);
+  color:var(--accent-text);font:600 9px/1 "Inter UI",sans-serif;font-style:normal}
+.jump-badge.hidden{display:none}
+
+/* Подписи дней и черта непрочитанного. */
+.day-divider,.unread-divider{display:flex;align-items:center;gap:10px;margin:14px 0 8px;
+  padding:0;border:0;background:transparent;max-width:none;animation:none}
+.day-divider::before,.day-divider::after,
+.unread-divider::before,.unread-divider::after{content:"";flex:1;height:1px;background:var(--line)}
+.day-divider span{color:var(--faint);font-size:10px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;white-space:nowrap}
+.unread-divider span{color:var(--accent);font-size:10px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;white-space:nowrap}
+.unread-divider::before,.unread-divider::after{background:color-mix(in srgb,var(--accent) 45%,transparent)}
+
+/* Ссылка в сообщении. Подчёркнута всегда, а не при наведении: отличать её от
+   текста нужно до того, как человек туда наведёт. */
+.message-link{color:inherit;text-decoration:underline;text-underline-offset:2px;
+  text-decoration-color:color-mix(in srgb,currentColor 45%,transparent);cursor:pointer;
+  word-break:break-all}
+.message-link:hover{text-decoration-color:currentColor}
+
 /* Полоса отката: рядом с тостом, но со своей кнопкой и живёт дольше. */
 .undo-bar{position:fixed;left:50%;bottom:22px;z-index:51;display:flex;align-items:center;gap:14px;
   padding:9px 10px 9px 15px;border:1px solid var(--line);border-radius:11px;

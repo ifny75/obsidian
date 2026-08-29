@@ -737,6 +737,9 @@ function selectConversation(peer) {
   state.current = peer;
   const group = isGroupKey(peer) ? state.groups.get(groupIdOf(peer)) : null;
   const entry = state.conversations.get(peer);
+  // Сколько было непрочитано — запоминаем до обнуления: черта ставится по
+  // этому числу, а счётчик к моменту отрисовки уже будет нулём.
+  const wasUnread = (entry?.unread ?? 0) || (isGroupKey(peer) ? (group?.unread ?? 0) : 0);
   if (entry) entry.unread = 0;
   if (group) {
     group.unread = 0;
@@ -776,11 +779,14 @@ function selectConversation(peer) {
   $("composer").placeholder = readOnly ? "В этот канал пишет только владелец" : "Сообщение…";
   renderConversations();
 
-  if (entry?.conversation) {
-    const cached = chat(entry.conversation);
+  // Через conversationOf, а не через entry: у группы записи в state.conversations
+  // нет вовсе, и по entry её переписка не рисовалась и не подгружалась.
+  const open = conversationOf(peer);
+  if (open) {
+    const cached = chat(open);
     // Уже открывали — показываем мгновенно и в базу не ходим.
-    paintConversation(entry.conversation);
-    if (!cached.loaded) loadOlder(entry.conversation);
+    paintConversation(open, wasUnread);
+    if (!cached.loaded) loadOlder(open);
   } else {
     $("messages").replaceChildren();
     $("history-more").classList.add("hidden");
@@ -800,6 +806,7 @@ function selectConversation(peer) {
  * читается как зависание.
  */
 $("messages").addEventListener("scroll", () => {
+  updateJumpButton();
   const conversation = conversationOf(state.current);
   if (!conversation) return;
   const list = $("messages");
@@ -902,9 +909,9 @@ function buildMessage({ outgoing, body, created_at }, peer) {
     text.appendChild(image);
     if (content.caption) text.append(document.createTextNode(content.caption));
   } else {
-    // Именно узлом, а не textContent: присваивание стёрло бы цитату, которую
+    // Именно узлами, а не textContent: присваивание стёрло бы цитату, которую
     // мы только что вставили выше.
-    text.append(document.createTextNode(content.text ?? body));
+    text.append(...linkify(content.text ?? body));
   }
   const time = document.createElement("time");
   time.textContent = new Date(created_at).toLocaleTimeString("ru-RU", {
@@ -925,6 +932,104 @@ function buildMessage({ outgoing, body, created_at }, peer) {
   item.appendChild(meta);
   return { content, node: item };
 }
+
+/*
+  Ссылки в тексте сообщения.
+
+  Разбираем сами, а не отдаём разметке: текст пришёл от собеседника, и
+  собирать из него HTML нельзя ни при каких обстоятельствах. Здесь строятся
+  узлы — вставить тег через такую границу невозможно.
+
+  Хвостовая пунктуация в ссылку не входит: «зайди на https://example.com.» — это
+  предложение с точкой, а не адрес с точкой на конце. Скобку отрезаем только
+  непарную: в адресах вроде ru.wikipedia.org/wiki/Обсидиан_(порода) она своя.
+
+  Голый домен без схемы и без www ссылкой не считается намеренно. Иначе «и т.д.»
+  и «версия 1.5.6» превращались бы в ссылки, а подчёркнутый мусор посреди фразы
+  выглядит поломкой — в отличие от неподчёркнутого адреса, который человек
+  просто скопирует.
+*/
+const LINK_PATTERN = /(https?:\/\/[^\s<>"']+|(?:^|\s)(?:www\.)[^\s<>"']+)/gi;
+
+function linkify(raw) {
+  const text = String(raw ?? "");
+  const nodes = [];
+  let at = 0;
+
+  for (const match of text.matchAll(LINK_PATTERN)) {
+    const lead = match[0].length - match[0].trimStart().length;
+    const start = match.index + lead;
+    let found = match[0].trimStart();
+
+    // Отрезаем то, что человек дописал после адреса, а не в него.
+    let trimmed = "";
+    for (;;) {
+      const last = found.at(-1);
+      if (last && ".,;:!?»\"'".includes(last)) {
+        trimmed = last + trimmed;
+        found = found.slice(0, -1);
+        continue;
+      }
+      if (last === ")" && !found.includes("(")) {
+        trimmed = last + trimmed;
+        found = found.slice(0, -1);
+        continue;
+      }
+      break;
+    }
+    if (found.length < 4) continue;
+
+    if (start > at) nodes.push(document.createTextNode(text.slice(at, start)));
+    nodes.push(linkNode(found));
+    if (trimmed) nodes.push(document.createTextNode(trimmed));
+    at = start + found.length + trimmed.length;
+  }
+
+  if (at < text.length) nodes.push(document.createTextNode(text.slice(at)));
+  return nodes.length > 0 ? nodes : [document.createTextNode(text)];
+}
+
+function linkNode(found) {
+  const href = /^https?:\/\//i.test(found) ? found : `https://${found}`;
+  const link = document.createElement("a");
+  link.className = "message-link";
+  link.textContent = found;
+  link.title = href;
+  // href не ставим вовсе: щелчок middle-кнопкой или «открыть в новой вкладке»
+  // увёл бы WebView со страницы приложения, а вернуться ему некуда.
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    invoke("open_link", { url: href }).catch(() => toast("Не удалось открыть ссылку"));
+  });
+  return link;
+}
+
+/**
+ * Кнопка «к последним».
+ *
+ * Показывается, только когда человек действительно ушёл вверх: у самого низа
+ * она бы просто закрывала сообщения. На ней счётчик того, что пришло, пока он
+ * читал старое, — иначе непонятно, стоит ли возвращаться.
+ */
+let missedWhileUp = 0;
+
+function updateJumpButton() {
+  const list = $("messages");
+  const away = !atBottom(list) && list.scrollHeight > list.clientHeight + 200;
+  $("jump-down").classList.toggle("hidden", !away);
+  if (!away) missedWhileUp = 0;
+  const badge = $("jump-badge");
+  badge.textContent = String(missedWhileUp);
+  badge.classList.toggle("hidden", missedWhileUp === 0);
+}
+
+$("jump-down").addEventListener("click", () => {
+  const list = $("messages");
+  list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
+  missedWhileUp = 0;
+  updateJumpButton();
+});
 
 /** Прокручен ли список к самому низу — с запасом на дробные пиксели. */
 function atBottom(list) {
@@ -966,20 +1071,103 @@ function appendMessage({ outgoing, body, created_at, from }, conversation, { cac
   if (!conversation || conversation === conversationOf(state.current)) {
     const list = $("messages");
     const follow = atBottom(list);
+    // Первое сообщение нового дня приносит подпись с собой: иначе она
+    // появилась бы только при следующем открытии беседы.
+    const lastDay = [...list.querySelectorAll(".day-divider")].at(-1)?.dataset.day;
+    const day = new Date(created_at ?? Date.now()).toDateString();
+    if (lastDay !== day) list.appendChild(dayDivider(created_at ?? Date.now()));
     list.appendChild(built.node);
     if (follow) list.scrollTop = list.scrollHeight;
+    else if (!outgoing) missedWhileUp += 1;
+    updateJumpButton();
   }
   return built.content;
 }
 
+/**
+ * Подпись дня над первым сообщением этого дня.
+ *
+ * «Сегодня» и «вчера» словами: дата рядом с сообщением, отправленным час
+ * назад, читается как что-то давнее.
+ */
+function dayLabel(at) {
+  const day = new Date(at);
+  const today = new Date();
+  const same = (a, b) => a.toDateString() === b.toDateString();
+  if (same(day, today)) return "Сегодня";
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (same(day, yesterday)) return "Вчера";
+
+  const thisYear = day.getFullYear() === today.getFullYear();
+  return day.toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "long",
+    ...(thisYear ? {} : { year: "numeric" }),
+  });
+}
+
+function dayDivider(at) {
+  const item = document.createElement("li");
+  item.className = "day-divider";
+  item.dataset.day = new Date(at).toDateString();
+  const label = document.createElement("span");
+  label.textContent = dayLabel(at);
+  item.appendChild(label);
+  return item;
+}
+
+/**
+ * Раскладывает узлы, вставляя подписи дней между ними.
+ *
+ * Разделители не хранятся в кэше беседы: «сегодня» перестаёт быть сегодня в
+ * полночь, и подпись, сложенная однажды, к утру начнёт врать.
+ */
+function withDayDividers(items, unreadFrom = null) {
+  const out = [];
+  let previous = null;
+  let marked = false;
+
+  for (const item of items) {
+    const day = new Date(item.created_at).toDateString();
+    if (day !== previous) {
+      out.push(dayDivider(item.created_at));
+      previous = day;
+    }
+    if (unreadFrom !== null && !marked && item === unreadFrom) {
+      out.push(unreadDivider());
+      marked = true;
+    }
+    out.push(item.node);
+  }
+  return out;
+}
+
+/** Черта, с которой начинается непрочитанное. */
+function unreadDivider() {
+  const item = document.createElement("li");
+  item.className = "unread-divider";
+  const label = document.createElement("span");
+  label.textContent = "Непрочитанные";
+  item.appendChild(label);
+  return item;
+}
+
 /** Рисует кэш беседы целиком. Узлы переиспользуются, поэтому это дёшево. */
-function paintConversation(conversation) {
+function paintConversation(conversation, unreadCount = 0) {
   const list = $("messages");
   const entry = chat(conversation);
-  list.replaceChildren(...entry.items.map((item) => item.node));
+  // Черту ставим перед N последними: сколько именно не прочитано, знает
+  // счётчик беседы, а какие это сообщения — видно по их месту с конца.
+  const from = unreadCount > 0 && unreadCount < entry.items.length
+    ? entry.items[entry.items.length - unreadCount]
+    : null;
+  list.replaceChildren(...withDayDividers(entry.items, from));
+  missedWhileUp = 0;
   if (entry.scrollTop === null) list.scrollTop = list.scrollHeight;
   else list.scrollTop = entry.scrollTop;
   $("history-more").classList.toggle("hidden", !entry.hasMore || !entry.loaded);
+  updateJumpButton();
 }
 
 /** Просит следующую страницу — более старую, чем всё, что уже есть. */

@@ -483,6 +483,34 @@ fn app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
+/// Открыть ссылку из переписки в системном браузере.
+///
+/// Схема проверяется здесь, а не в окне: окно показывает чужой текст, и
+/// решение «что считать ссылкой» нельзя оставлять тому, кто этот текст
+/// отображает. Пропускаем только http и https — `file:`, `javascript:` и
+/// прочие схемы из сообщения открывать нечего.
+///
+/// Открываем именно в браузере, а не внутри окна: страница из переписки не
+/// должна оказаться в том же WebView, где лежит расшифрованная переписка.
+#[tauri::command]
+fn open_link(url: String) -> Result<(), String> {
+    let lowered = url.to_ascii_lowercase();
+    if !(lowered.starts_with("http://") || lowered.starts_with("https://")) {
+        return Err("ссылка не по http(s)".into());
+    }
+    // Управляющие символы в аргументе командной строки — повод отказаться, а
+    // не гадать, чем это обернётся.
+    if url.chars().any(|c| c.is_control()) {
+        return Err("в ссылке управляющие символы".into());
+    }
+    std::process::Command::new("rundll32.exe")
+        .args(["url.dll,FileProtocolHandler", &url])
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map(|_| ())
+        .map_err(|err| format!("не открыть ссылку: {err}"))
+}
+
 #[tauri::command]
 fn open_update(url: String) -> Result<(), String> {
     if !url.starts_with("https://getobsidian.xyz/downloads/") {
@@ -529,6 +557,7 @@ fn main() {
             show_desktop_notification,
             dismiss_desktop_notification,
             open_chat_from_notification,
+            open_link,
             app_version,
             save_account_export,
             open_update
