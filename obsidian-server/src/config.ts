@@ -51,11 +51,7 @@ export const config = {
   inviteTtlSec: num("OBSIDIAN_INVITE_TTL_SEC", 7 * 24 * 3600),
   /** Открытая beta: новый аккаунт можно создать без инвайта и оплаты. */
   publicRegistration: bool("OBSIDIAN_PUBLIC_REGISTRATION", false),
-  sessionTtlSec: num("OBSIDIAN_SESSION_TTL_SEC", 24 * 3600),
   nonceTtlSec: num("OBSIDIAN_NONCE_TTL_SEC", 30),
-
-  /** Пусто => админские эндпоинты выключены. Инвайты тогда только через CLI. */
-  adminToken: str("OBSIDIAN_ADMIN_TOKEN", ""),
 
   maxAuthAttemptsPerConn: num("OBSIDIAN_MAX_AUTH_ATTEMPTS", 5),
   maxAuthPerMinutePerIp: num("OBSIDIAN_MAX_AUTH_PER_MIN", 20),
@@ -83,6 +79,23 @@ export const config = {
    * больше не открыть.
    */
   maxConnectionsPerIp: num("OBSIDIAN_MAX_CONNECTIONS_PER_IP", 32),
+  /**
+   * Сколько сокетов всего может висеть, не назвавшись.
+   *
+   * Потолок на адрес считает по ключу, а ключей у распределённой сети столько,
+   * сколько машин: тысяча адресов по тридцать два сокета — это тридцать две
+   * тысячи сокетов, и каждый из них до `idleTimeout` держит nonce и запись в
+   * памяти. Этот потолок общий и потому переживает такое: вошедших он не
+   * трогает вовсе, а новым в разгар атаки отвечает «занято» — что честнее,
+   * чем упасть по памяти для всех сразу.
+   */
+  maxUnauthenticatedConnections: num("OBSIDIAN_MAX_UNAUTH_CONNECTIONS", 4096),
+  /**
+   * Потолки карт в памяти. Оба берутся с запасом: они спасают от исчерпания
+   * памяти, а не ограничивают поведение — за это отвечают лимиты выше.
+   */
+  maxRateLimitKeys: num("OBSIDIAN_MAX_RATE_KEYS", 100_000),
+  maxOutstandingNonces: num("OBSIDIAN_MAX_NONCES", 50_000),
   /**
    * Доверять ли `CF-Connecting-IP`.
    *

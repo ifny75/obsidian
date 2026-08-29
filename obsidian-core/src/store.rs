@@ -303,6 +303,34 @@ impl Store {
         })
     }
 
+    /// Тот ли это пароль, которым открыта база.
+    ///
+    /// Нужно там, где действие стоит дороже обычного и его надо подтвердить:
+    /// сама база в этот момент уже открыта, и спросить пароль «ещё раз» иначе
+    /// невозможно — проверять его не у кого.
+    ///
+    /// Проверка честная: из введённого пароля выводится ключ тем же Argon2id и
+    /// им же распечатывается связка ключей. Сравнить хеши было бы дешевле, но
+    /// хеша пароля здесь нет и заводить его ради подтверждения — значит
+    /// положить на диск то, чего мы старательно туда не кладём.
+    ///
+    /// Стоит это секунду процессорного времени, и это ровно то, что нужно:
+    /// подбирать пароль через такую проверку так же дорого, как открывать базу.
+    pub fn password_matches(&self, candidate: &[u8]) -> Result<bool> {
+        let salt = Self::read_meta(&self.connection, "salt")?.ok_or(CoreError::StoreLocked)?;
+        if salt.len() != SALT_LEN {
+            return Err(CoreError::StoreLocked);
+        }
+        let sealed: Vec<u8> = self
+            .connection
+            .query_row("SELECT sealed FROM keyring WHERE id = 1", [], |row| row.get(0))
+            .optional()?
+            .ok_or(CoreError::NoCredentials)?;
+
+        let key = MasterKey::derive(candidate, &salt)?;
+        Ok(key.open(b"keyring", &sealed).is_ok())
+    }
+
     pub fn has_credentials(&self) -> Result<bool> {
         Ok(self
             .connection
@@ -663,6 +691,31 @@ mod tests {
         // Строка на месте, но расшифровать её нечем.
         assert!(store.has_credentials().unwrap());
         assert!(matches!(store.load_credentials(), Err(CoreError::StoreLocked)));
+    }
+
+    #[test]
+    fn password_confirmation_accepts_only_the_real_password() {
+        let db = TempDb::new("confirm");
+        // Пароль берётся как байты UTF-8: люди пишут их не только латиницей.
+        let right = "правильный".as_bytes();
+        let store = Store::open(db.path(), right).unwrap();
+        store.save_credentials(&Credentials::generate()).unwrap();
+
+        assert!(store.password_matches(right).unwrap());
+        assert!(!store.password_matches("неправильный".as_bytes()).unwrap());
+        // Пустая строка — частый случай «нажали кнопку, не заполнив поле».
+        assert!(!store.password_matches(b"").unwrap());
+        // Лишний пробел на конце — уже другой пароль.
+        assert!(!store.password_matches("правильный ".as_bytes()).unwrap());
+    }
+
+    #[test]
+    fn password_confirmation_needs_credentials_to_check_against() {
+        // Подтверждать нечем, пока в базе нет ключей: сказать «подходит» здесь
+        // значило бы пропускать что угодно на пустой базе.
+        let db = TempDb::new("confirm-empty");
+        let store = Store::open(db.path(), b"pw").unwrap();
+        assert!(matches!(store.password_matches(b"pw"), Err(CoreError::NoCredentials)));
     }
 
     #[test]

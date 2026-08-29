@@ -2,6 +2,8 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { SCHEMA } from "./schema.ts";
+import { SecretBox, isSealed } from "./secretbox.ts";
+import { log } from "../log.ts";
 import { constantTimeEqual, random } from "../util/bytes.ts";
 
 export type Bytes = Uint8Array;
@@ -69,6 +71,8 @@ const CHAT_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
  */
 export class Store {
   readonly #db: DatabaseSync;
+  /** Ключ для столбцов, которые сервер обязан читать сам. См. secretbox.ts. */
+  readonly #secrets: SecretBox;
 
   constructor(path: string) {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
@@ -81,6 +85,8 @@ export class Store {
     this.#addProfileDecoration();
     this.#addChannelIcon();
     this.#addRecoveryTotp();
+    this.#secrets = SecretBox.load(path);
+    this.#sealStoredTotpSecrets();
   }
 
   close(): void {
@@ -143,6 +149,28 @@ export class Store {
     const has = (name: string) => columns.some((column) => column.name === name);
     if (!has("icon_mime")) this.#db.exec("ALTER TABLE channels ADD COLUMN icon_mime TEXT");
     if (!has("icon_base64")) this.#db.exec("ALTER TABLE channels ADD COLUMN icon_base64 TEXT");
+  }
+
+  /**
+   * Переезд старых баз: секреты вторых факторов лежали открытыми.
+   *
+   * Делается один раз при запуске и по строкам, а не одним UPDATE: каждую надо
+   * сначала распознать. Уже закрытые пропускаются, поэтому повторный запуск
+   * ничего не портит.
+   */
+  #sealStoredTotpSecrets(): void {
+    const rows = this.#db
+      .prepare("SELECT login_id, totp_secret FROM recoveries WHERE totp_secret IS NOT NULL")
+      .all() as unknown as { login_id: Bytes; totp_secret: Bytes }[];
+    let sealed = 0;
+    for (const row of rows) {
+      if (isSealed(row.totp_secret)) continue;
+      this.#db
+        .prepare("UPDATE recoveries SET totp_secret = ? WHERE login_id = ?")
+        .run(this.#secrets.seal(row.totp_secret), row.login_id);
+      sealed += 1;
+    }
+    if (sealed > 0) log.info(`totp secrets sealed: ${sealed}`);
   }
 
   // --- пользователи и устройства -------------------------------------------
@@ -589,16 +617,34 @@ export class Store {
           `INSERT INTO recoveries (login_id, identity, verifier, sealed, totp_secret, updated_at)
            VALUES (?, ?, ?, ?, ?, ?)`,
         )
-        .run(loginId, identity, verifier, sealed, totpSecret, now);
+        .run(
+          loginId,
+          identity,
+          verifier,
+          sealed,
+          totpSecret === null ? null : this.#secrets.seal(totpSecret),
+          now,
+        );
       return true;
     });
   }
 
   getRecovery(loginId: Bytes): { verifier: Bytes; sealed: Bytes; totp_secret: Bytes | null }
     | undefined {
-    return this.#db
+    const row = this.#db
       .prepare("SELECT verifier, sealed, totp_secret FROM recoveries WHERE login_id = ?")
       .get(loginId) as { verifier: Bytes; sealed: Bytes; totp_secret: Bytes | null } | undefined;
+    if (row === undefined || row.totp_secret === null) return row;
+
+    const opened = this.#secrets.open(row.totp_secret);
+    if (opened === null) {
+      // Ключ не подошёл. Второй фактор остаётся требуемым и заведомо
+      // непроходимым: пропустить человека мимо него было бы хуже, чем не
+      // пустить вовсе. В журнале это должно быть видно сразу.
+      log.error("totp secret unreadable: wrong or missing secret.key");
+      return row;
+    }
+    return { ...row, totp_secret: opened };
   }
 
   /** Есть ли у этой личности второй фактор. Нужно, чтобы показать состояние. */

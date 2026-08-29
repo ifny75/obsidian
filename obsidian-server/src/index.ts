@@ -4,9 +4,8 @@ import { config } from "./config.ts";
 import { log } from "./log.ts";
 import { Store } from "./db/index.ts";
 import { NonceStore } from "./auth/nonce.ts";
-import { SessionStore } from "./auth/sessions.ts";
 import { RateLimiter } from "./util/ratelimit.ts";
-import { ConnectionCounter, clientAddress } from "./util/connections.ts";
+import { ConnectionCounter, clientAddress, limitKey } from "./util/connections.ts";
 import { Registry, type Socket } from "./ws/registry.ts";
 import {
   handleClose,
@@ -20,19 +19,18 @@ import {
 import { registerRoutes, removeBlobFile } from "./http/routes.ts";
 
 const store = new Store(config.dbPath);
-const nonces = new NonceStore(config.nonceTtlSec);
-const sessions = new SessionStore(config.sessionTtlSec);
+const nonces = new NonceStore(config.nonceTtlSec, config.maxOutstandingNonces);
 const registry = new Registry();
-const authLimiter = new RateLimiter(config.maxAuthPerMinutePerIp, 60_000);
-const recoveryLimiter = new RateLimiter(config.maxRecoveryPerHour, 3_600_000);
-const searchLimiter = new RateLimiter(config.maxSearchPerMinute, 60_000);
-const sendLimiter = new RateLimiter(config.maxSendPerMinute, 60_000);
-const postLimiter = new RateLimiter(config.maxPostsPerMinute, 60_000);
+const authLimiter = new RateLimiter(config.maxAuthPerMinutePerIp, 60_000, config.maxRateLimitKeys);
+const recoveryLimiter = new RateLimiter(config.maxRecoveryPerHour, 3_600_000, config.maxRateLimitKeys);
+const searchLimiter = new RateLimiter(config.maxSearchPerMinute, 60_000, config.maxRateLimitKeys);
+const sendLimiter = new RateLimiter(config.maxSendPerMinute, 60_000, config.maxRateLimitKeys);
+const postLimiter = new RateLimiter(config.maxPostsPerMinute, 60_000, config.maxRateLimitKeys);
 const connections = new ConnectionCounter();
 const now = () => Date.now();
 
 const deps: Deps = {
-  store, nonces, sessions, registry,
+  store, nonces, registry,
   authLimiter, recoveryLimiter, searchLimiter, sendLimiter, postLimiter, connections, now,
 };
 
@@ -66,7 +64,9 @@ app.ws<ConnData>("/ws", {
       req.getHeader("cf-connecting-ip"),
       config.trustedProxies,
     );
-    res.upgrade<ConnData>(newConnData(ip), key, protocol, extensions, context);
+    // Ключ лимитов, а не адрес: IPv6 схлопывается до /64, иначе владелец
+    // подсети обходит любой потолок сменой последних групп.
+    res.upgrade<ConnData>(newConnData(limitKey(ip)), key, protocol, extensions, context);
   },
 
   open: (ws) => {
@@ -87,7 +87,7 @@ app.ws<ConnData>("/ws", {
   },
 });
 
-registerRoutes(app, { store, sessions, now });
+registerRoutes(app);
 
 // --- наблюдатель за оплатами -------------------------------------------------
 
@@ -149,7 +149,6 @@ const cleanup = setInterval(() => {
   for (const id of store.expiredBlobs(ts)) removeBlobFile(id);
   const swept = store.sweep(ts);
   nonces.sweep(ts);
-  sessions.sweep(ts);
   authLimiter.sweep(ts);
   recoveryLimiter.sweep(ts);
   searchLimiter.sweep(ts);

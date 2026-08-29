@@ -7,7 +7,7 @@
  * Юнит-тесты дёргают обработчики напрямую и не покрывают обвязку uWS —
  * upgrade, бинарные фреймы, HTTP-роуты. Это покрывает.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,16 +20,29 @@ import { concat, fromHex, random, toHex } from "../src/util/bytes.ts";
 
 const PORT = 18787;
 const BASE = `http://127.0.0.1:${PORT}`;
-const ADMIN = toHex(random(16));
 const dataDir = mkdtempSync(join(tmpdir(), "obsidian-smoke-"));
+const dbPath = join(dataDir, "smoke.db");
+
+/*
+  Инвайт выписывается тем же способом, что и на живом сервере, — утилитой на
+  самой машине. Раньше здесь дёргался HTTP-путь `/v1/admin/invites`; его больше
+  нет, и проверять теперь надо ровно обратное: что снаружи такой двери не видно.
+*/
+const issued = spawnSync(
+  process.execPath,
+  [join(import.meta.dirname, "..", "src", "tools", "invite.ts")],
+  { env: { ...process.env, OBSIDIAN_DB: dbPath }, encoding: "utf8" },
+);
+if (issued.status !== 0) throw new Error(`invite CLI failed: ${issued.stderr}`);
+const inviteCode = /invite:\s*(\S+)/.exec(issued.stdout)?.[1];
+assert.ok(inviteCode, `не разобрал вывод утилиты: ${issued.stdout}`);
 
 const server = spawn(process.execPath, [join(import.meta.dirname, "..", "src", "index.ts")], {
   env: {
     ...process.env,
     OBSIDIAN_PORT: String(PORT),
-    OBSIDIAN_DB: join(dataDir, "smoke.db"),
+    OBSIDIAN_DB: dbPath,
     OBSIDIAN_BLOBS: join(dataDir, "blobs"),
-    OBSIDIAN_ADMIN_TOKEN: ADMIN,
   },
   stdio: ["ignore", "pipe", "inherit"],
 });
@@ -85,13 +98,6 @@ async function waitForHealth(): Promise<void> {
 }
 
 
-async function post<T>(path: string, headers: Record<string, string>): Promise<T> {
-  const res = await fetch(BASE + path, { method: "POST", headers });
-  if (!res.ok) throw new Error(`POST ${path} -> ${res.status}`);
-  return (await res.json()) as T;
-}
-
-
 const steps: string[] = [];
 function ok(label: string): void {
   steps.push(label);
@@ -102,12 +108,11 @@ try {
   await waitForHealth();
   ok("health отвечает");
 
-  const invite = await post<{ code: string }>("/v1/admin/invites", { "x-admin-token": ADMIN });
-  ok("инвайт выпущен");
+  ok("инвайт выписан утилитой");
 
-  const notFound = await fetch(`${BASE}/v1/admin/invites`, { method: "POST" });
-  assert.equal(notFound.status, 404, "админский путь без токена обязан отдавать 404");
-  ok("админский путь без токена скрыт");
+  const gone = await fetch(`${BASE}/v1/admin/invites`, { method: "POST" });
+  assert.equal(gone.status, 404, "админского пути снаружи быть не должно");
+  ok("админский путь снаружи не существует");
 
   const idPriv = ed25519.utils.randomPrivateKey();
   const idPub = ed25519.getPublicKey(idPriv);
@@ -135,7 +140,7 @@ try {
       device: toHex(devPub),
       deviceCert: toHex(cert),
       sig: toHex(ed25519.sign(authMessage(nonce, idPub, devPub), devPriv)),
-      invite: invite.code,
+      invite: inviteCode,
       handle: "smoke",
     }),
   );
@@ -172,9 +177,9 @@ try {
     "/v1/keypackages",
     `/v1/blobs/${toHex(random(16))}`,
   ]) {
-    const gone = await fetch(`${BASE}${path}`, {
-      headers: { authorization: `Bearer ${authOk.token}` },
-    });
+    // Заголовка авторизации здесь нет намеренно: bearer-токенов сервер
+    // больше не выдаёт, и отвечать на эти пути он не должен вообще никому.
+    const gone = await fetch(`${BASE}${path}`);
     assert.equal(gone.status, 404, `${path} обязан отсутствовать`);
   }
   ok("HTTP-двойники сокета убраны");

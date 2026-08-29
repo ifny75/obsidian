@@ -11,7 +11,6 @@ import { sha256 } from "@noble/hashes/sha2";
 
 import { Store } from "../src/db/index.ts";
 import { NonceStore } from "../src/auth/nonce.ts";
-import { SessionStore } from "../src/auth/sessions.ts";
 import { Registry, type Socket } from "../src/ws/registry.ts";
 import { RateLimiter } from "../src/util/ratelimit.ts";
 import { ConnectionCounter } from "../src/util/connections.ts";
@@ -56,7 +55,6 @@ function makeDeps(store: Store): Deps {
   return {
     store,
     nonces: new NonceStore(30_000),
-    sessions: new SessionStore(3600_000),
     registry: new Registry(),
     authLimiter: new RateLimiter(100, 60_000),
     recoveryLimiter: new RateLimiter(100, 3600_000),

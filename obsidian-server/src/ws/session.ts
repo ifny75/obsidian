@@ -3,7 +3,6 @@ import { config, PROTOCOL_VERSION } from "../config.ts";
 import { log } from "../log.ts";
 import type { Store } from "../db/index.ts";
 import type { NonceStore } from "../auth/nonce.ts";
-import type { SessionStore } from "../auth/sessions.ts";
 import { authMessage, deviceCertMessage, verify } from "../auth/verify.ts";
 import type { RateLimiter } from "../util/ratelimit.ts";
 import { decodeBase32, verify as verifyTotp } from "../auth/totp.ts";
@@ -42,7 +41,6 @@ const REF_LEN = 10;
 export interface Deps {
   store: Store;
   nonces: NonceStore;
-  sessions: SessionStore;
   registry: Registry;
   authLimiter: RateLimiter;
   recoveryLimiter: RateLimiter;
@@ -61,7 +59,6 @@ export interface ConnData {
   identity: Uint8Array | null;
   devicePub: Uint8Array | null;
   devicePubHex: string | null;
-  token: string | null;
   /** Счёт, по которому это соединение ждёт зачисления. */
   paymentRef: string | null;
   /**
@@ -74,6 +71,8 @@ export interface ConnData {
   admitted: Set<string>;
   /** Учтён ли этот сокет в счётчике адреса. Снимается ровно один раз. */
   counted: boolean;
+  /** Числится ли он ещё среди неназвавшихся. Тоже снимается ровно один раз. */
+  anonymous: boolean;
 }
 
 export function newConnData(ip: string): ConnData {
@@ -84,10 +83,10 @@ export function newConnData(ip: string): ConnData {
     identity: null,
     devicePub: null,
     devicePubHex: null,
-    token: null,
     paymentRef: null,
     admitted: new Set(),
     counted: false,
+    anonymous: false,
   };
 }
 
@@ -103,9 +102,24 @@ export function handleOpen(deps: Deps, sock: Socket, conn: ConnData): void {
   }
   deps.connections.add(conn.ip);
   conn.counted = true;
+  conn.anonymous = true;
+
+  // Общий потолок неназвавшихся. Проверяется после потолка на адрес: тот
+  // отсекает одну машину, этот — распределённую сеть, которой лимит на адрес
+  // не мешает вовсе.
+  if (deps.connections.unauthenticated > config.maxUnauthenticatedConnections) {
+    sock.end(CLOSE.BUSY, "too many connections");
+    return;
+  }
 
   const now = deps.now();
-  conn.nonce = deps.nonces.issue(now);
+  const nonce = deps.nonces.issue(now);
+  if (nonce === null) {
+    // Challenge-ов больше нет — войти всё равно нечем, и держать сокет незачем.
+    sock.end(CLOSE.BUSY, "server busy");
+    return;
+  }
+  conn.nonce = nonce;
   sock.send(
     jsonFrame(OP.HELLO, {
       v: PROTOCOL_VERSION,
@@ -128,9 +142,12 @@ export function handleClose(deps: Deps, sock: Socket, conn: ConnData): void {
     conn.counted = false;
     deps.connections.remove(conn.ip);
   }
+  if (conn.anonymous) {
+    conn.anonymous = false;
+    deps.connections.settled();
+  }
   if (conn.devicePubHex) deps.registry.remove(conn.devicePubHex, sock);
   if (conn.paymentRef) deps.registry.unwatchPayment(conn.paymentRef, sock);
-  if (conn.token) deps.sessions.revoke(conn.token);
 }
 
 /**
@@ -290,6 +307,11 @@ class Unauthenticated extends Error {}
  */
 function authFail(deps: Deps, sock: Socket, conn: ConnData, code: string, message: string): void {
   const nonce = deps.nonces.issue(deps.now());
+  if (nonce === null) {
+    // Повторить попытку всё равно будет нечем: без challenge подпись не собрать.
+    sock.end(CLOSE.BUSY, "server busy");
+    return;
+  }
   conn.nonce = nonce;
   sock.send(authErrFrame(code, message, nonce), true);
 }
@@ -422,6 +444,10 @@ function onPayRequest(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array
 
   // Новый challenge: следующий шаг клиента — AUTH, а nonce мы только что сожгли.
   const nonce = deps.nonces.issue(now);
+  if (nonce === null) {
+    sock.end(CLOSE.BUSY, "server busy");
+    return;
+  }
   conn.nonce = nonce;
   sock.send(
     jsonFrame(OP.PAY_INFO, {
@@ -477,10 +503,15 @@ function onAuth(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): voi
   deps.store.touchDevice(devicePub, now);
 
   const devicePubHex = toHex(devicePub);
+  // Сокет назвался: из числа анонимных он выходит, дальше за него отвечают
+  // ограничители по личности.
+  if (conn.anonymous) {
+    conn.anonymous = false;
+    deps.connections.settled();
+  }
   conn.identity = identity;
   conn.devicePub = devicePub;
   conn.devicePubHex = devicePubHex;
-  conn.token = deps.sessions.create({ identity, devicePub, deviceId }, now);
   deps.registry.add(devicePubHex, sock);
   if (conn.paymentRef) {
     deps.registry.unwatchPayment(conn.paymentRef, sock);
@@ -490,7 +521,11 @@ function onAuth(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): voi
   sock.send(
     jsonFrame(OP.AUTH_OK, {
       deviceId: toHex(deviceId),
-      token: conn.token,
+      // Поле мертво: клиенты его не читают, а сервер больше ничего за ним
+      // не хранит. Оставлено пустым только потому, что разбор AUTH_OK у уже
+      // выпущенных клиентов требует его наличия. Убрать вместе с полем в
+      // `proto.rs`, когда Android догонит ядро.
+      token: "",
       queued: deps.store.countPending(devicePub, now),
       // Сколько KeyPackages уже лежит. Без этого числа клиент не знает,
       // сколько ему доложить, и выкладывает полную пачку на каждый вход.

@@ -4147,14 +4147,35 @@ function postNode(post, channel) {
   Файл переноса — это ключи и вся история под отдельным паролем. Ядро отдаёт
   его строкой, окно только сохраняет: путь выбирает человек, а не библиотека.
 */
-$("export-account").addEventListener("click", async () => {
+$("export-account").addEventListener("click", () => {
   const password = $("export-password").value;
+  const unlock = $("export-unlock").value;
   if (password.length < 8) {
     toast("Пароль файла — от восьми знаков");
     return;
   }
-  $("export-status").textContent = "Собираем файл…";
-  await submit({ type: "account_export", password });
+  /*
+    Пароль устройства спрашивается здесь, а не в ядре «на всякий случай».
+
+    База уже открыта — значит, для экспорта всего аккаунта достаточно чужих
+    рук на разблокированной машине, а окно настроек в трёх кликах от рабочего
+    стола. Подтверждение паролем — единственное, что между этим стоит; проверяет
+    его ядро, здесь только поле.
+  */
+  if (unlock.length === 0) {
+    toast("Введите пароль этого устройства");
+    return;
+  }
+  confirmAction(
+    "Сохранить файл со всем аккаунтом?",
+    "В файл попадут ключи личности и устройства и вся переписка. Кто получит файл"
+    + " и пароль к нему, сможет читать вашу переписку и писать от вашего имени.",
+    async () => {
+      $("export-status").textContent = "Собираем файл…";
+      await submit({ type: "account_export", password, unlock });
+      $("export-unlock").value = "";
+    },
+  );
 });
 
 $("import-account").addEventListener("click", () => {

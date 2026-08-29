@@ -11,13 +11,20 @@
 
     <application
         android:allowBackup="false"
+        android:usesCleartextTraffic="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Obsidian.Theme">
 
         <!-- allowBackup="false" не случайность: автобэкап Google утащил бы
-             зашифрованную базу вместе с ключами на чужие серверы. -->
+             зашифрованную базу вместе с ключами на чужие серверы.
+
+             usesCleartextTraffic="false" — тоже не формальность. Ядро и так
+             ходит только по wss://, но флаг переносит это правило из кода в
+             систему: с ним обычный http перестаёт быть возможным вообще, а не
+             просто не используемым. Стоит однажды появиться отладочному
+             адресу без TLS — приложение откажет, а не отправит. -->
 
         <activity
             android:name=".MainActivity"

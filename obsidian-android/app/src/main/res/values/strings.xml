@@ -152,6 +152,8 @@
     <string name="theme_light">Светлая</string>
     <string name="corner_radius">Скругление интерфейса</string>
     <string name="bubble_radius">Скругление сообщений</string>
+    <string name="screen_privacy">Прятать от снимков экрана</string>
+    <string name="screen_privacy_hint">Скрывает переписку в списке недавних приложений и запрещает снимки экрана. Другие приложения на этом телефоне перестают видеть, что на экране</string>
     <string name="square_avatars">Квадратные аватары</string>
     <string name="square_avatars_hint">Форма аватаров во всём приложении</string>
     <string name="settings_reset">Сбросить оформление</string>

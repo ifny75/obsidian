@@ -10,10 +10,16 @@
  * сервера нет ключей, в очереди лежит только шифротекст. Он спасает
  * регистрации: без базы все устройства станут сервер неизвестны, и людям
  * придётся заходить заново по новым инвайтам.
+ *
+ * **Файла `secret.key` здесь намеренно нет.** Им закрыты секреты вторых
+ * факторов, и лежать он должен отдельно от снимков — иначе шифрование столбца
+ * теряет смысл: утёкший бэкап отдал бы и базу, и ключ к ней. Плата известна и
+ * её надо знать: снимок, восстановленный без этого файла, вернёт всё, кроме
+ * вторых факторов, — их придётся заводить заново.
  */
 import { DatabaseSync } from "node:sqlite";
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { config } from "../config.ts";
 
 const target = process.argv[2];
@@ -58,4 +64,7 @@ for (const old of snapshots.slice(0, Math.max(0, snapshots.length - KEEP))) {
 }
 
 process.stdout.write(`снимок: ${dir}\n`);
+process.stdout.write(
+  `secret.key в снимок не входит и должен храниться отдельно: ${join(dirname(config.dbPath), "secret.key")}\n`,
+);
 process.stdout.write(`хранится снимков: ${Math.min(snapshots.length, KEEP)} из ${KEEP}\n`);

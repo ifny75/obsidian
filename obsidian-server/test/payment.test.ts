@@ -16,7 +16,6 @@ import { ed25519 } from "@noble/curves/ed25519";
 
 import { Store } from "../src/db/index.ts";
 import { NonceStore } from "../src/auth/nonce.ts";
-import { SessionStore } from "../src/auth/sessions.ts";
 import { Registry, type Socket } from "../src/ws/registry.ts";
 import { RateLimiter } from "../src/util/ratelimit.ts";
 import { ConnectionCounter } from "../src/util/connections.ts";
@@ -94,7 +93,6 @@ function makeDeps(store: Store): Deps {
   return {
     store,
     nonces: new NonceStore(30),
-    sessions: new SessionStore(3600),
     registry: new Registry(),
     authLimiter: new RateLimiter(1000, 60_000),
     recoveryLimiter: new RateLimiter(1000, 3_600_000),

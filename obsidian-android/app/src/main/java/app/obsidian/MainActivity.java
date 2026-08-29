@@ -287,6 +287,7 @@ public final class MainActivity extends Activity implements Events.Listener {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         configureWindow();
+        applyScreenPrivacy(screenPrivacyEnabled());
         setContentView(R.layout.activity_main);
 
         screenBoot = findViewById(R.id.screen_boot);
@@ -536,6 +537,39 @@ public final class MainActivity extends Activity implements Events.Listener {
         root.requestApplyInsets();
     }
 
+    /*
+      Снимки экрана и список недавних приложений.
+
+      FLAG_SECURE закрывает три дыры сразу: снимок экрана системой, превью окна
+      в списке недавних (его рисует система и хранит на диске) и чтение экрана
+      другими приложениями, у которых есть на это право. Для мессенджера это
+      не мелочь: переписка расшифрована ровно на экране и больше нигде.
+
+      Включено по умолчанию — в отличие от биометрии, которую навязывать нельзя,
+      этот флаг ничего не требует от человека и мешает только ему самому, когда
+      он захочет сделать снимок. Поэтому же он остаётся выключаемым: запрет,
+      который нельзя снять, люди обходят фотографией другого телефона, и мы
+      получаем неудобство без защиты.
+
+      Настройка читается напрямую из SharedPreferences, а не из
+      `appearancePreferences`: применяется она в onCreate, до того как поле
+      будет заполнено.
+    */
+    private static final String SCREEN_PRIVACY_KEY = "screen_privacy";
+
+    private boolean screenPrivacyEnabled() {
+        return getSharedPreferences("appearance", MODE_PRIVATE)
+                .getBoolean(SCREEN_PRIVACY_KEY, true);
+    }
+
+    private void applyScreenPrivacy(boolean enabled) {
+        if (enabled) {
+            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+        } else {
+            getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+        }
+    }
+
     private void configurePreferences() {
         SharedPreferences preferences = getSharedPreferences("appearance", MODE_PRIVATE);
         appearancePreferences = preferences;
@@ -591,6 +625,8 @@ public final class MainActivity extends Activity implements Events.Listener {
         cornerRadius.setProgress(Math.max(0, Math.min(16, preferences.getInt("corner_radius", 24) - 8)));
         bubbleRadius.setProgress(Math.max(0, Math.min(22, preferences.getInt("bubble_radius", 24) - 6)));
         squareAvatars.setChecked(preferences.getBoolean("square_avatars", false));
+        Switch screenPrivacy = findViewById(R.id.screen_privacy);
+        screenPrivacy.setChecked(preferences.getBoolean(SCREEN_PRIVACY_KEY, true));
 
         cornerRadius.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
@@ -608,6 +644,10 @@ public final class MainActivity extends Activity implements Events.Listener {
             }
             @Override public void onStartTrackingTouch(SeekBar bar) {}
             @Override public void onStopTrackingTouch(SeekBar bar) { reloadHistory(); }
+        });
+        screenPrivacy.setOnCheckedChangeListener((button, checked) -> {
+            preferences.edit().putBoolean(SCREEN_PRIVACY_KEY, checked).apply();
+            applyScreenPrivacy(checked);
         });
         squareAvatars.setOnCheckedChangeListener((button, checked) -> {
             preferences.edit().putBoolean("square_avatars", checked).apply();
@@ -755,6 +795,10 @@ public final class MainActivity extends Activity implements Events.Listener {
         bubbleRadius.setProgress(18);
         compactMessages.setChecked(false);
         squareAvatars.setChecked(false);
+        // Сброс возвращает и защиту экрана — к безопасному значению, а не к
+        // тому, что было выбрано до него.
+        ((Switch) findViewById(R.id.screen_privacy)).setChecked(true);
+        applyScreenPrivacy(true);
         applyInterfaceScale(findViewById(R.id.app_root), 1f);
         applyTheme();
         applyAccent();

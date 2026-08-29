@@ -170,19 +170,26 @@ fn handle_local(command: &Command, store: &Store, sink: &EventSink) -> bool {
             });
         }
 
-        Command::AccountExport { password } => {
-            let built = store
-                .export_archive()
-                .and_then(|archive| {
-                    let count = archive.messages.len() as u64;
-                    crate::migrate::seal(&password, &archive).map(|file| (file, count))
-                });
-            match built {
-                Ok((file, messages)) => sink(Event::AccountExported {
-                    data: hex::encode(file),
-                    messages,
-                }),
+        Command::AccountExport { password, unlock } => {
+            // Сначала подтверждение, потом сбор: собирать архив, который затем
+            // некому отдать, значило бы держать всю переписку в памяти зря.
+            let confirmed = store.password_matches(unlock.as_bytes());
+            match confirmed {
+                Ok(false) => fail(sink, "account_export", "пароль устройства не подходит"),
                 Err(err) => fail(sink, "account_export", &err.to_string()),
+                Ok(true) => {
+                    let built = store.export_archive().and_then(|archive| {
+                        let count = archive.messages.len() as u64;
+                        crate::migrate::seal(password, &archive).map(|file| (file, count))
+                    });
+                    match built {
+                        Ok((file, messages)) => sink(Event::AccountExported {
+                            data: hex::encode(file),
+                            messages,
+                        }),
+                        Err(err) => fail(sink, "account_export", &err.to_string()),
+                    }
+                }
             }
         }
         Command::AccountImport { password, data } => {
