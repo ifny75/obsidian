@@ -343,6 +343,7 @@
         <nav class="settings-nav" id="settings-nav" aria-label="Разделы настроек">
           <button type="button" data-section="profile" class="active">Мой профиль</button>
           <button type="button" data-section="privacy">Приватность</button>
+          <button type="button" data-section="transport">Подключение</button>
           <button type="button" data-section="appearance">Внешний вид</button>
           <button type="button" data-section="messages">Чат и сообщения</button>
           <button type="button" data-section="server" id="nav-server" hidden>Сервер</button>
@@ -452,6 +453,61 @@
                   <b>Выпущенные</b>
                   <div id="invite-list" class="invite-list"></div>
                 </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-section hidden" data-section="transport">
+            <h1>Подключение</h1>
+            <p class="settings-sub">Клиент никогда не обращается к main напрямую. Нажмите на схему, чтобы сменить маршрут текущего соединения.</p>
+            <p class="warning-strip">Прячет ваш адрес от сервера только Onion. Relay и Multi-hop проходят через Cloudflare, а он подставляет ваш IP в заголовок, который доезжает до main, — лишний узел на пути этого не отменяет. Они нужны для другого: обойти блокировку входа и пережить падение узла.</p>
+            <div class="routing-options" id="transport-segment" role="radiogroup" aria-label="Маршрут Obsidian">
+              <button class="routing-option" data-transport="auto" type="button" role="radio" aria-checked="false">
+                <span class="routing-head"><span><b>Auto</b><small>Доступный маршрут автоматически</small></span><i class="routing-radio"></i></span>
+                <span class="routing-diagram">
+                  <span class="route-node"><svg viewBox="0 0 24 24"><path d="M22 15.18V8a5 5 0 0 0-5-5H7a5 5 0 0 0-5 5v7.18A3 3 0 0 0 3 21h18a3 3 0 0 0 1-5.82ZM7 5h10a3 3 0 0 1 3 3v7h-4.15a2 2 0 0 0-1.53.71l-.25.29H9.93l-.25-.29A2 2 0 0 0 8.15 15H4V8a3 3 0 0 1 3-3Zm14 14H3a1 1 0 0 1 0-2h5.15l.25.29a2 2 0 0 0 1.53.71h4.14a2 2 0 0 0 1.53-.71l.25-.29H21a1 1 0 0 1 0 2Z"/></svg><small>Устройство</small></span>
+                  <span class="route-link"></span>
+                  <span class="route-node"><svg viewBox="0 0 24 24"><path d="M24 11.5A4.48 4.48 0 0 0 22.29 8 4.48 4.48 0 0 0 19.5 0h-15a4.48 4.48 0 0 0-2.79 8 4.44 4.44 0 0 0 0 7 4.48 4.48 0 0 0 2.79 8h15a4.48 4.48 0 0 0 2.79-8A4.48 4.48 0 0 0 24 11.5ZM4.5 2H5v1a1 1 0 0 0 2 0V2h2v1a1 1 0 0 0 2 0V2h8.5a2.5 2.5 0 0 1 0 5h-15a2.5 2.5 0 0 1 0-5ZM22 18.5a2.5 2.5 0 0 1-2.5 2.5h-15a2.5 2.5 0 0 1 0-5H5v1a1 1 0 0 0 2 0v-1h2v1a1 1 0 0 0 2 0v-1h8.5a2.5 2.5 0 0 1 2.5 2.5ZM4.5 14a2.5 2.5 0 0 1 0-5H5v1a1 1 0 0 0 2 0V9h2v1a1 1 0 0 0 2 0V9h8.5a2.5 2.5 0 0 1 0 5Z"/></svg><small>Лучший путь</small><em>AUTO</em></span>
+                  <span class="route-link"></span>
+                  <span class="route-node"><svg viewBox="0 0 24 24"><path d="M19 1H5a5 5 0 0 0-5 5v12a5 5 0 0 0 5 5h14a5 5 0 0 0 5-5V6a5 5 0 0 0-5-5ZM5 3h14a3 3 0 0 1 2.78 1.89l-7.66 7.66a3 3 0 0 1-4.24 0L2.22 4.89A3 3 0 0 1 5 3Zm14 18H5a3 3 0 0 1-3-3V7.5l6.46 6.46a5 5 0 0 0 7.08 0L22 7.5V18a3 3 0 0 1-3 3Z"/></svg><small>Main</small></span>
+                </span>
+              </button>
+
+              <button class="routing-option" data-transport="basic" type="button" role="radio" aria-checked="false">
+                <span class="routing-head"><span><b>Relay</b><small>Быстро · один промежуточный узел</small></span><i class="routing-radio"></i></span>
+                <span class="routing-diagram">
+                  <span class="route-node"><svg viewBox="0 0 24 24"><path d="M22 15.18V8a5 5 0 0 0-5-5H7a5 5 0 0 0-5 5v7.18A3 3 0 0 0 3 21h18a3 3 0 0 0 1-5.82ZM7 5h10a3 3 0 0 1 3 3v7h-4.15a2 2 0 0 0-1.53.71l-.25.29H9.93l-.25-.29A2 2 0 0 0 8.15 15H4V8a3 3 0 0 1 3-3Zm14 14H3a1 1 0 0 1 0-2h5.15l.25.29a2 2 0 0 0 1.53.71h4.14a2 2 0 0 0 1.53-.71l.25-.29H21a1 1 0 0 1 0 2Z"/></svg><small>Устройство</small></span>
+                  <span class="route-link"></span>
+                  <span class="route-node"><svg viewBox="0 0 24 24"><path d="M24 11.5A4.48 4.48 0 0 0 22.29 8 4.48 4.48 0 0 0 19.5 0h-15a4.48 4.48 0 0 0-2.79 8 4.44 4.44 0 0 0 0 7 4.48 4.48 0 0 0 2.79 8h15a4.48 4.48 0 0 0 2.79-8A4.48 4.48 0 0 0 24 11.5ZM4.5 2H5v1a1 1 0 0 0 2 0V2h2v1a1 1 0 0 0 2 0V2h8.5a2.5 2.5 0 0 1 0 5h-15a2.5 2.5 0 0 1 0-5ZM22 18.5a2.5 2.5 0 0 1-2.5 2.5h-15a2.5 2.5 0 0 1 0-5H5v1a1 1 0 0 0 2 0v-1h2v1a1 1 0 0 0 2 0v-1h8.5a2.5 2.5 0 0 1 2.5 2.5ZM4.5 14a2.5 2.5 0 0 1 0-5H5v1a1 1 0 0 0 2 0V9h2v1a1 1 0 0 0 2 0V9h8.5a2.5 2.5 0 0 1 0 5Z"/></svg><small>NL / DE</small></span>
+                  <span class="route-link"></span>
+                  <span class="route-node"><svg viewBox="0 0 24 24"><path d="M19 1H5a5 5 0 0 0-5 5v12a5 5 0 0 0 5 5h14a5 5 0 0 0 5-5V6a5 5 0 0 0-5-5ZM5 3h14a3 3 0 0 1 2.78 1.89l-7.66 7.66a3 3 0 0 1-4.24 0L2.22 4.89A3 3 0 0 1 5 3Zm14 18H5a3 3 0 0 1-3-3V7.5l6.46 6.46a5 5 0 0 0 7.08 0L22 7.5V18a3 3 0 0 1-3 3Z"/></svg><small>Main</small></span>
+                </span>
+              </button>
+
+              <button class="routing-option" data-transport="multihop" type="button" role="radio" aria-checked="false">
+                <span class="routing-head"><span><b>Multi-hop</b><small>Два узла вместо одного · IP от main не прячет</small></span><i class="routing-radio"></i></span>
+                <span class="routing-diagram route-four">
+                  <span class="route-node"><svg viewBox="0 0 24 24"><path d="M22 15.18V8a5 5 0 0 0-5-5H7a5 5 0 0 0-5 5v7.18A3 3 0 0 0 3 21h18a3 3 0 0 0 1-5.82ZM7 5h10a3 3 0 0 1 3 3v7h-4.15a2 2 0 0 0-1.53.71l-.25.29H9.93l-.25-.29A2 2 0 0 0 8.15 15H4V8a3 3 0 0 1 3-3Zm14 14H3a1 1 0 0 1 0-2h5.15l.25.29a2 2 0 0 0 1.53.71h4.14a2 2 0 0 0 1.53-.71l.25-.29H21a1 1 0 0 1 0 2Z"/></svg><small>Устройство</small></span><span class="route-link"></span>
+                  <span class="route-node"><svg viewBox="0 0 24 24"><path d="M24 11.5A4.48 4.48 0 0 0 22.29 8 4.48 4.48 0 0 0 19.5 0h-15a4.48 4.48 0 0 0-2.79 8 4.44 4.44 0 0 0 0 7 4.48 4.48 0 0 0 2.79 8h15a4.48 4.48 0 0 0 2.79-8A4.48 4.48 0 0 0 24 11.5ZM4.5 2H5v1a1 1 0 0 0 2 0V2h2v1a1 1 0 0 0 2 0V2h8.5a2.5 2.5 0 0 1 0 5h-15a2.5 2.5 0 0 1 0-5ZM22 18.5a2.5 2.5 0 0 1-2.5 2.5h-15a2.5 2.5 0 0 1 0-5H5v1a1 1 0 0 0 2 0v-1h2v1a1 1 0 0 0 2 0v-1h8.5a2.5 2.5 0 0 1 2.5 2.5ZM4.5 14a2.5 2.5 0 0 1 0-5H5v1a1 1 0 0 0 2 0V9h2v1a1 1 0 0 0 2 0V9h8.5a2.5 2.5 0 0 1 0 5Z"/></svg><small>NL <img class="route-flag" src="assets/route-flag-nl.svg" alt="" /></small></span><span class="route-link"></span>
+                  <span class="route-node"><svg viewBox="0 0 24 24"><path d="M24 11.5A4.48 4.48 0 0 0 22.29 8 4.48 4.48 0 0 0 19.5 0h-15a4.48 4.48 0 0 0-2.79 8 4.44 4.44 0 0 0 0 7 4.48 4.48 0 0 0 2.79 8h15a4.48 4.48 0 0 0 2.79-8A4.48 4.48 0 0 0 24 11.5ZM4.5 2H5v1a1 1 0 0 0 2 0V2h2v1a1 1 0 0 0 2 0V2h8.5a2.5 2.5 0 0 1 0 5h-15a2.5 2.5 0 0 1 0-5ZM22 18.5a2.5 2.5 0 0 1-2.5 2.5h-15a2.5 2.5 0 0 1 0-5H5v1a1 1 0 0 0 2 0v-1h2v1a1 1 0 0 0 2 0v-1h8.5a2.5 2.5 0 0 1 2.5 2.5ZM4.5 14a2.5 2.5 0 0 1 0-5H5v1a1 1 0 0 0 2 0V9h2v1a1 1 0 0 0 2 0V9h8.5a2.5 2.5 0 0 1 0 5Z"/></svg><small>DE <img class="route-flag" src="assets/route-flag-de.svg" alt="" /></small></span><span class="route-link"></span>
+                  <span class="route-node"><svg viewBox="0 0 24 24"><path d="M19 1H5a5 5 0 0 0-5 5v12a5 5 0 0 0 5 5h14a5 5 0 0 0 5-5V6a5 5 0 0 0-5-5ZM5 3h14a3 3 0 0 1 2.78 1.89l-7.66 7.66a3 3 0 0 1-4.24 0L2.22 4.89A3 3 0 0 1 5 3Zm14 18H5a3 3 0 0 1-3-3V7.5l6.46 6.46a5 5 0 0 0 7.08 0L22 7.5V18a3 3 0 0 1-3 3Z"/></svg><small>Main</small></span>
+                </span>
+              </button>
+
+              <button class="routing-option" data-transport="onion" type="button" role="radio" aria-checked="false">
+                <span class="routing-head"><span><b>Onion</b><small>Скрывает IP через настоящую сеть Tor</small></span><i class="routing-radio"></i></span>
+                <span class="routing-diagram route-four">
+                  <span class="route-node"><svg viewBox="0 0 24 24"><path d="M22 15.18V8a5 5 0 0 0-5-5H7a5 5 0 0 0-5 5v7.18A3 3 0 0 0 3 21h18a3 3 0 0 0 1-5.82ZM7 5h10a3 3 0 0 1 3 3v7h-4.15a2 2 0 0 0-1.53.71l-.25.29H9.93l-.25-.29A2 2 0 0 0 8.15 15H4V8a3 3 0 0 1 3-3Zm14 14H3a1 1 0 0 1 0-2h5.15l.25.29a2 2 0 0 0 1.53.71h4.14a2 2 0 0 0 1.53-.71l.25-.29H21a1 1 0 0 1 0 2Z"/></svg><small>Устройство</small></span><span class="route-link"></span>
+                  <span class="route-node"><svg class="tor-icon" viewBox="0 0 192 192"><path d="M96 170a74 74 0 1 0 0-148 74 74 0 0 0 0 148Z"/><path d="M96 46a50 50 0 1 1 0 100M96 70a26 26 0 1 1 0 52"/></svg><small>Tor</small></span><span class="route-link"></span>
+                  <span class="route-node"><svg class="tor-icon" viewBox="0 0 192 192"><path d="M96 170a74 74 0 1 0 0-148 74 74 0 0 0 0 148Z"/><path d="M96 46a50 50 0 1 1 0 100M96 70a26 26 0 1 1 0 52"/></svg><small>Onion</small></span><span class="route-link"></span>
+                  <span class="route-node"><svg viewBox="0 0 24 24"><path d="M19 1H5a5 5 0 0 0-5 5v12a5 5 0 0 0 5 5h14a5 5 0 0 0 5-5V6a5 5 0 0 0-5-5ZM5 3h14a3 3 0 0 1 2.78 1.89l-7.66 7.66a3 3 0 0 1-4.24 0L2.22 4.89A3 3 0 0 1 5 3Zm14 18H5a3 3 0 0 1-3-3V7.5l6.46 6.46a5 5 0 0 0 7.08 0L22 7.5V18a3 3 0 0 1-3 3Z"/></svg><small>Main</small></span>
+                </span>
+              </button>
+            </div>
+            <div class="settings-card routing-note">
+              <div class="setting-block">
+                <b>Onion требует локальный Tor</b>
+                <small>Запустите Tor Browser или Tor с SOCKS5 на 127.0.0.1:9050. Auto сначала пробует Relay и Multi-hop, затем Onion; DNS-запрос .onion передаётся внутрь Tor.</small>
               </div>
             </div>
           </section>

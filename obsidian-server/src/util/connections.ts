@@ -71,6 +71,28 @@ export class ConnectionCounter {
  * петли. Все остальные считаются по своему настоящему адресу, что бы они о себе
  * ни написали.
  */
+/**
+ * Ключ, под которым считаются все соединения из Tor.
+ *
+ * Адреса у них нет и быть не может — в этом весь смысл Tor, — поэтому они
+ * делят одно ведро. Это осознанный размен: свои лимиты для него отдельные и
+ * заметно щедрее (`onionLimitFactor`), а от подбора пароля защищает не он, а
+ * счётчик попыток на конкретный логин, который считается независимо от входа.
+ */
+export const ONION_KEY = "onion";
+
+/**
+ * Пришёл ли запрос через onion-вход.
+ *
+ * Метку ставит nginx на relay по номеру порта, на котором принял запрос, и
+ * перезаписывает её всегда — прислать её самому клиенту нельзя. Верим ей по
+ * тому же правилу, что и `CF-Connecting-IP`: только от доверенного адреса,
+ * то есть от своего же nginx с петли.
+ */
+export function isOnion(peer: string, route: string, trusted: readonly string[]): boolean {
+  return route === "onion" && trusted.includes(peer);
+}
+
 export function clientAddress(peer: string, claimed: string, trusted: readonly string[]): string {
   if (claimed === "" || !trusted.includes(peer)) return peer;
   // Заголовок может прийти списком: первый в нём — исходный клиент.

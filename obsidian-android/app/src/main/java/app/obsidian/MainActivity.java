@@ -68,7 +68,16 @@ import app.obsidian.core.Commands;
 /** Нативный мобильный интерфейс поверх общего Rust-ядра Obsidian. */
 public final class MainActivity extends Activity implements Events.Listener {
 
-    private static final String SERVER_URL = "wss://getobsidian.xyz/ws";
+    private static final String SERVER_BASIC_URL = "wss://getobsidian.xyz/ws";
+    private static final String SERVER_MULTIHOP_URL = "wss://getobsidian.xyz/multihop/ws";
+    /*
+      Адреса onion-входа здесь нет намеренно: их несколько, они меняются вместе
+      с узлами, и сервер называет их сам в HELLO. Приложение просит режим, а
+      какой вход открыт сегодня — решает ядро (routes_for в client.rs).
+    */
+    private static final String SERVER_ONION_URL = "obsidian://onion";
+    private static final String SERVER_AUTO_URL = "obsidian://auto";
+    private static final String TRANSPORT_KEY = "transport";
     private static final String RELEASES_URL = "https://getobsidian.xyz/v1/releases/latest";
     /** Сколько сообщений поднимать за раз. Остальное — по прокрутке вверх. */
     private static final int HISTORY_PAGE = 40;
@@ -440,6 +449,7 @@ public final class MainActivity extends Activity implements Events.Listener {
         configureRecovery();
         configureVoice();
         configurePreferences();
+        configureTransport();
         wireChatSettings();
         configureInsets();
 
@@ -684,6 +694,30 @@ public final class MainActivity extends Activity implements Events.Listener {
             if (y >= oldY || currentPeer == null) return;
             String conversation = conversations.get(currentPeer);
             if (conversation != null && y < messagesScroll.getHeight()) loadOlder(conversation);
+        });
+    }
+
+    private String serverUrl() {
+        SharedPreferences preferences = appearancePreferences == null
+                ? getSharedPreferences("appearance", MODE_PRIVATE) : appearancePreferences;
+        String mode = preferences.getString(TRANSPORT_KEY, "auto");
+        if ("multihop".equals(mode)) return SERVER_MULTIHOP_URL;
+        if ("onion".equals(mode)) return SERVER_ONION_URL;
+        if ("basic".equals(mode)) return SERVER_BASIC_URL;
+        return SERVER_AUTO_URL;
+    }
+
+    private void configureTransport() {
+        RoutingView routes = findViewById(R.id.transport_mode);
+        routes.setMode(appearancePreferences.getString(TRANSPORT_KEY, "auto"));
+        routes.setOnModeChangedListener(mode -> {
+            if (mode.equals(appearancePreferences.getString(TRANSPORT_KEY, "auto"))) return;
+            appearancePreferences.edit().putString(TRANSPORT_KEY, mode).apply();
+            if (!myDeviceHex.isEmpty()) {
+                submit(Commands.disconnect());
+                setStatus(getString(R.string.transport_switching));
+                ui.postDelayed(() -> submit(Commands.connect(serverUrl())), 250);
+            }
         });
     }
 
@@ -1522,7 +1556,7 @@ public final class MainActivity extends Activity implements Events.Listener {
     private void register() {
         entrySubmit.setEnabled(false);
         entrySubmit.setText(R.string.connecting);
-        submit(Commands.register(SERVER_URL, handle.getText().toString().trim(), null));
+        submit(Commands.register(serverUrl(), handle.getText().toString().trim(), null));
     }
 
     private void checkForUpdates() {
@@ -1935,7 +1969,7 @@ public final class MainActivity extends Activity implements Events.Listener {
         submit(Commands.fingerprint(myIdentityHex));
         submit(Commands.conversations());
         setStatus(getString(R.string.status_connecting));
-        submit(Commands.connect(SERVER_URL));
+        submit(Commands.connect(serverUrl()));
     }
 
     private void onFailed(JSONObject event) {
@@ -3132,7 +3166,7 @@ public final class MainActivity extends Activity implements Events.Listener {
             if (code.isEmpty()) return;
             recoverSubmit.setEnabled(false);
             recoverSubmit.setText(R.string.recover_working);
-            submit(Commands.recover(SERVER_URL, code));
+            submit(Commands.recover(serverUrl(), code));
             return;
         }
         String login = recoverLogin.getText().toString().trim();
@@ -3143,7 +3177,7 @@ public final class MainActivity extends Activity implements Events.Listener {
         // Argon2id на 128 МиБ считается заметное время; молчащая кнопка
         // выглядела бы как зависание.
         recoverSubmit.setText(R.string.recover_password_working);
-        submit(Commands.recoverPassword(SERVER_URL, login, password));
+        submit(Commands.recoverPassword(serverUrl(), login, password));
     }
 
     private void resetRecoverButton() {

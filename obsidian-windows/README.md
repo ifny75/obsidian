@@ -35,6 +35,11 @@ $env:OBSIDIAN_DB = "$env:TEMP\obsidian-b.db"; .\obsidian-windows.exe
 
 Без переменной база лежит в `%APPDATA%\app.obsidian.messenger\obsidian.db`.
 
+В настройках подключения доступны Auto, Basic, Multi-hop и Onion. Auto
+перебирает маршруты Basic → Multi-hop → Onion. Onion-режим
+ожидает локальный SOCKS5 Tor Browser/службы Tor на `127.0.0.1:9050`; адрес
+`.onion` разрешается самим Tor, без системного DNS.
+
 ## Что где
 
 ```

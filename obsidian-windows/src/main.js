@@ -1,4 +1,21 @@
-const SERVER_URL = "wss://getobsidian.xyz/ws";
+/*
+  Адреса onion-входов здесь нет намеренно.
+
+  Их несколько, они меняются вместе с узлами, и сервер называет их сам в HELLO.
+  Окно просит режим — «через Tor», — а какой именно вход открыт сегодня, решает
+  ядро: см. `routes_for` в client.rs. С зашитым сюда адресом смена узла или его
+  потеря требовали бы новой сборки для всех.
+*/
+const SERVER_URLS = Object.freeze({
+  auto: "obsidian://auto",
+  basic: "wss://getobsidian.xyz/ws",
+  multihop: "wss://getobsidian.xyz/multihop/ws",
+  onion: "obsidian://onion",
+});
+
+function serverUrl() {
+  return SERVER_URLS[preferences.transport] || SERVER_URLS.basic;
+}
 // Версия не хранится здесь копией: её отдаёт ядро приложения (Cargo.toml).
 // Хардкод в окне уже расходился с собранным бинарём, и клиент вечно
 // предлагал обновиться на версию, которая на нём и стояла.
@@ -276,7 +293,7 @@ $("form-entry").addEventListener("submit", async (event) => {
   button.textContent = "Подключаем…";
   const accepted = await submit({
     type: "register",
-    url: SERVER_URL,
+    url: serverUrl(),
     handle: $("handle").value.trim() || null,
     invite: null,
   });
@@ -323,7 +340,7 @@ $("form-recover-code").addEventListener("submit", (event) => {
   event.preventDefault();
   runRecovery(
     $("form-recover-code"),
-    { type: "recover", url: SERVER_URL, code: $("recover-code").value.trim() },
+    { type: "recover", url: serverUrl(), code: $("recover-code").value.trim() },
     "Проверяем код…",
     "Восстановить",
   );
@@ -335,7 +352,7 @@ $("form-recover-password").addEventListener("submit", (event) => {
     $("form-recover-password"),
     {
       type: "recover_password",
-      url: SERVER_URL,
+      url: serverUrl(),
       login: $("recover-login").value.trim(),
       password: $("recover-password").value,
     },
@@ -1392,7 +1409,7 @@ const handlers = {
     submit({ type: "directory_list" });
     submit({ type: "access_get" });
     setConnection("connecting", "подключаемся…");
-    submit({ type: "connect", url: SERVER_URL });
+    submit({ type: "connect", url: serverUrl() });
   },
 
   connected(event) {
@@ -2156,6 +2173,7 @@ $("avatar-file").addEventListener("change", () => {
 
 const settingsPage = $("settings-page");
 const preferenceDefaults = {
+  transport: "auto",
   theme: "dark",
   accent: "#f4f4f4",
   accentText: "#080808",
@@ -2263,6 +2281,7 @@ function applyPreferences() {
     button.classList.toggle("active", button.dataset.color.toLowerCase() === preferences.accent.toLowerCase());
   }
   for (const [selector, attribute, current] of [
+    ["#transport-segment [data-transport]", "transport", preferences.transport],
     ["#divider-segment [data-dividers]", "dividers", preferences.dividers],
     ["#wallpaper-grid [data-wallpaper]", "wallpaper", preferences.wallpaper],
     ["#font-segment [data-font]", "font", preferences.uiFont],
@@ -2272,6 +2291,9 @@ function applyPreferences() {
   ]) {
     for (const button of document.querySelectorAll(selector)) {
       button.classList.toggle("active", button.dataset[attribute] === current);
+      if (attribute === "transport") {
+        button.setAttribute("aria-checked", String(button.dataset.transport === current));
+      }
     }
   }
   $("custom-accent").value = preferences.accent;
@@ -3004,6 +3026,20 @@ $("editor-send").addEventListener("click", async () => {
 
 for (const button of document.querySelectorAll("#settings-nav button[data-section]")) {
   button.addEventListener("click", () => openSettingsSection(button.dataset.section));
+}
+
+for (const button of document.querySelectorAll("#transport-segment [data-transport]")) {
+  button.addEventListener("click", () => {
+    const mode = button.dataset.transport;
+    if (!SERVER_URLS[mode] || mode === preferences.transport) return;
+    preferences.transport = mode;
+    savePreferences();
+    applyPreferences();
+    submit({ type: "disconnect" });
+    window.setTimeout(() => submit({ type: "connect", url: serverUrl() }), 250);
+    toast(mode === "onion" ? "Подключаемся через Tor…"
+      : mode === "auto" ? "Выбираем доступный маршрут…" : "Меняем маршрут…");
+  });
 }
 
 function openSettingsSection(name) {

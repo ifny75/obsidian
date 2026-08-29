@@ -80,6 +80,10 @@ pub struct Hello {
     pub entry: Entry,
     #[serde(default)]
     pub features: Features,
+    /// Onion-адреса входных узлов. Старый сервер поля не присылает — тогда
+    /// остаются запасные адреса, зашитые в сборку.
+    #[serde(default)]
+    pub onion: Vec<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

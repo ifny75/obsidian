@@ -5,7 +5,9 @@ import { log } from "./log.ts";
 import { Store } from "./db/index.ts";
 import { NonceStore } from "./auth/nonce.ts";
 import { RateLimiter } from "./util/ratelimit.ts";
-import { ConnectionCounter, clientAddress, limitKey } from "./util/connections.ts";
+import {
+  ConnectionCounter, ONION_KEY, clientAddress, isOnion, limitKey,
+} from "./util/connections.ts";
 import { Registry, type Socket } from "./ws/registry.ts";
 import {
   handleClose,
@@ -59,14 +61,25 @@ app.ws<ConnData>("/ws", {
       иначе — учитывается по своему настоящему адресу, что бы он о себе ни
       написал.
     */
-    const ip = clientAddress(
-      Buffer.from(res.getRemoteAddressAsText()).toString("utf8"),
-      req.getHeader("cf-connecting-ip"),
-      config.trustedProxies,
-    );
-    // Ключ лимитов, а не адрес: IPv6 схлопывается до /64, иначе владелец
-    // подсети обходит любой потолок сменой последних групп.
-    res.upgrade<ConnData>(newConnData(limitKey(ip)), key, protocol, extensions, context);
+    const peer = Buffer.from(res.getRemoteAddressAsText()).toString("utf8");
+
+    /*
+      Вход через Tor считается отдельно, и это не поблажка, а необходимость.
+
+      Adресa у такого соединения нет: за onion-входом не стоит Cloudflare,
+      которому можно верить, и заголовок с адресом там обнуляет наш же nginx —
+      иначе клиент назначал бы себе любой IP и обходил все лимиты разом, а заодно
+      приписывал бы свой трафик чужому адресу. Взамен все соединения из Tor
+      делят один ключ и свои, отдельные потолки.
+    */
+    const onion = isOnion(peer, req.getHeader("x-obsidian-route"), config.trustedProxies);
+    const ip = onion
+      ? ONION_KEY
+      // Ключ лимитов, а не адрес: IPv6 схлопывается до /64, иначе владелец
+      // подсети обходит любой потолок сменой последних групп.
+      : limitKey(clientAddress(peer, req.getHeader("cf-connecting-ip"), config.trustedProxies));
+
+    res.upgrade<ConnData>(newConnData(ip, onion), key, protocol, extensions, context);
   },
 
   open: (ws) => {

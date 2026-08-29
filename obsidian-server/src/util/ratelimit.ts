@@ -26,8 +26,19 @@ export class RateLimiter {
     this.#maxKeys = maxKeys;
   }
 
-  /** true — запрос разрешён. */
-  allow(key: string, now: number): boolean {
+  /**
+   * true — запрос разрешён.
+   *
+   * `factor` расширяет потолок для этого вызова, не подменяя его. Нужен ровно
+   * одному случаю: соединения из Tor делят один ключ на всех, и обычный потолок
+   * закрыл бы им вход целиком, стоит появиться одному шумному.
+   *
+   * Именно множитель, а не абсолютное число: с числом настройка самого
+   * ограничителя переставала бы что-либо значить, и потолок незаметно
+   * переезжал бы в место вызова.
+   */
+  allow(key: string, now: number, factor = 1): boolean {
+    const limit = this.#limit * factor;
     const entry = this.#hits.get(key);
     if (entry === undefined || entry.resetAt <= now) {
       if (!this.#hits.has(key) && this.#hits.size >= this.#maxKeys) this.#evict(now);
@@ -35,7 +46,7 @@ export class RateLimiter {
       return true;
     }
     entry.count += 1;
-    return entry.count <= this.#limit;
+    return entry.count <= limit;
   }
 
   /** Для наблюдения за тем, не упёрлись ли мы в потолок. */

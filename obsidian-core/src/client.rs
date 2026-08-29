@@ -9,9 +9,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::TcpStream;
 use tokio::sync::mpsc;
+use tokio_socks::tcp::Socks5Stream;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{client_async_tls_with_config, MaybeTlsStream, WebSocketStream};
 
 use crate::command::{Command, ConversationItem, Event, HistoryItem};
 use crate::crypto::random_bytes;
@@ -26,12 +29,144 @@ use crate::store::Store;
 
 pub type EventSink = Arc<dyn Fn(Event) + Send + Sync>;
 
-type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
+trait NetworkStream: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> NetworkStream for T {}
+
+type Socket = WebSocketStream<MaybeTlsStream<Box<dyn NetworkStream>>>;
+
+/// Открывает WebSocket напрямую либо через локальный Tor SOCKS5.
+///
+/// Onion-имя никогда не резолвится системным DNS: строка назначения передаётся
+/// SOCKS-прокси как имя. По умолчанию это Tor/Orbot на `127.0.0.1:9050`;
+/// нестандартный порт можно задать `OBSIDIAN_TOR_SOCKS`.
+async fn open_socket(url: &str) -> Result<Socket> {
+    let request = crate::edge::ws_request(url)?;
+    let uri = request.uri();
+    let host = uri
+        .host()
+        .ok_or_else(|| CoreError::Transport("в адресе сервера нет имени хоста".into()))?
+        .to_owned();
+    let port = uri.port_u16().unwrap_or_else(|| if uri.scheme_str() == Some("wss") { 443 } else { 80 });
+
+    let stream: Box<dyn NetworkStream> = if host.ends_with(".onion") {
+        let proxy = std::env::var("OBSIDIAN_TOR_SOCKS").unwrap_or_else(|_| "127.0.0.1:9050".into());
+        Box::new(
+            Socks5Stream::connect(proxy.as_str(), (host.as_str(), port))
+                .await
+                .map_err(|err| CoreError::Transport(format!("Tor SOCKS5 недоступен: {err}")))?,
+        )
+    } else {
+        Box::new(
+            TcpStream::connect((host.as_str(), port))
+                .await
+                .map_err(|err| CoreError::Transport(err.to_string()))?,
+        )
+    };
+
+    client_async_tls_with_config(request, stream, None, None)
+        .await
+        .map(|(socket, _)| socket)
+        .map_err(|err| CoreError::Transport(err.to_string()))
+}
 
 /// Cloudflare рвёт WS после ~100 с тишины, поэтому пинг обязателен. Если
 /// сервер вдруг не назвал период — берём безопасное значение сами.
 const FALLBACK_HEARTBEAT_SEC: u64 = 30;
 const MAX_BACKOFF_SEC: u64 = 60;
+/// Внутренний адрес, который UI передаёт для автоматического выбора пути.
+/// Он никогда не попадает в DNS или URL-парсер: `session` разворачивает его в
+/// реальные маршруты перед каждой попыткой соединения.
+const AUTO_ROUTE_URL: &str = "obsidian://auto";
+/// То же самое, но только через Tor: интерфейс просит режим, а не адрес.
+///
+/// Адресов у onion-входа больше одного, и знать их клиенту наперёд не нужно:
+/// сервер называет свои в HELLO. Метка позволяет UI сказать «через Tor», не
+/// вписывая в себя ни одного адреса.
+const ONION_ROUTE_URL: &str = "obsidian://onion";
+
+/// Постоянные маршруты: обычный relay и два relay подряд.
+const DIRECT_ROUTES: [&str; 2] = [
+    "wss://getobsidian.xyz/ws",
+    "wss://getobsidian.xyz/multihop/ws",
+];
+
+/// Запасные onion-входы — на случай, когда HELLO ещё не получали ни разу.
+///
+/// Оба узла держат свой скрытый сервис, и оба здесь намеренно: с одним адресом
+/// падение единственного Tor выключало бы весь onion-режим, хотя рядом стоит
+/// живой запасной. Дальше список приезжает от сервера и обновляется сам.
+const FALLBACK_ONION: [&str; 2] = [
+    "ws://5kghvwyxzmtzba4foenmg5pkhcoxv6iq2c6wf4pbg5uyjrviwkckvead.onion/ws",
+    "ws://ho2sji2l42eqclnmu6gtbbg5nvtrz5jvpr5nqkehbstshcmspsnfkiyd.onion/ws",
+];
+
+/// Ключ настройки, где лежат onion-адреса, названные сервером.
+const ONION_HOSTS_KEY: &str = "onion_hosts";
+
+/// Что перебирать в этом режиме.
+///
+/// Порядок для Auto — от быстрого к самому скрытному: обычный relay, два
+/// relay, потом Tor. Для onion-режима — только Tor, сколько бы входов ни было.
+fn routes_for(url: &str, store: &Store) -> Vec<String> {
+    let onion: Vec<String> = load_onion_hosts(store);
+    match url {
+        AUTO_ROUTE_URL => DIRECT_ROUTES
+            .iter()
+            .map(|route| (*route).to_owned())
+            .chain(onion)
+            .collect(),
+        ONION_ROUTE_URL => onion,
+        single => vec![single.to_owned()],
+    }
+}
+
+/// Запоминает onion-входы, названные сервером.
+///
+/// Пустой список не стирает известное: сервер мог ответить старой сборкой, а
+/// забыть адрес, по которому человек только и может подключиться, — худшее из
+/// возможных решений. Стирается он только явной сменой на непустой список.
+fn remember_onion_hosts(store: &Store, hosts: &[String], sink: &EventSink) {
+    if hosts.is_empty() {
+        return;
+    }
+    let clean: Vec<&String> = hosts.iter().filter(|host| host.ends_with(".onion")).collect();
+    if clean.is_empty() {
+        return;
+    }
+    match serde_json::to_vec(&clean) {
+        Ok(encoded) => {
+            if let Err(err) = store.save_setting(ONION_HOSTS_KEY, &encoded) {
+                fail(sink, "storage", &err.to_string());
+            }
+        }
+        Err(err) => fail(sink, "encoding", &err.to_string()),
+    }
+}
+
+/// Onion-входы: сначала названные сервером, потом запасные из сборки.
+///
+/// Запасные не выбрасываются даже когда список приехал: сервер мог назвать
+/// узел, до которого именно у этого человека Tor не достучится.
+fn load_onion_hosts(store: &Store) -> Vec<String> {
+    let known: Vec<String> = store
+        .load_setting(ONION_HOSTS_KEY)
+        .ok()
+        .flatten()
+        .and_then(|raw| serde_json::from_slice(&raw).ok())
+        .unwrap_or_default();
+
+    let mut routes: Vec<String> = known
+        .iter()
+        .filter(|host| host.ends_with(".onion"))
+        .map(|host| format!("ws://{host}/ws"))
+        .collect();
+    for fallback in FALLBACK_ONION {
+        if !routes.iter().any(|route| route == fallback) {
+            routes.push(fallback.to_owned());
+        }
+    }
+    routes
+}
 const DEFAULT_TTL_SEC: u32 = 14 * 24 * 3600;
 /// Сколько KeyPackages выкладывать при подключении. Каждый расходуется одним
 /// собеседником, поэтому запас нужен, но небольшой.
@@ -810,9 +945,7 @@ async fn fetch_sealed_identity(
 ) -> Result<keys::SecretKey> {
     let (login_id, token, key) = crate::passphrase::request(login, password)?;
 
-    let (mut socket, _) = connect_async(crate::edge::ws_request(url)?)
-        .await
-        .map_err(|err| CoreError::Transport(err.to_string()))?;
+    let mut socket = open_socket(url).await?;
     send(&mut socket, proto::recovery_get_frame(&login_id, &token, code)?).await?;
 
     let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
@@ -1152,14 +1285,23 @@ async fn session(
     let mut entry = entry;
     let mut backoff = 1u64;
     let mut live = Live::default();
+    // Список маршрутов считается один раз на сессию: он меняется только вместе
+    // с настройкой, а её смена и так пересоздаёт соединение.
+    let routes = routes_for(url, store);
+    let rotating = routes.len() > 1;
+    let mut route = 0usize;
 
     loop {
         // Дошли ли мы в этот раз до рабочего состояния. Нужно, чтобы отличить
         // «сервер недоступен» от «связь была и оборвалась».
         let mut established = false;
 
+        // Пустым список быть не может: `routes_for` всегда возвращает хотя бы
+        // сам адрес, а для onion-режима — хотя бы запасные входы.
+        let attempt_url = routes.get(route).map(String::as_str).unwrap_or(url);
         match connect_once(
-            url, &credentials, &entry, store, &mut mls, sink, commands, &mut live, &mut established,
+            attempt_url, &credentials, &entry, store, &mut mls, sink, commands, &mut live,
+            &mut established,
         )
         .await
         {
@@ -1173,15 +1315,21 @@ async fn session(
             Err(err) => sink(Event::Disconnected { reason: err.to_string() }),
         }
 
-        // Второй заход уже не регистрирует: личность на сервере есть.
-        entry = Entry::Existing;
-
         // Задержка растёт только пока сервер недостижим. Разрыв уже рабочего
         // соединения — обычное дело за Cloudflare, и наказывать за него
         // минутой ожидания нельзя: именно так «доставка в реальном времени»
         // превращается в «увижу после перезапуска».
         if established {
+            // Только завершённый handshake означает, что регистрация дошла до
+            // сервера. Сетевой сбой до HELLO/AUTH не должен выбрасывать инвайт
+            // при переходе Auto на следующий маршрут.
+            entry = Entry::Existing;
             backoff = 1;
+        } else if rotating {
+            // Не открылось — пробуем следующий вход. После успешного соединения
+            // остаёмся на выбранном пути; вращение возобновится лишь если он
+            // перестанет открываться.
+            route = (route + 1) % routes.len();
         }
         if wait_before_retry(backoff, store, sink, commands).await == Pause::Closed {
             return;
@@ -1319,11 +1467,10 @@ async fn connect_once(
 ) -> Result<Outcome> {
     // Заголовки Cloudflare Access, если сборка их знает: без них закрытый
     // периметр пришлось бы держать выключенным (§10.1).
-    let (mut socket, _) = connect_async(crate::edge::ws_request(url)?)
-        .await
-        .map_err(|err| CoreError::Transport(err.to_string()))?;
+    let mut socket = open_socket(url).await?;
 
     let hello = expect_hello(&mut socket, sink).await?;
+    remember_onion_hosts(store, &hello.onion, sink);
     let heartbeat = if hello.heartbeat_sec == 0 { FALLBACK_HEARTBEAT_SEC } else { hello.heartbeat_sec };
 
     let nonce = hex::decode(&hello.nonce).map_err(|_| CoreError::BadFrame)?;
@@ -2703,6 +2850,94 @@ fn now_millis() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Отдельная база на каждый тест: настройки маршрутов лежат именно в ней.
+    struct TempStore(Store, String);
+
+    impl TempStore {
+        fn new(name: &str) -> Self {
+            // Имя уникально для каждого вызова, а не для процесса: тесты идут
+            // параллельно, и общий pid однажды сведёт два из них в один файл.
+            let unique = hex::encode(crate::crypto::random_bytes(8));
+            let path = std::env::temp_dir()
+                .join(format!("obsidian-{name}-{unique}.db"))
+                .to_string_lossy()
+                .into_owned();
+            Self::wipe(&path);
+            let store = Store::open(&path, b"pw").expect("база не открылась");
+            Self(store, path)
+        }
+
+        fn wipe(path: &str) {
+            for suffix in ["", "-wal", "-shm"] {
+                let _ = std::fs::remove_file(format!("{path}{suffix}"));
+            }
+        }
+    }
+
+    impl Drop for TempStore {
+        fn drop(&mut self) {
+            Self::wipe(&self.1);
+        }
+    }
+
+    #[test]
+    fn auto_tries_the_fast_route_first_and_tor_last() {
+        let store = TempStore::new("auto");
+        let routes = routes_for(AUTO_ROUTE_URL, &store.0);
+
+        assert!(routes[0].ends_with("getobsidian.xyz/ws"), "первым — обычный relay");
+        assert!(routes[1].contains("/multihop/"), "вторым — два relay");
+        assert!(
+            routes[2..].iter().all(|route| route.contains(".onion")),
+            "Tor обязан быть последним: {routes:?}",
+        );
+        // Оба запасных входа на месте: с одним падение единственного Tor
+        // выключало бы onion-режим целиком, хотя рядом стоит живой узел.
+        assert_eq!(routes.len(), 4, "{routes:?}");
+    }
+
+    #[test]
+    fn the_onion_mode_never_falls_back_to_a_clear_route() {
+        let store = TempStore::new("onion");
+        let routes = routes_for(ONION_ROUTE_URL, &store.0);
+
+        assert!(!routes.is_empty(), "без входов режим был бы мёртвым");
+        assert!(
+            routes.iter().all(|route| route.contains(".onion")),
+            "в режиме Tor не должно быть открытых маршрутов: {routes:?}",
+        );
+    }
+
+    #[test]
+    fn a_named_host_comes_first_and_the_spares_stay() {
+        let store = TempStore::new("named");
+        let sink: EventSink = Arc::new(|_| {});
+        remember_onion_hosts(&store.0, &["fresh.onion".to_string()], &sink);
+
+        let routes = routes_for(ONION_ROUTE_URL, &store.0);
+        assert_eq!(routes[0], "ws://fresh.onion/ws", "названный сервером — первым");
+        // Запасные остаются: сервер мог назвать узел, до которого именно у
+        // этого человека Tor не достучится.
+        assert!(routes.iter().any(|route| route.contains("5kghvwyx")));
+        assert!(routes.iter().any(|route| route.contains("ho2sji2l")));
+
+        // Пустой список не стирает известное: иначе старая сборка сервера
+        // отобрала бы у человека единственный работающий вход.
+        remember_onion_hosts(&store.0, &[], &sink);
+        // И мусор не запоминается.
+        remember_onion_hosts(&store.0, &["не-адрес".to_string()], &sink);
+        assert_eq!(routes_for(ONION_ROUTE_URL, &store.0)[0], "ws://fresh.onion/ws");
+    }
+
+    #[test]
+    fn a_single_address_is_used_as_given() {
+        let store = TempStore::new("single");
+        assert_eq!(
+            routes_for("wss://example.org/ws", &store.0),
+            vec!["wss://example.org/ws".to_string()],
+        );
+    }
 
     /// Сбой MLS не должен выглядеть как обрыв связи.
     ///

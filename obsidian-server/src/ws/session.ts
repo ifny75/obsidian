@@ -73,11 +73,14 @@ export interface ConnData {
   counted: boolean;
   /** Числится ли он ещё среди неназвавшихся. Тоже снимается ровно один раз. */
   anonymous: boolean;
+  /** Пришло ли соединение через onion-вход: у него свои потолки. */
+  onion: boolean;
 }
 
-export function newConnData(ip: string): ConnData {
+export function newConnData(ip: string, onion = false): ConnData {
   return {
     ip,
+    onion,
     authAttempts: 0,
     nonce: null,
     identity: null,
@@ -96,7 +99,10 @@ export function handleOpen(deps: Deps, sock: Socket, conn: ConnData): void {
   // Сначала проверка, потом учёт: отвергнутый сокет учитывать нельзя. Он к нам
   // не подключился, а `counted` у него остаётся снятым — и позже, когда uWS
   // позовёт close на им же закрытое соединение, из счётчика не вычтется чужое.
-  if (deps.connections.count(conn.ip) >= config.maxConnectionsPerIp) {
+  // У onion-входа потолок общий на всех: адреса, по которому их различить,
+  // не существует. Поэтому и число другое — за ним стоит весь Tor сразу.
+  const cap = conn.onion ? config.maxOnionConnections : config.maxConnectionsPerIp;
+  if (deps.connections.count(conn.ip) >= cap) {
     sock.end(CLOSE.BUSY, "too many connections");
     return;
   }
@@ -130,6 +136,10 @@ export function handleOpen(deps: Deps, sock: Socket, conn: ConnData): void {
       /** Клиент сразу знает, какие способы входа доступны. */
       entry: { invite: !config.publicRegistration, ton: config.ton.address !== "" },
       features: { profiles: true, recovery: true, usernames: true, passes: true, decor: true },
+      // Входы, о которых клиент иначе не узнает. Пустой список — просто нет
+      // onion-входа: старый клиент поля не заметит, новый останется на своём
+      // запасном адресе.
+      onion: config.onionHosts,
     }),
     true,
   );
@@ -380,11 +390,23 @@ function checkCredentials(
   return { identity, devicePub, cert };
 }
 
+/**
+ * Насколько щедрее считать этому соединению.
+ *
+ * У соединений из Tor ключ один на всех, поэтому обычный потолок закрыл бы им
+ * вход целиком, стоит появиться одному шумному. Множитель разводит эти случаи,
+ * не заводя второго набора ограничителей: ведро остаётся тем же, меняется
+ * только его глубина.
+ */
+function limitFactor(conn: ConnData): number {
+  return conn.onion ? config.onionLimitFactor : 1;
+}
+
 function rateOk(deps: Deps, sock: Socket, conn: ConnData): boolean {
   conn.authAttempts += 1;
   if (
     conn.authAttempts > config.maxAuthAttemptsPerConn ||
-    !deps.authLimiter.allow(conn.ip, deps.now())
+    !deps.authLimiter.allow(conn.ip, deps.now(), limitFactor(conn))
   ) {
     sock.end(CLOSE.POLICY, "rate limited");
     return false;
@@ -817,7 +839,7 @@ function onUsernameLookup(deps: Deps, sock: Socket, conn: ConnData, body: Uint8A
   const now = deps.now();
 
   // Перебор по словарю ограничивается здесь: хеш имени подобрать несложно.
-  if (!deps.searchLimiter.allow(conn.ip, now)) {
+  if (!deps.searchLimiter.allow(conn.ip, now, limitFactor(conn))) {
     sock.send(errorFrame("search_rate_limited", "too many lookups, try later"), true);
     return;
   }
@@ -1042,7 +1064,7 @@ function onChannelFind(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Arra
 
   // Каналы ищутся по имени целиком, как и люди: перебор здесь никому не нужен,
   // а ограничитель частоты у нас уже есть.
-  if (!deps.searchLimiter.allow(conn.ip, deps.now())) {
+  if (!deps.searchLimiter.allow(conn.ip, deps.now(), limitFactor(conn))) {
     sock.send(errorFrame("search_rate_limited", "too many lookups, try later"), true);
     return;
   }
@@ -1370,7 +1392,10 @@ function onRecoveryGet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Arra
 
   // Проверка частоты идёт до обращения к базе: иначе разница во времени ответа
   // сама рассказала бы, существует логин или нет.
-  const withinLimit = deps.recoveryLimiter.allow(conn.ip, now)
+  // Послабление касается только ведра входа. Счётчик на конкретный логин
+  // остаётся прежним: именно он стоит между чужим человеком и личностью, и
+  // ослаблять его из-за того, что запрос пришёл через Tor, нельзя.
+  const withinLimit = deps.recoveryLimiter.allow(conn.ip, now, limitFactor(conn))
     && deps.recoveryLimiter.allow(`login:${toHex(loginId)}`, now);
   if (!withinLimit) {
     sock.send(errorFrame("recovery_rate_limited", "too many attempts, try later"), true);
