@@ -96,6 +96,17 @@ pub enum Command {
     /// `for_both` просит удалить его и у собеседника. Именно просит: выполнит
     /// это его клиент, а не мы, и копия у него уже есть.
     DeleteMessage { conversation: String, id: String, #[serde(default)] for_both: bool },
+    /// Заменить текст уже отправленного сообщения.
+    ///
+    /// `for_both` просит заменить его и у собеседника. Именно просит: сделает
+    /// это его клиент, а прочитанного старого текста правка не отменяет.
+    EditMessage {
+        conversation: String,
+        id: String,
+        body: String,
+        #[serde(default)]
+        for_both: bool,
+    },
     /// Очистить переписку, оставив саму беседу.
     ClearConversation { conversation: String },
     /// Убрать и переписку, и беседу целиком.
@@ -321,6 +332,8 @@ pub enum Event {
     /// Ни переписок, ни списка людей здесь нет — сервер их не хранит, и панель
     /// не должна создавать впечатление, будто хранит.
     Admin { report: serde_json::Value },
+    /// Тело сообщения заменено — своё или по просьбе собеседника.
+    Edited { conversation: String, id: String, body: String },
     /// Сообщения исчезли из локальной базы.
     Deleted { conversation: String, ids: Vec<String> },
     /// Переписка очищена или беседа удалена целиком.

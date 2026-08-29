@@ -248,6 +248,7 @@
           <div class="header-actions">
             <button id="invite-to-group" class="ghost-button hidden" type="button">Позвать</button>
             <button id="leave-group" class="ghost-button hidden" type="button">Забыть</button>
+            <button id="open-search" class="ghost-button" type="button" title="Искать в переписке"><span class="ui-icon icon-search"></span></button>
             <button id="verify" class="ghost-button" type="button" disabled><span class="ui-icon icon-fingerprint"></span><span>Сверить</span></button>
           </div>
         </header>
@@ -305,6 +306,14 @@
           <span class="ui-icon icon-chevron-down"></span>
           <i id="jump-badge" class="jump-badge hidden"></i>
         </button>
+        <div id="chat-search" class="chat-search hidden">
+          <span class="ui-icon icon-search"></span>
+          <input id="chat-search-input" type="text" placeholder="Искать в этой переписке" autocomplete="off" spellcheck="false" />
+          <output id="chat-search-count">—</output>
+          <button id="chat-search-prev" class="icon-button" type="button" title="Раньше">↑</button>
+          <button id="chat-search-next" class="icon-button" type="button" title="Позже">↓</button>
+          <button id="chat-search-close" class="icon-button" type="button" title="Закрыть"><span class="ui-icon icon-cross"></span></button>
+        </div>
         <ul id="messages" class="message-list hidden"></ul>
 
         <form id="form-send" class="composer-wrap">
@@ -318,6 +327,7 @@
           <div class="composer">
             <button id="attach-image" class="attach-button" type="button" disabled title="Отправить фото" aria-label="Отправить фото">＋</button>
             <input id="message-image-file" type="file" accept="image/jpeg,image/png,image/webp" hidden />
+            <button id="emoji-open" class="attach-button" type="button" disabled title="Эмодзи" aria-label="Эмодзи">☺</button>
             <textarea id="composer" rows="1" placeholder="Сообщение" disabled></textarea>
             <button id="record-voice" class="attach-button" type="button" disabled title="Голосовое сообщение" aria-label="Записать голосовое">●</button>
             <button id="send" class="send-button" type="submit" disabled title="Отправить" aria-label="Отправить"><span class="ui-icon icon-check"></span></button>

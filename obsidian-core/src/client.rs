@@ -379,6 +379,7 @@ async fn run(mut commands: mpsc::UnboundedReceiver<Command>, store: Store, sink:
             | Command::AdminAction { .. }
             | Command::RecoverySetup { .. }
             | Command::DeleteMessage { .. }
+            | Command::EditMessage { .. }
             | Command::Typing { .. }
             | Command::AccessSet { .. }
             | Command::PassInvite { .. }
@@ -507,6 +508,28 @@ fn password_code_of(error: &CoreError) -> &str {
 ///
 /// Возвращает устройство собеседника — оно понадобится, если удалить просят и
 /// у него.
+/// Заменяет тело у себя и сообщает, кому уходит просьба.
+fn edit_locally(
+    store: &Store,
+    sink: &EventSink,
+    conversation: &str,
+    id: &str,
+    body: &str,
+) -> Result<Option<[u8; KEY_LEN]>> {
+    let group = hex::decode(conversation).map_err(|_| CoreError::BadFrame)?;
+    if store.update_message_by_id(&group, id, body.as_bytes())? {
+        sink(Event::Edited {
+            conversation: conversation.to_owned(),
+            id: id.to_owned(),
+            body: body.to_owned(),
+        });
+    }
+    let peer = store
+        .peer_of_conversation(&group)?
+        .and_then(|raw| raw.try_into().ok());
+    Ok(peer)
+}
+
 fn delete_locally(
     store: &Store,
     sink: &EventSink,
@@ -1453,6 +1476,32 @@ async fn pump(
                             Err(err) => fail(sink, "storage", &err.to_string()),
                         }
                     }
+                    Command::EditMessage { conversation, id, body, for_both } => {
+                        match edit_locally(store, sink, &conversation, &id, &body) {
+                            Ok(peer) => {
+                                // Как и с удалением: сначала у себя, потом
+                                // просьба. Оборвётся связь — своё уже
+                                // исправлено, а повторить человек сможет.
+                                if for_both {
+                                    if let Some(device) = peer {
+                                        let request = crate::access::edit_request(&id, &body);
+                                        let waiting =
+                                            PendingSend { device, body: request, stored: true };
+                                        if let Err(err) = deliver(
+                                            &mut socket, store, mls, sink, &mut pending, waiting,
+                                            &mut live.outbox,
+                                        ).await {
+                                            if is_transport(&err) {
+                                                return Ok(Outcome::Retry);
+                                            }
+                                            fail(sink, "edit_request", &err.to_string());
+                                        }
+                                    }
+                                }
+                            }
+                            Err(err) => fail(sink, "storage", &err.to_string()),
+                        }
+                    }
                     Command::Typing { recipient_device, active } => {
                         // Ошибку не показываем: индикатор набора — вещь
                         // необязательная, и ругаться на него посреди переписки
@@ -1940,6 +1989,17 @@ async fn on_envelope(
                         }
                         if !removed.is_empty() {
                             sink(Event::Deleted { conversation: group, ids: removed });
+                        }
+                    }
+                    Some(Control::Edit { id, body }) => {
+                        if store.update_message_by_id(&group_id, &id, body.as_bytes())
+                            .unwrap_or(false)
+                        {
+                            sink(Event::Edited {
+                                conversation: hex::encode(&group_id),
+                                id,
+                                body,
+                            });
                         }
                     }
                     Some(Control::Typing(active)) => {

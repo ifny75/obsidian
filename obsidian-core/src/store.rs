@@ -555,6 +555,33 @@ impl Store {
         Ok(false)
     }
 
+    /// Заменяет тело сообщения, оставляя его на месте в истории.
+    ///
+    /// Ищется так же, как при удалении, — перебором: логический идентификатор
+    /// лежит внутри запечатанного тела и снаружи не виден. Запечатывается новое
+    /// тело тем же ключом строки, то есть её `id`: иначе распечатать его потом
+    /// будет нечем.
+    pub fn update_message_by_id(
+        &self,
+        conversation: &[u8],
+        logical_id: &str,
+        body: &[u8],
+    ) -> Result<bool> {
+        for message in self.list_messages(conversation, i64::MAX, None)? {
+            let stored = String::from_utf8_lossy(&message.body);
+            if !stored.contains(logical_id) {
+                continue;
+            }
+            let sealed = self.key.seal(&message.id, body)?;
+            self.connection.execute(
+                "UPDATE messages SET sealed = ?1 WHERE id = ?2",
+                params![sealed, message.id],
+            )?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
     /// Убирает и переписку, и саму беседу: писать этому устройству заново
     /// придётся с нового приглашения MLS.
     pub fn forget_conversation(&self, conversation: &[u8]) -> Result<()> {
@@ -827,5 +854,52 @@ mod tests {
 
         seen.sort_unstable();
         assert_eq!(seen, (0..10u8).collect::<Vec<_>>(), "страницы потеряли или повторили записи");
+    }
+
+    #[test]
+    fn a_message_body_can_be_replaced_in_place() {
+        let db = TempDb::new("edit");
+        let store = Store::open(db.path(), b"pw").unwrap();
+        store.insert_message(b"id-0000000000001", b"conv", true, 100, r#"{"id":"m-1","text":"было"}"#.as_bytes()).unwrap();
+        store.insert_message(b"id-0000000000002", b"conv", true, 200, r#"{"id":"m-2","text":"чужое"}"#.as_bytes()).unwrap();
+
+        assert!(store.update_message_by_id(b"conv", "m-1", r#"{"id":"m-1","text":"стало"}"#.as_bytes()).unwrap());
+
+        let messages = store.list_messages(b"conv", i64::MAX, None).unwrap();
+        let bodies: Vec<String> = messages
+            .iter()
+            .map(|m| String::from_utf8_lossy(&m.body).into_owned())
+            .collect();
+        assert!(bodies.iter().any(|b| b.contains("стало")), "правка не применилась: {bodies:?}");
+        assert!(!bodies.iter().any(|b| b.contains("было")), "старое тело осталось");
+        // Соседнее сообщение трогать нельзя.
+        assert!(bodies.iter().any(|b| b.contains("чужое")));
+        // И порядок в истории сохраняется: правка не выносит сообщение наверх.
+        assert_eq!(messages.len(), 2);
+    }
+
+    #[test]
+    fn editing_an_unknown_id_changes_nothing() {
+        let db = TempDb::new("edit-miss");
+        let store = Store::open(db.path(), b"pw").unwrap();
+        store.insert_message(b"id-0000000000001", b"conv", true, 100, br#"{"id":"m-1"}"#).unwrap();
+        assert!(!store.update_message_by_id(b"conv", "нет-такого", b"x").unwrap());
+        assert_eq!(store.list_messages(b"conv", i64::MAX, None).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_edited_body_stays_sealed_on_disk() {
+        let db = TempDb::new("edit-sealed");
+        let store = Store::open(db.path(), b"pw").unwrap();
+        store.insert_message(b"id-0000000000001", b"conv", true, 100, r#"{"id":"m-1","text":"было"}"#.as_bytes()).unwrap();
+        store.update_message_by_id(b"conv", "m-1", r#"{"id":"m-1","text":"тайное"}"#.as_bytes()).unwrap();
+        drop(store);
+
+        let raw = std::fs::read(db.path()).unwrap();
+        let secret = "тайное".as_bytes();
+        assert!(
+            !raw.windows(secret.len()).any(|w| w == secret),
+            "исправленный текст виден в файле открытым"
+        );
     }
 }

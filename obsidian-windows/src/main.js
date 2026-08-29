@@ -775,7 +775,7 @@ function selectConversation(peer) {
   // В чужом канале писать нельзя: пишет только владелец. Ограничение честное —
   // отправленное всё равно отвергнут получатели.
   const readOnly = Boolean(group) && group.kind === "channel" && group.owner !== state.device;
-  for (const id of ["composer", "send", "attach-image", "record-voice"]) {
+  for (const id of ["composer", "send", "attach-image", "record-voice", "emoji-open"]) {
     $(id).disabled = readOnly;
   }
   $("composer").placeholder = readOnly ? "В этот канал пишет только владелец" : "Сообщение…";
@@ -831,6 +831,22 @@ $("form-send").addEventListener("submit", async (event) => {
   if (!body || !state.current) return;
   $("composer").value = "";
   resizeComposer();
+
+  // Режим правки: сообщение не отправляется заново, а заменяется на месте.
+  // Новый идентификатор здесь был бы ошибкой — по нему собеседник не найдёт,
+  // что именно менять.
+  if (editing) {
+    const { id } = editing;
+    const conversation = conversationOf(state.current);
+    editing = null;
+    renderEditBar();
+    const fresh = encodeContent({ type: "text", id, text: body });
+    if (await submit({ type: "edit_message", conversation, id, body: fresh, for_both: true })) {
+      applyEdit(conversation, id, fresh);
+    }
+    return;
+  }
+
   state.pendingPeer = state.current;
   const content = { type: "text", id: logicalId(), text: body };
   if (replyingTo) {
@@ -1755,6 +1771,10 @@ const handlers = {
     renderConversations();
   },
 
+  edited(event) {
+    applyEdit(event.conversation, event.id, event.body);
+  },
+
   deleted(event) {
     const entry = history.get(event.conversation);
     for (const id of event.ids) {
@@ -2548,6 +2568,12 @@ document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   // Закрываем по одному слою за нажатие: Escape в открытом окне исключений не
   // должен заодно захлопывать и настройки под ним.
+  if (emojiPanel) return closeEmoji();
+  if (!$("chat-search").classList.contains("hidden")) {
+    $("chat-search").classList.add("hidden");
+    return closeSearch();
+  }
+  if (editing) return cancelEdit();
   if (!$("exceptions-modal").classList.contains("hidden")) return closeExceptions();
   if (!$("photo-editor").classList.contains("hidden")) return closeEditor();
   settingsPage.classList.add("hidden");
@@ -4711,6 +4737,225 @@ function confirmAction(title, detail, onYes) {
   modal.querySelector("[data-no]").focus();
 }
 
+
+// --- эмодзи ------------------------------------------------------------------
+
+/*
+  Набор свой и небольшой.
+
+  Полный Unicode тянуть незачем: он весит мегабайты, требует таблиц имён для
+  поиска и всё равно рисуется системным шрифтом. Здесь то, чем пользуются
+  каждый день, разложенное по смыслу, — а редкий знак человек вставит через
+  системную панель по Win+точка, которая никуда не делась.
+*/
+const EMOJI = [
+  ["Лица", "😀 😃 😄 😁 😆 😅 🙂 🙃 😉 😊 😇 🥰 😍 😘 😗 😚 😋 😛 😜 🤪 🤗 🤔 🤨 😐 😑 😶 🙄 😏 😴 🤤 😪 😵 🤐 🥴 🤢 🤧 😷 🤒 😎 🤓 🧐 😕 😟 🙁 😮 😲 😳 🥺 😢 😭 😤 😠 😡 🤬 😱 😨 😰 😥 🤯 😬 😌 🤥"],
+  ["Жесты", "👍 👎 👌 🤌 ✌️ 🤞 🤝 👏 🙌 🙏 💪 👋 🤙 ☝️ 👆 👇 👈 👉 ✊ 👊 🤟 🤘 ✋ 🖐️ 🫡 🫶"],
+  ["Сердца", "❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝"],
+  ["Дело", "✅ ❌ ⚠️ ❗ ❓ 💡 📌 📎 🔒 🔑 📁 📄 📝 ✏️ 🔍 ⏰ 📅 📊 💬 📞 📷 🎧 ⚡ 🔥 ⭐ 🎉 🎁 ☕ 🍕 🚀 🛠️ 🧩 🌙 ☀️ 🌧️ ❄️"],
+];
+
+let emojiPanel = null;
+
+function closeEmoji() {
+  emojiPanel?.remove();
+  emojiPanel = null;
+}
+
+$("emoji-open").addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (emojiPanel) return closeEmoji();
+
+  const panel = document.createElement("div");
+  panel.className = "emoji-panel";
+  for (const [title, row] of EMOJI) {
+    const heading = document.createElement("p");
+    heading.className = "emoji-title";
+    heading.textContent = title;
+    const grid = document.createElement("div");
+    grid.className = "emoji-grid";
+    for (const symbol of row.split(" ")) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = symbol;
+      button.addEventListener("click", () => insertEmoji(symbol));
+      grid.appendChild(button);
+    }
+    panel.append(heading, grid);
+  }
+  // Внутри панели щелчок не должен её закрывать: выбирают часто по нескольку.
+  panel.addEventListener("click", (inner) => inner.stopPropagation());
+  document.querySelector(".composer").appendChild(panel);
+  emojiPanel = panel;
+});
+
+document.addEventListener("click", closeEmoji);
+
+/** Вставляет знак туда, где стоит курсор, а не в конец строки. */
+function insertEmoji(symbol) {
+  const field = $("composer");
+  const at = field.selectionStart ?? field.value.length;
+  const to = field.selectionEnd ?? at;
+  field.value = field.value.slice(0, at) + symbol + field.value.slice(to);
+  const after = at + symbol.length;
+  field.setSelectionRange(after, after);
+  field.focus();
+  field.dispatchEvent(new Event("input"));
+}
+
+// --- правка отправленного ------------------------------------------------------
+
+/**
+ * Что сейчас правится. Пусто — композер работает как обычно.
+ *
+ * Правка живёт рядом с ответом и цитатой: то же поле, та же кнопка отправки.
+ * Отдельного окна нет намеренно — текст правят, глядя на переписку вокруг.
+ */
+let editing = null;
+
+function startEdit(id, text) {
+  editing = { id, was: text };
+  replyingTo = null;
+  const field = $("composer");
+  field.value = text;
+  field.focus();
+  field.setSelectionRange(text.length, text.length);
+  renderEditBar();
+}
+
+function cancelEdit() {
+  editing = null;
+  $("composer").value = "";
+  renderEditBar();
+}
+
+function renderEditBar() {
+  document.querySelector(".composer-edit")?.remove();
+  if (!editing) return;
+  const bar = document.createElement("div");
+  bar.className = "composer-edit";
+  const label = document.createElement("b");
+  label.textContent = "Изменение сообщения";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "icon-button";
+  cancel.title = "Отменить правку";
+  cancel.append(Object.assign(document.createElement("span"), { className: "ui-icon icon-cross" }));
+  cancel.addEventListener("click", cancelEdit);
+  bar.append(label, cancel);
+  document.querySelector(".composer-wrap").prepend(bar);
+}
+
+/** Меняет тело в кэше и на экране, не трогая порядок сообщений. */
+function applyEdit(conversation, id, body) {
+  const entry = history.get(conversation);
+  const rebuilt = buildMessage(
+    { outgoing: true, body, created_at: Date.now() },
+    peerOf(conversation) ?? state.current,
+  );
+  if (!rebuilt) return;
+
+  for (const node of document.querySelectorAll(`[data-message-id="${CSS.escape(id)}"]`)) {
+    const fresh = rebuilt.node.cloneNode(true);
+    markEdited(fresh);
+    node.replaceWith(fresh);
+  }
+  if (!entry) return;
+  for (const item of entry.items) {
+    if (item.node.dataset.messageId !== id) continue;
+    const fresh = rebuilt.node.cloneNode(true);
+    markEdited(fresh);
+    item.node = fresh;
+  }
+}
+
+/** Помета «изменено»: собеседник должен видеть, что текст не первоначальный. */
+function markEdited(node) {
+  const meta = node.querySelector(".message-meta");
+  if (!meta || meta.querySelector(".edited")) return;
+  const mark = document.createElement("span");
+  mark.className = "edited";
+  mark.textContent = "изменено";
+  meta.appendChild(mark);
+}
+
+// --- поиск по открытой переписке ----------------------------------------------
+
+/*
+  Ищем по тому, что уже поднято в беседу, и говорим об этом прямо.
+
+  Спрашивать ядро незачем: история подтягивается страницами, и честный поиск
+  по всей переписке — это отдельная команда с чтением всей базы. Пока её нет,
+  панель ищет по загруженному и предлагает подгрузить ещё.
+*/
+let searchHits = [];
+let searchAt = -1;
+
+function closeSearch() {
+  $("chat-search").classList.add("hidden");
+  $("chat-search-input").value = "";
+  clearSearchMarks();
+  searchHits = [];
+  searchAt = -1;
+}
+
+function clearSearchMarks() {
+  for (const node of document.querySelectorAll("#messages li.search-hit")) {
+    node.classList.remove("search-hit", "search-current");
+  }
+}
+
+function runSearch() {
+  const needle = $("chat-search-input").value.trim().toLowerCase();
+  clearSearchMarks();
+  searchHits = [];
+  searchAt = -1;
+
+  if (needle.length >= 2) {
+    for (const node of document.querySelectorAll("#messages li[data-message-id]")) {
+      const body = node.querySelector(".body")?.textContent?.toLowerCase() ?? "";
+      if (!body.includes(needle)) continue;
+      node.classList.add("search-hit");
+      searchHits.push(node);
+    }
+  }
+  $("chat-search-count").textContent = needle.length < 2
+    ? "—"
+    : searchHits.length === 0 ? "ничего" : `1 из ${searchHits.length}`;
+  if (searchHits.length > 0) stepSearch(searchHits.length - 1);
+}
+
+function stepSearch(to) {
+  if (searchHits.length === 0) return;
+  searchHits[searchAt]?.classList.remove("search-current");
+  searchAt = (to + searchHits.length) % searchHits.length;
+  const node = searchHits[searchAt];
+  node.classList.add("search-current");
+  node.scrollIntoView({ block: "center", behavior: "smooth" });
+  $("chat-search-count").textContent = `${searchAt + 1} из ${searchHits.length}`;
+}
+
+$("open-search").addEventListener("click", () => {
+  const panel = $("chat-search");
+  const hidden = panel.classList.toggle("hidden");
+  if (hidden) return closeSearch();
+  $("chat-search-input").focus();
+});
+
+$("chat-search-input").addEventListener("input", runSearch);
+$("chat-search-next").addEventListener("click", () => stepSearch(searchAt + 1));
+$("chat-search-prev").addEventListener("click", () => stepSearch(searchAt - 1));
+$("chat-search-close").addEventListener("click", () => {
+  $("chat-search").classList.add("hidden");
+  closeSearch();
+});
+$("chat-search-input").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    stepSearch(searchAt + (event.shiftKey ? -1 : 1));
+  }
+});
+
 // --- меню сообщения ---------------------------------------------------------------
 
 /*
@@ -4751,6 +4996,10 @@ function openMessageMenu(item, x, y) {
     ["Копировать текст", () => copyText(text, "Скопировано")],
     ["Удалить у себя", () => confirmDelete(id, false), true],
   ];
+  // Править можно только своё и только текст: у фотографии и голосового
+  // «изменить» означало бы отправить другое, а это уже новое сообщение.
+  const editable = outgoing && !item.querySelector(".message-image, .voice");
+  if (editable) entries.splice(1, 0, ["Изменить", () => startEdit(id, text)]);
   // Просить об удалении можно только своё: чужую копию у собеседника мы всё
   // равно не контролируем, а кнопка обещала бы обратное.
   if (outgoing) entries.push(["Удалить у обоих", () => confirmDelete(id, true), true]);

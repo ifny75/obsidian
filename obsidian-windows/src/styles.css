@@ -880,3 +880,48 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
   background:transparent;color:var(--text);font-size:11px;font-weight:500}
 .undo-bar button:hover{background:var(--surface)}
 
+/* --- этап 3: эмодзи, правка, поиск ------------------------------------------ */
+
+/* Панель эмодзи всплывает над композером, а не отдельным окном: выбирают её,
+   глядя на строку, в которую вставляют. */
+.emoji-panel{position:absolute;left:8px;right:8px;bottom:calc(100% + 8px);z-index:12;
+  max-height:280px;overflow:auto;padding:12px;border:1px solid var(--line);
+  border-radius:var(--radius);background:var(--panel-solid);box-shadow:var(--shadow);
+  animation:card-in .16s ease both}
+.emoji-title{margin:0 0 7px;color:var(--faint);font-size:9px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase}
+.emoji-title:not(:first-child){margin-top:12px}
+.emoji-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(32px,1fr));gap:2px}
+.emoji-grid button{height:32px;padding:0;border:0;border-radius:8px;background:transparent;
+  font-size:19px;line-height:1;cursor:pointer}
+.emoji-grid button:hover{background:var(--surface)}
+.composer{position:relative}
+
+/* Полоса правки — над композером, там же, где полоса ответа. */
+.composer-edit{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin:0 4px 7px;padding:8px 10px;border-left:2px solid var(--accent);
+  border-radius:0 9px 9px 0;background:var(--surface)}
+.composer-edit b{font-size:11px;font-weight:500;color:var(--muted)}
+.composer-edit .icon-button{width:26px;height:26px}
+.composer-edit .ui-icon{width:11px;height:11px}
+
+/* «изменено» рядом со временем: собеседник должен видеть, что текст правили. */
+.message-meta .edited{margin-left:7px;opacity:.55;font-size:9.5px;font-style:italic}
+
+/* Поиск по переписке. */
+.chat-search{display:flex;align-items:center;gap:8px;padding:8px 14px;
+  border-bottom:1px solid var(--line);
+  background:color-mix(in srgb,var(--panel-solid) var(--panel-opacity),transparent);
+  backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur))}
+.chat-search>.ui-icon{width:14px;height:14px;flex:none;color:var(--faint)}
+.chat-search input{flex:1;min-width:0;height:30px;padding:0 4px;border:0;outline:0;
+  background:transparent;box-shadow:none!important;font-size:12px}
+.chat-search output{flex:none;color:var(--faint);font-size:10.5px;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.chat-search .icon-button{width:28px;height:28px;font-size:12px}
+.chat-search .ui-icon{width:11px;height:11px}
+
+.message-list li.search-hit{outline:1px solid color-mix(in srgb,var(--accent) 45%,transparent)}
+.message-list li.search-current{outline:2px solid var(--accent);
+  background:color-mix(in srgb,var(--accent) 12%,var(--surface))}
+

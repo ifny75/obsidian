@@ -148,6 +148,16 @@ pub fn delete_request(ids: &[String]) -> String {
     format!("{CONTROL_PREFIX}{{\"delete\":{list}}}")
 }
 
+/// Просьба заменить у собеседника тело ранее отправленного сообщения.
+///
+/// Как и удаление у обоих, это именно просьба: выполнит её его клиент, а
+/// проверить исполнение невозможно. Старое тело у него уже было — правка не
+/// отменяет того, что он прочитал.
+pub fn edit_request(id: &str, body: &str) -> String {
+    let payload = serde_json::json!({ "edit": { "id": id, "body": body } });
+    format!("{CONTROL_PREFIX}{payload}")
+}
+
 /// «Печатает» и «перестал печатать».
 ///
 /// Едет тем же шифрованным каналом, что и сообщения: сервер видит очередной
@@ -181,6 +191,8 @@ pub fn group_signal(title: &str, kind: &str, owner: &str) -> String {
 pub enum Control {
     Pass(String),
     Delete(Vec<String>),
+    /// Правка уже отправленного: тот же логический идентификатор, новое тело.
+    Edit { id: String, body: String },
     Typing(bool),
     Online,
     Group { title: String, kind: String, owner: String },
@@ -197,6 +209,20 @@ pub fn parse_signal(body: &str) -> Option<Control> {
             return None;
         }
         return Some(Control::Pass(pass.to_owned()));
+    }
+    if let Some(edit) = value.get("edit") {
+        // Обе половины обязательны: правка без тела или без адресата — это
+        // мусор, а не команда, и применять из него нечего.
+        let (Some(id), Some(body)) = (
+            edit.get("id").and_then(|v| v.as_str()),
+            edit.get("body").and_then(|v| v.as_str()),
+        ) else {
+            return None;
+        };
+        if id.is_empty() || body.is_empty() {
+            return None;
+        }
+        return Some(Control::Edit { id: id.to_owned(), body: body.to_owned() });
     }
     if let Some(ids) = value.get("delete").and_then(|v| v.as_array()) {
         return Some(Control::Delete(
@@ -370,5 +396,29 @@ mod tests {
 
         let text = serde_json::to_string(&access).unwrap();
         assert_eq!(serde_json::from_str::<Access>(&text).unwrap(), access);
+    }
+
+    #[test]
+    fn an_edit_request_survives_a_round_trip() {
+        let body = edit_request("m-1", "исправленный текст");
+        assert_eq!(
+            parse_signal(&body),
+            Some(Control::Edit { id: "m-1".into(), body: "исправленный текст".into() })
+        );
+    }
+
+    #[test]
+    fn half_an_edit_is_not_a_command() {
+        // Без тела или без адресата применять нечего — это мусор, а не правка.
+        for payload in [
+            r#"{"edit":{"id":"m-1"}}"#,
+            r#"{"edit":{"body":"текст"}}"#,
+            r#"{"edit":{"id":"","body":"текст"}}"#,
+            r#"{"edit":{"id":"m-1","body":""}}"#,
+            r#"{"edit":"строка"}"#,
+        ] {
+            let body = format!("{CONTROL_PREFIX}{payload}");
+            assert_eq!(parse_signal(&body), None, "принято: {payload}");
+        }
     }
 }
