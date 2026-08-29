@@ -9,6 +9,8 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod badge;
+
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -291,9 +293,11 @@ fn window_toggle_maximize(window: tauri::Window) -> Result<(), String> {
     }
 }
 
+/// Крестик в полосе заголовка прячет окно, как и системный: приложение
+/// остаётся на связи, выйти можно из меню значка в трее.
 #[tauri::command]
 fn window_close(window: tauri::Window) -> Result<(), String> {
-    window.close().map_err(|err| err.to_string())
+    window.hide().map_err(|err| err.to_string())
 }
 
 /// Тянет окно за пустое место полосы заголовка.
@@ -475,6 +479,84 @@ fn save_account_export(app: AppHandle, contents: String) -> Result<String, Strin
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Сколько непрочитанных — в заголовок окна, на панель задач и в подсказку
+/// значка.
+///
+/// Три места, потому что человек смотрит в разные: свёрнутое окно видно только
+/// по иконке на панели, а наведя на значок в трее, ждут словами.
+#[tauri::command]
+fn set_unread(app: AppHandle, window: tauri::Window, count: u32) -> Result<(), String> {
+    let title = if count == 0 { "Obsidian".to_owned() } else { format!("Obsidian ({count})") };
+    window.set_title(&title).map_err(|err| err.to_string())?;
+
+    let overlay = if count == 0 {
+        None
+    } else {
+        Some(tauri::image::Image::new_owned(badge::render(count), badge::size(), badge::size()))
+    };
+    window.set_overlay_icon(overlay).map_err(|err| err.to_string())?;
+
+    if let Some(tray) = app.tray_by_id("main") {
+        let tooltip = if count == 0 {
+            "Obsidian".to_owned()
+        } else {
+            format!("Obsidian — непрочитанных: {count}")
+        };
+        let _ = tray.set_tooltip(Some(&tooltip));
+    }
+    Ok(())
+}
+
+/// Запускать ли Obsidian вместе с Windows.
+///
+/// Через реестр, а не через ярлык в «Автозагрузке»: ярлык человек однажды
+/// перенесёт или потеряет вместе с профилем, а ключ переживает и то и другое.
+/// Пишем только в HKCU — для машины целиком нужны права администратора,
+/// которых у мессенджера быть не должно.
+const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+const RUN_VALUE: &str = "Obsidian";
+
+#[tauri::command]
+fn autostart_enabled() -> bool {
+    let output = std::process::Command::new("reg")
+        .args(["query", &format!("HKCU\\{RUN_KEY}"), "/v", RUN_VALUE])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+    matches!(output, Ok(result) if result.status.success())
+}
+
+#[tauri::command]
+fn set_autostart(enabled: bool) -> Result<(), String> {
+    let exe = std::env::current_exe()
+        .map_err(|err| format!("не найти себя: {err}"))?
+        .to_string_lossy()
+        .into_owned();
+
+    let status = if enabled {
+        // Кавычки обязательны: путь почти всегда содержит пробелы, и без них
+        // Windows запустит первое слово, а остальное сочтёт аргументами.
+        std::process::Command::new("reg")
+            .args([
+                "add", &format!("HKCU\\{RUN_KEY}"), "/v", RUN_VALUE,
+                "/t", "REG_SZ", "/d", &format!("\"{exe}\" --hidden"), "/f",
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+    } else {
+        std::process::Command::new("reg")
+            .args(["delete", &format!("HKCU\\{RUN_KEY}"), "/v", RUN_VALUE, "/f"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+    };
+
+    match status {
+        Ok(code) if code.success() => Ok(()),
+        Ok(_) if !enabled => Ok(()), // удалять нечего — значит уже выключено
+        Ok(code) => Err(format!("реестр ответил {code}")),
+        Err(err) => Err(format!("не выполнить reg: {err}")),
+    }
+}
+
 /// Версия клиента. Единственный её источник — `version` в `Cargo.toml`: окно
 /// спрашивает номер здесь, а не хранит свою копию, иначе строка в настройках
 /// разъезжается с собранным бинарём — и обновление предлагается вечно.
@@ -535,13 +617,80 @@ fn is_unlocked(core: State<'_, Arc<Core>>) -> bool {
         .unwrap_or(false)
 }
 
+/*
+  Значок в трее.
+
+  Без него крестик означал «выйти», а выход — «перестать получать сообщения».
+  Мессенджер, который молчит, пока его не открыли, мессенджером не работает.
+
+  Крестик теперь прячет окно, а не закрывает приложение. Выйти по-настоящему
+  можно из меню значка — там это названо прямо, чтобы «свернул» и «вышел» не
+  оказались одной и той же кнопкой.
+*/
+fn install_tray(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder};
+    use tauri::tray::{TrayIconBuilder, TrayIconEvent};
+
+    let open = MenuItemBuilder::with_id("open", "Открыть Obsidian").build(app)?;
+    let quit = MenuItemBuilder::with_id("quit", "Выйти").build(app)?;
+    let menu = MenuBuilder::new(app).items(&[&open, &quit]).build()?;
+
+    TrayIconBuilder::with_id("main")
+        .icon(app.default_window_icon().cloned().ok_or_else(|| {
+            tauri::Error::AssetNotFound("значок окна не задан".into())
+        })?)
+        .tooltip("Obsidian")
+        .menu(&menu)
+        // Левая кнопка не должна открывать меню: по значку в трее щёлкают,
+        // чтобы вернуть окно, а не чтобы выбрать пункт.
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "open" => show_main_window(app),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
+                show_main_window(tray.app_handle());
+            }
+        })
+        .build(app)?;
+    Ok(())
+}
+
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 allow_microphone(&window);
             }
+            install_tray(app)?;
+            // При автозапуске окно не показываем: человек включал компьютер,
+            // а не мессенджер. Оно ждёт в трее.
+            if std::env::args().any(|arg| arg == "--hidden") {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Крестик прячет окно. Соединение при этом живёт: сообщения
+            // продолжают приходить, и значок в трее показывает, что их ждут.
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .manage(Arc::new(Core::default()))
         .invoke_handler(tauri::generate_handler![
@@ -558,6 +707,9 @@ fn main() {
             dismiss_desktop_notification,
             open_chat_from_notification,
             open_link,
+            autostart_enabled,
+            set_autostart,
+            set_unread,
             app_version,
             save_account_export,
             open_update

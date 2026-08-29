@@ -718,6 +718,8 @@ function renderConversations() {
     list.appendChild(item);
   }
 
+  syncUnread();
+
   if (visible === 0) {
     const empty = document.createElement("li");
     empty.className = "empty-list";
@@ -2285,6 +2287,22 @@ function applyPreferences() {
   $("tails-toggle").classList.toggle("on", preferences.tails);
 }
 
+/**
+ * Сколько непрочитанного всего — в заголовок, на панель задач и в трей.
+ *
+ * Считаем по всем беседам сразу: человеку важно «есть ли что-то», а не в каком
+ * именно чате. Зовётся из renderConversations — то есть отовсюду, где счётчики
+ * меняются, и добавлять вызов к каждому событию не придётся.
+ */
+function syncUnread() {
+  let total = 0;
+  for (const entry of state.conversations.values()) total += entry.unread ?? 0;
+  for (const group of state.groups.values()) total += group.unread ?? 0;
+  if (total === syncUnread.last) return;
+  syncUnread.last = total;
+  invoke("set_unread", { count: total }).catch(() => {});
+}
+
 function syncWindowTitle() {
   $("window-title").textContent = settingsPage.classList.contains("hidden") ? "Obsidian" : "Obsidian — Настройки";
 }
@@ -2384,9 +2402,38 @@ for (const button of document.querySelectorAll("#notification-position [data-not
   button.addEventListener("click", () => {
     preferences.notificationPosition = button.dataset.notificationPosition;
     applyPreferences();
+renderAutostart();
     savePreferences();
   });
 }
+
+/*
+  Автозапуск.
+
+  Состояние спрашиваем у системы, а не храним в своих настройках: ключ реестра
+  человек может убрать чем угодно — чистильщиком, руками, другой сборкой, — и
+  наша галочка тогда показывала бы то, чего нет.
+*/
+async function renderAutostart() {
+  const on = await invoke("autostart_enabled").catch(() => false);
+  $("autostart-toggle").classList.toggle("on", Boolean(on));
+}
+
+$("autostart-toggle").addEventListener("click", async () => {
+  const button = $("autostart-toggle");
+  const next = !button.classList.contains("on");
+  button.disabled = true;
+  try {
+    await invoke("set_autostart", { enabled: next });
+  } catch (error) {
+    toast(`Автозапуск: ${error}`);
+  } finally {
+    button.disabled = false;
+    // Перечитываем, а не верим себе: если реестр отказал, галочка обязана
+    // вернуться туда, где была.
+    renderAutostart();
+  }
+});
 
 $("notification-sound-toggle").addEventListener("click", () => {
   preferences.notificationSound = !preferences.notificationSound;

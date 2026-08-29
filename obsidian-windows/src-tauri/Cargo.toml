@@ -13,7 +13,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # Ядро линкуется напрямую: FFI здесь не нужен, обе стороны на Rust.
 obsidian-core = { path = "../../obsidian-core" }
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 serde_json = "1"
 rand_core = { version = "0.6", features = ["getrandom"] }
 windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
