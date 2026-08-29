@@ -3849,13 +3849,36 @@ function renderSearchHit(event) {
   found.append(avatar, copy);
   card.appendChild(found);
 
+  /*
+    Ключ под этим именем сменился.
+
+    Показывается до кнопки и вместо неё: пока человек не решил, переписка не
+    начинается. Смена бывает законной — переставил систему, сменил телефон, —
+    поэтому это вопрос, а не отказ. Но и не мелкая пометка сбоку: подмена ключа
+    сервером выглядит ровно так же, и отличить одно от другого может только тот,
+    кто знает этого человека.
+  */
+  const changed = event.pin === "changed";
+  if (changed) {
+    const alarm = document.createElement("p");
+    alarm.className = "warning-strip";
+    alarm.textContent = "У этого имени другой ключ устройства, чем прежде."
+      + " Так бывает, когда человек переставил систему или сменил телефон —"
+      + " и так же выглядит подмена. Спросите его любым другим способом,"
+      + " прежде чем продолжать.";
+    card.appendChild(alarm);
+  }
+
   const actions = document.createElement("div");
   actions.className = "setting-actions";
   const start = document.createElement("button");
   start.type = "button";
   start.className = "ghost-button";
-  start.textContent = "Отправить запрос";
+  start.textContent = changed ? "Это правда он — продолжить" : "Отправить запрос";
   start.addEventListener("click", () => {
+    if (changed) {
+      submit({ type: "pin_accept", name: event.query, device: event.device });
+    }
     if (!state.conversations.has(event.device)) {
       state.conversations.set(event.device, { conversation: null, unread: 0 });
     }

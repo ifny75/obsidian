@@ -59,6 +59,27 @@ pub struct Mls {
     device_pub: [u8; KEY_LEN],
 }
 
+/// Кратность, до которой добивается содержимое сообщения перед шифрованием.
+///
+/// Длина шифротекста повторяет длину открытого текста — это свойство любого
+/// потокового AEAD, — а длину видит сервер. Без добивки по одному только
+/// размеру конверта отличаются вещи, которые различать он не должен: сигнал
+/// «печатает» (десятки байт), короткая реплика (сотни), фотография (тысячи).
+/// Переписку это не раскрывает, но раскрывает её ритм и род занятий.
+///
+/// Добивка нулями до кратности — часть самого MLS (RFC 9420, §6.3.2), а не
+/// наша надстройка. Отсюда её главное достоинство: снимает её принимающая
+/// сторона по стандарту, поэтому уже выпущенные клиенты продолжают читать
+/// такие сообщения без единой правки. Своя добивка над MLS этого не умеет —
+/// её пришлось бы согласовывать с каждым собеседником отдельно.
+///
+/// 256 байт — размен между сокрытием и трафиком. Всё мелкое — служебные
+/// сигналы, «привет», «да» — становится неотличимым друг от друга, а платим мы
+/// не более 255 байт на сообщение. Корзины с ростом (1 КиБ, 4 КиБ, 16 КиБ)
+/// спрятали бы и середину, но стоили бы до двенадцати килобайт на сообщение и
+/// требовали бы своего слоя поверх MLS — то есть согласования с собеседником.
+const PADDING_BLOCK: usize = 256;
+
 impl Mls {
     /// Создаёт новое MLS-состояние и привязывает его к ключу устройства.
     pub fn create(device: &keys::SecretKey) -> Result<Self> {
@@ -137,7 +158,7 @@ impl Mls {
             .collect()
     }
 
-    /// Заводит группу и приглашает владельца `key_package`.
+/// Заводит группу и приглашает владельца `key_package`.
     ///
     /// Возвращает `(group_id, welcome)`. Welcome уходит собеседнику обычным
     /// конвертом — сервер видит только шифротекст.
@@ -152,6 +173,7 @@ impl Mls {
             .ciphersuite(CIPHERSUITE)
             // Дерево едет внутри Welcome: другого канала у получателя нет.
             .use_ratchet_tree_extension(true)
+            .padding_size(PADDING_BLOCK)
             .build();
 
         let mut group = MlsGroup::new(&self.provider, &self.signer, &config, self.credential.clone())
@@ -182,6 +204,7 @@ impl Mls {
             .ciphersuite(CIPHERSUITE)
             // Дерево едет внутри Welcome: другого канала у получателя нет.
             .use_ratchet_tree_extension(true)
+            .padding_size(PADDING_BLOCK)
             .build();
 
         let group = MlsGroup::new(&self.provider, &self.signer, &config, self.credential.clone())
@@ -357,7 +380,7 @@ impl Mls {
         // Это ровно та же повторная доставка, что и у обычных сообщений, —
         // конверт надо подтвердить, а не пугать человека ошибкой.
         let staged =
-            StagedWelcome::new_from_welcome(&self.provider, &MlsGroupJoinConfig::default(), welcome, None)
+            StagedWelcome::new_from_welcome(&self.provider, &join_config(), welcome, None)
                 .map_err(|_| CoreError::AlreadyProcessed("приглашение уже принято"))?;
 
         // Кто нас позвал. Если подпись устройства над MLS-ключом не сходится,
@@ -413,9 +436,19 @@ impl Mls {
     }
 
     fn load(&self, group_id: &[u8]) -> Result<MlsGroup> {
-        MlsGroup::load(self.provider.storage(), &GroupId::from_slice(group_id))
+        let mut group = MlsGroup::load(self.provider.storage(), &GroupId::from_slice(group_id))
             .map_err(|_| CoreError::Mls("mls load group".into()))?
-            .ok_or(CoreError::NoCredentials)
+            .ok_or(CoreError::NoCredentials)?;
+
+        // Беседы, заведённые до добивки, донастраиваются на месте. Иначе она
+        // появилась бы только в новых, а защищать надо в первую очередь те, в
+        // которых уже переписываются.
+        if group.configuration().padding_size() != PADDING_BLOCK {
+            group
+                .set_configuration(self.provider.storage(), &join_config())
+                .map_err(|_| CoreError::Mls("mls set config".into()))?;
+        }
+        Ok(group)
     }
 
     /// KeyPackage проверяется и по правилам MLS, и по привязке к тому
@@ -437,6 +470,11 @@ impl Mls {
         }
         Ok(key_package)
     }
+}
+
+/// Настройки, с которыми беседа живёт после вступления.
+fn join_config() -> MlsGroupJoinConfig {
+    MlsGroupJoinConfig::builder().padding_size(PADDING_BLOCK).build()
 }
 
 fn snapshot_of(group: &MlsGroup) -> Result<Snapshot> {
@@ -585,6 +623,60 @@ mod tests {
             Incoming::Message { plaintext, .. } => assert_eq!(plaintext, b"secret message"),
             other => panic!("ожидали Message, получили {other:?}"),
         }
+    }
+
+    /// Короткие сообщения не должны отличаться по длине конверта.
+    ///
+    /// Это и есть смысл добивки: сервер видит размер, и без неё «печатает»,
+    /// «да» и «нет, давай завтра» различались бы одним только числом байт.
+    #[test]
+    fn short_messages_look_the_same_on_the_wire() {
+        let (mut alice, _ad, mut bob, bob_device) = pair();
+        let bob_package = bob.key_packages(1).unwrap().remove(0);
+        let (group_id, welcome) = alice.start_conversation(&bob_package, &bob_device.public()).unwrap();
+        bob.process(&welcome).unwrap();
+
+        let bodies: Vec<Vec<u8>> = vec![
+            "да".as_bytes().to_vec(),
+            "нет, давай завтра в три".as_bytes().to_vec(),
+            crate::access::typing_signal(true).into_bytes(),
+            vec![b'x'; 100],
+        ];
+        let sizes: Vec<usize> = bodies
+            .iter()
+            .map(|body| alice.encrypt(&group_id, body, &bob_device.public()).unwrap().len())
+            .collect();
+
+        let first = sizes[0];
+        assert!(
+            sizes.iter().all(|size| *size == first),
+            "короткие сообщения обязаны быть одной длины, получили {sizes:?}",
+        );
+
+        // И при этом всё ещё читаются: добивку снимает сам MLS.
+        let ciphertext = alice.encrypt(&group_id, "да".as_bytes(), &bob_device.public()).unwrap();
+        match bob.process(&ciphertext).unwrap() {
+            Incoming::Message { plaintext, .. } => assert_eq!(plaintext, "да".as_bytes()),
+            other => panic!("ожидали Message, получили {other:?}"),
+        }
+    }
+
+    /// Длина растёт ступенями, а не байт в байт.
+    #[test]
+    fn length_grows_in_steps() {
+        let (mut alice, _ad, mut bob, bob_device) = pair();
+        let bob_package = bob.key_packages(1).unwrap().remove(0);
+        let (group_id, welcome) = alice.start_conversation(&bob_package, &bob_device.public()).unwrap();
+        bob.process(&welcome).unwrap();
+
+        let mut size = |bytes: usize| {
+            alice.encrypt(&group_id, &vec![b'x'; bytes], &bob_device.public()).unwrap().len()
+        };
+        let small = size(10);
+        let bigger = size(600);
+        assert!(bigger > small, "большое сообщение обязано быть длиннее");
+        // Разница кратна шагу: точный размер письма наружу не выходит.
+        assert_eq!((bigger - small) % PADDING_BLOCK, 0, "шаг обязан быть кратен добивке");
     }
 
     /// Группа втроём: оба приглашённых читают одно и то же сообщение.

@@ -263,6 +263,31 @@ fn handle_local(command: &Command, store: &Store, sink: &EventSink) -> bool {
             }
         }
 
+        Command::PinAccept { name, device } => {
+            let mut pins = load_pins(store);
+            if pins.accept(name, device, now_millis()) {
+                match save_pins(store, &pins) {
+                    Ok(()) => sink(Event::PinAccepted {
+                        name: name.clone(),
+                        device: device.clone(),
+                    }),
+                    Err(err) => fail(sink, "storage", &err.to_string()),
+                }
+            } else {
+                // Подтверждать нечего: ключ тот же или имя незнакомое. Молчать
+                // нельзя — интерфейс ждёт ответа на нажатую кнопку.
+                sink(Event::PinAccepted { name: name.clone(), device: device.clone() });
+            }
+        }
+
+        Command::PinForget { name } => {
+            let mut pins = load_pins(store);
+            pins.forget(name);
+            if let Err(err) = save_pins(store, &pins) {
+                fail(sink, "storage", &err.to_string());
+            }
+        }
+
         Command::DirectoryForget { device } => {
             let mut directory = load_directory(store);
             directory.forget(device);
@@ -788,6 +813,8 @@ const DIRECTORY_KEY: &str = "directory";
 const ACCESS_KEY: &str = "access";
 /// Свой юзернейм. На сервере лежит только его хеш, читаемое имя — здесь.
 const USERNAME_KEY: &str = "username";
+/// Закреплённые ключи: под каким ключом мы видели каждое имя.
+const PINS_KEY: &str = "pins";
 
 /// Свой юзернейм из локальной базы.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -819,6 +846,21 @@ fn username_event(store: &Store) -> Event {
 /// Книга отношений. Испорченная запись не должна лишать доступа к настройкам:
 /// в этом случае берётся пустая — все становятся незнакомцами, а это
 /// безопасная сторона ошибки, а не разрешающая.
+/// Закрепления. Испорченная запись означает «ничего не помним»: это заставит
+/// закрепить ключи заново, но не пропустит подмену молча под видом знакомого.
+fn load_pins(store: &Store) -> crate::pins::Pins {
+    store
+        .load_setting(PINS_KEY)
+        .ok()
+        .flatten()
+        .and_then(|raw| serde_json::from_slice(&raw).ok())
+        .unwrap_or_default()
+}
+
+fn save_pins(store: &Store, pins: &crate::pins::Pins) -> Result<()> {
+    store.save_setting(PINS_KEY, &serde_json::to_vec(pins)?)
+}
+
 fn load_directory(store: &Store) -> crate::directory::Directory {
     store
         .load_setting(DIRECTORY_KEY)
@@ -1412,9 +1454,38 @@ async fn pump(
                     if matches!(proto::split(&data), Ok((op::USERNAME_FOUND, _))) {
                         let (_, body) = proto::split(&data)?;
                         let found: proto::UsernameFound = proto::parse_json(body)?;
+                        let query = looking_for.take().unwrap_or_default();
+                        let device = if found.found { found.device } else { None };
+
+                        // Ответ сервера сверяется с тем, что мы помним об этом
+                        // имени. Промолчать здесь нельзя: подмена ключа до
+                        // первого письма выглядит ровно как обычная находка.
+                        let pin = match (&query.is_empty(), &device) {
+                            (false, Some(device)) => {
+                                let mut pins = load_pins(store);
+                                let state = pins.check(&query, device, now_millis());
+                                if state != crate::pins::PinState::Same {
+                                    if let Err(err) = save_pins(store, &pins) {
+                                        fail(sink, "storage", &err.to_string());
+                                    }
+                                }
+                                if state == crate::pins::PinState::Changed {
+                                    sink(Event::Anomaly {
+                                        kind: "pinned_key_changed".into(),
+                                        detail: format!(
+                                            "у имени @{query} другой ключ устройства, чем прежде",
+                                        ),
+                                    });
+                                }
+                                Some(state)
+                            }
+                            _ => None,
+                        };
+
                         sink(Event::UsernameFound {
-                            query: looking_for.take().unwrap_or_default(),
-                            device: if found.found { found.device } else { None },
+                            query,
+                            device,
+                            pin,
                             chat_code: found.chat_code,
                             avatar_mime: found.avatar_mime,
                             avatar_base64: found.avatar_base64,

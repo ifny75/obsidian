@@ -19,6 +19,7 @@ pub mod keys;
 pub mod migrate;
 pub mod mls;
 pub mod passphrase;
+pub mod pins;
 pub mod privacy;
 pub mod proto;
 pub mod recovery;

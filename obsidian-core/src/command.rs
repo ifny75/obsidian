@@ -224,6 +224,13 @@ pub enum Command {
         #[serde(default = "yes")]
         admin: bool,
     },
+    /// Подтвердить, что новый ключ под знакомым именем — это правда он.
+    ///
+    /// Спрашивается ровно один раз на смену: до подтверждения переписка с этим
+    /// именем не начинается, после — закрепляется новый ключ.
+    PinAccept { name: String, device: String },
+    /// Забыть закрепление имени.
+    PinForget { name: String },
     /// Собрать файл переноса аккаунта под отдельным паролем.
     ///
     /// Паролей тут два, и это не дублирование. `password` запечатывает сам
@@ -360,15 +367,23 @@ pub enum Event {
     /// Свой юзернейм. Пусто — не занят.
     Username { name: Option<String>, discoverable: bool },
     /// Итог поиска. `device` пуст, если никого не нашли или человек скрыт.
+    ///
+    /// `pin` говорит, что мы помним об этом имени: встречено впервые, ключ тот
+    /// же или ключ сменился. Последнее — не ошибка и не приговор, но и не то,
+    /// о чём можно промолчать: см. `pins.rs`.
     UsernameFound {
         query: String,
         device: Option<String>,
+        #[serde(default)]
+        pin: Option<crate::pins::PinState>,
         chat_code: Option<String>,
         avatar_mime: Option<String>,
         avatar_base64: Option<String>,
         emblem: Option<String>,
         color: Option<String>,
     },
+    /// Новый ключ под знакомым именем подтверждён.
+    PinAccepted { name: String, device: String },
     /// Книга отношений целиком.
     Directory { entries: Vec<DirectoryItem> },
     /// Текущие правила приватности.
