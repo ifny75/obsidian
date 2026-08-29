@@ -81,6 +81,15 @@
           bridge.historyCalls += 1;
           queueMicrotask(() => respondHistory(command));
         }
+        if (command.type === "verify") {
+          queueMicrotask(() => emit({
+            type: "verification",
+            peer_device: command.peer_device,
+            safety_number: "153075066 024020162 217163171 138181006 028035118",
+            epoch_code: "148112 037132 179203 255062 018234",
+            epoch: 1,
+          }));
+        }
         // Правила приватности живут в запечатанной базе; стенд держит их в
         // памяти и отвечает так же, как ядро.
         // Каталог юзернеймов и книга отношений — как в ядре, но в памяти.
@@ -213,10 +222,57 @@
   // в область модуля, и стенд проверял бы не то, что работает у пользователя.
   await new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = "main.js";
+    // Без cache-buster WebView может оставить старый main.js после правки и
+    // визуальный стенд будет проверять не тот код, который лежит на диске.
+    script.src = `main.js?v=${Date.now()}`;
     script.onload = resolve;
     script.onerror = reject;
     document.body.append(script);
   });
   window.__ready = true;
+
+  // Визуальный сценарий для проверки главного экрана без живого сервера.
+  // В обычном стенде ничего не меняет; включается только через ?demo=1.
+  if (new URLSearchParams(location.search).has("demo")) {
+    const peer = "UNREAL-INCLUPES-DEMO-DEVICE";
+    const conversation = "demo-conversation";
+    const now = Date.now();
+    bridge.store.set(conversation, [
+      { id: "demo-4", cursor: "4", outgoing: true, created_at: now - 60_000,
+        body: "Привет! Как дела, я сегодня покушал вкусных булочек с чаем. Завтра я буду кушать вкусную еду вместе с друзьями!" },
+      { id: "demo-3", cursor: "3", outgoing: false, created_at: now - 150_000,
+        body: "Я согласен насчет вашего предложения, 50/50! Можете приступать уже завтра к тестовому периоду работы." },
+      { id: "demo-2", cursor: "2", outgoing: true, created_at: now - 240_000,
+        body: "Здравствуйте! Я пришел к вам, я стою у вашего дома и ожидаю когда вы выйдете на улицу." },
+      { id: "demo-1", cursor: "1", outgoing: false, created_at: now - 330_000,
+        body: "Я считаю нам стоит обдумать сотрудничество! Я предлагаю вам сегодня перейти на пробный период." },
+    ]);
+    if (new URLSearchParams(location.search).has("overflow")) {
+      const rows = bridge.store.get(conversation);
+      for (let index = 5; index <= 30; index += 1) {
+        rows.push({
+          id: `demo-${index}`, cursor: String(index), outgoing: index % 2 === 0,
+          created_at: now - index * 90_000,
+          body: index === 30
+            ? "Очень длинное сообщение для проверки верхней границы. ".repeat(18)
+            : `Предыдущее сообщение номер ${index}`,
+        });
+      }
+    }
+    emit({ type: "status", has_identity: true, device: "MY-PROFILE-DEMO", identity: "DEMO-IDENTITY" });
+    emit({ type: "connected", profiles: true, decor: true });
+    emit({ type: "profile", device: peer, handle: "Unreal inclupes", chat_code: "OBS-DEMO", color: "violet" });
+    emit({ type: "profile", device: "DIMA-228-DEMO", handle: "dima228", chat_code: "OBS-DIMA", color: "teal", emblem: "star" });
+    emit({ type: "profile", device: "EXAMPLE-USER-DEMO", handle: "example", chat_code: "OBS-EXAMPLE", color: "coral" });
+    emit({ type: "profile", device: "MY-PROFILE-DEMO", handle: "My profile", chat_code: "OBS-MY-PROFILE", color: "red" });
+    emit({ type: "conversations", items: [
+      { peer_device: peer, conversation, last_body: "Договорились, тогда до завтра!", last_at: now - 60_000 },
+      { peer_device: "DIMA-228-DEMO", conversation: "demo-dima", last_body: "Голосовое сообщение", last_at: now - 500_000 },
+      { peer_device: "EXAMPLE-USER-DEMO", conversation: "demo-example", last_body: "Спасибо за ответ", last_at: now - 900_000 },
+    ] });
+    emit({ type: "authenticated", admin: false, queued: 0 });
+    if (!new URLSearchParams(location.search).has("empty")) {
+      setTimeout(() => document.querySelector("#conversations .conversation-button")?.click(), 50);
+    }
+  }
 </script>

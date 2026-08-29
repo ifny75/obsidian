@@ -54,6 +54,8 @@ const state = {
   current: null,
   /** Кого зовём в группу, пока ищем его устройство по коду или имени. */
   pendingGroupInvite: null,
+  /** Действие, ожидающее долговечной записи нового закреплённого ключа. */
+  pendingPinAction: null,
   pendingPeer: null,
   readIds: new Set(),
   sentReadIds: new Set(),
@@ -61,7 +63,10 @@ const state = {
   username: null,
   recorder: null,
   lastDisconnectReason: "",
+  pendingRecoverySetup: null,
 };
+/** Локальная адресная книга участвует и в выборе отображаемого имени. */
+const directory = new Map();
 
 /** Сколько сообщений показывать при первом открытии чата. */
 const PAGE_SIZE = 40;
@@ -140,7 +145,7 @@ function sendRead(peer, ids) {
 
 function showScreen(screen) {
   for (const id of [
-    "screen-boot", "screen-migrate", "screen-entry",
+    "screen-boot", "screen-migrate", "screen-language", "screen-intro", "screen-route", "screen-entry",
     "screen-recover", "screen-backup", "screen-main",
   ]) {
     $(id).classList.toggle("hidden", id !== screen);
@@ -201,7 +206,7 @@ function showDesktopNotification({ title, text, device = null, avatarOf = null }
       // Карточка — строка беседы, вынесенная на рабочий стол, поэтому берёт
       // оформление из тех же настроек, что и список бесед.
       theme: preferences?.theme ?? "dark",
-      accent: preferences?.accent ?? "#f4f4f4",
+      accent: preferences?.accent ?? "#7b2cff",
       radius: preferences?.radius ?? 13,
       squareAvatars: preferences?.squareAvatars ?? false,
     },
@@ -507,7 +512,11 @@ function profileFor(device) {
 
 function displayName(device) {
   const profile = profileFor(device);
-  return profile?.handle ? `@${profile.handle}` : short(device);
+  const known = directory.get(device);
+  const username = profile?.handle || known?.username;
+  if (username) return `@${username.replace(/^@/, "")}`;
+  if (known?.display_name) return known.display_name;
+  return `Пользователь ${initials(device)}`;
 }
 
 /**
@@ -548,7 +557,7 @@ function paintName(node, device) {
     const mark = document.createElement("span");
     mark.className = "emblem";
     mark.textContent = glyph;
-    node.append(" ", mark);
+    node.append(mark);
   }
   // Цвет достаётся подложке аватара, а не буквам: см. paintTint.
   node.style.color = "";
@@ -641,6 +650,29 @@ function recency(entry) {
   return entry.updatedAt ?? 0;
 }
 
+function previewText(body) {
+  const content = parseContent(body);
+  if (content.type === "read") return "";
+  return notificationText(content).replace(/\s+/g, " ").trim();
+}
+
+function setConversationPreview(conversation, body, at = Date.now()) {
+  const preview = previewText(body);
+  if (!preview) return;
+  const group = state.groups.get(conversation);
+  if (group) {
+    group.preview = preview;
+    group.updatedAt = Math.max(group.updatedAt ?? 0, at ?? 0);
+    return;
+  }
+  const peer = peerOf(conversation);
+  const entry = peer ? state.conversations.get(peer) : null;
+  if (entry) {
+    entry.preview = preview;
+    entry.updatedAt = Math.max(entry.updatedAt ?? 0, at ?? 0);
+  }
+}
+
 function renderConversations() {
   const list = $("conversations");
   // Адрес и код в поле — это не запрос к списку: список не фильтруем.
@@ -683,7 +715,7 @@ function renderConversations() {
     name.appendChild(tag);
     const preview = document.createElement("span");
     const count = group.members?.length ?? 0;
-    preview.textContent = count > 0 ? `участников: ${count}` : "пока только вы";
+    preview.textContent = group.preview || (count > 0 ? `участников: ${count}` : "пока только вы");
     copy.append(name, preview);
     button.append(avatar, copy);
 
@@ -720,7 +752,7 @@ function renderConversations() {
     const name = document.createElement("b");
     paintName(name, peer);
     const preview = document.createElement("span");
-    preview.textContent = entry.conversation ? "Защищённый диалог" : "Новое устройство";
+    preview.textContent = entry.preview || (entry.conversation ? "Сообщений пока нет" : "Новое устройство");
     copy.append(name, preview);
     button.append(avatar, copy);
 
@@ -914,6 +946,10 @@ function buildMessage({ outgoing, body, created_at }, peer) {
   const item = document.createElement("li");
   item.className = outgoing ? "out" : "in";
   if (content.id) item.dataset.messageId = content.id;
+  const avatar = document.createElement("span");
+  avatar.className = "message-avatar";
+  applyAvatar(avatar, outgoing ? state.device : peer);
+  item.appendChild(avatar);
   const text = document.createElement("div");
   text.className = "body";
 
@@ -1094,6 +1130,8 @@ function appendMessage({ outgoing, body, created_at, from }, conversation, { cac
     built.node.querySelector(".body")?.prepend(who);
   }
   if (!built) return null;
+
+  if (conversation) setConversationPreview(conversation, body, created_at ?? Date.now());
 
   if (conversation && cache) {
     const entry = chat(conversation);
@@ -1315,6 +1353,7 @@ $("record-voice").addEventListener("click", async () => {
     const keep = state.recorder?.keep;
     state.recorder = null;
     $("recording-bar").classList.add("hidden");
+    document.querySelector(".composer")?.classList.remove("is-recording");
     $("record-voice").classList.remove("recording");
 
     const duration = (Date.now() - startedAt) / 1000;
@@ -1347,6 +1386,7 @@ $("record-voice").addEventListener("click", async () => {
   state.recorder = { recorder, ticker, keep: true };
   $("recording-time").textContent = "0:00";
   $("recording-bar").classList.remove("hidden");
+  document.querySelector(".composer")?.classList.add("is-recording");
   $("record-voice").classList.add("recording");
   recorder.start();
 });
@@ -1578,6 +1618,8 @@ const handlers = {
       state.conversations.set(item.peer_device, {
         conversation: item.conversation,
         unread: existing?.unread ?? 0,
+        preview: previewText(item.last_body) || existing?.preview || "",
+        updatedAt: item.last_at ?? existing?.updatedAt ?? 0,
       });
       if (state.profilesSupported && !state.profiles.has(item.peer_device)) {
         submit({ type: "profile_get", query: item.peer_device });
@@ -1591,6 +1633,8 @@ const handlers = {
     state.conversations.set(event.peer_device, {
       conversation: event.conversation,
       unread: existing?.unread ?? 0,
+      preview: existing?.preview || "",
+      updatedAt: existing?.updatedAt ?? 0,
     });
     if (state.pendingPeer === event.peer_device) state.pendingPeer = null;
     renderConversations();
@@ -1642,6 +1686,9 @@ const handlers = {
   },
 
   verification(event) {
+    // Ответ асинхронный: не показываем код устройства A уже после перехода в
+    // диалог B, иначе правильный код получает неправильную подпись.
+    if (event.peer_device !== state.current) return;
     $("safety-number").textContent = event.safety_number;
     $("epoch-code").textContent = `${event.epoch_code} · эпоха ${event.epoch}`;
     $("verification").classList.remove("hidden");
@@ -1662,6 +1709,11 @@ const handlers = {
 
     // Ядро отдаёт новейшие первыми — на экране порядок обратный.
     const ordered = [...event.messages].reverse();
+    const latestVisible = event.messages.find((item) => previewText(item.body));
+    if (latestVisible) {
+      setConversationPreview(event.conversation, latestVisible.body, latestVisible.created_at);
+      renderConversations();
+    }
 
     // Отметки о прочтении разбираем до сборки пузырей: иначе галочки на уже
     // построенных сообщениях останутся одинарными до следующего события.
@@ -1757,6 +1809,10 @@ const handlers = {
     if (invite) {
       state.pendingGroupInvite = null;
       if (!event.device) return toast(`@${event.query} — никого не нашли`);
+      if (event.pin === "changed") {
+        event.after_pin = { kind: "group_invite", group: invite.group };
+        return renderSearchHit(event);
+      }
       submit({ type: "group_invite", group: invite.group, members: [event.device] });
       return toast(`@${event.query} приглашён`);
     }
@@ -1769,6 +1825,13 @@ const handlers = {
       avatar_base64: event.avatar_base64,
     });
     renderSearchHit(event);
+  },
+
+  pin_accepted(event) {
+    const pending = state.pendingPinAction;
+    if (!pending || pending.query !== event.name || pending.device !== event.device) return;
+    state.pendingPinAction = null;
+    completePinnedAction(pending);
   },
 
   directory(event) {
@@ -1894,6 +1957,11 @@ const handlers = {
   },
 
   failed(event) {
+    if (event.code === "pin_not_pending" || (event.code === "storage" && state.pendingPinAction)) {
+      state.pendingPinAction = null;
+      toast("Новый ключ не подтверждён: действие остановлено");
+      return;
+    }
     const username = FRIENDLY_ERRORS[event.code];
     if (username) {
       // Отказ показываем там, где человек действовал: занятие имени — в
@@ -2175,8 +2243,8 @@ const settingsPage = $("settings-page");
 const preferenceDefaults = {
   transport: "auto",
   theme: "dark",
-  accent: "#f4f4f4",
-  accentText: "#080808",
+  accent: "#7b2cff",
+  accentText: "#ffffff",
   fontSize: 15,
   scale: 100,
   autoScale: true,
@@ -2210,6 +2278,14 @@ const preferenceDefaults = {
 function loadPreferences() {
   try {
     const saved = JSON.parse(localStorage.getItem("obsidian.preferences") || "{}");
+    // До этой версии белый был не выбором пользователя, а значением по
+    // умолчанию. Однократно переводим такие установки на новый фиолетовый
+    // акцент; после этого любой цвет, включая белый, сохраняется буквально.
+    if (!saved.accentVersion && (!saved.accent || saved.accent.toLowerCase() === "#f4f4f4")) {
+      saved.accent = preferenceDefaults.accent;
+      saved.accentText = preferenceDefaults.accentText;
+    }
+    saved.accentVersion = 2;
     return { ...preferenceDefaults, ...saved };
   } catch {
     return { ...preferenceDefaults };
@@ -2240,9 +2316,13 @@ function applyPreferences() {
   root.style.setProperty("--blur", `${preferences.blur}px`);
   root.style.setProperty("--panel-opacity", `${preferences.panelOpacity}%`);
   const shell = $("screen-main");
-  const detectedScale = window.innerWidth >= 2200 ? 1.28
-    : window.innerWidth >= 1700 ? 1.18
-      : window.innerWidth <= 1050 ? 0.92 : 1;
+  // Макет уже рассчитан на обычный широкий desktop (1920 CSS px). Раньше
+  // автоскейл включался с 1700 px и раздувал весь интерфейс на 18% именно на
+  // самом распространённом Full HD: карточки становились выше макета, а пять
+  // элементов композера переставали помещаться в строку. Масштаб нужен только
+  // на действительно больших CSS-вьюпортах.
+  const detectedScale = window.innerWidth >= 2400 ? 1.18
+    : window.innerWidth <= 1050 ? 0.92 : 1;
   const scale = (preferences.scale / 100) * (preferences.autoScale ? detectedScale : 1);
   if (scale === 1) {
     shell.style.removeProperty("zoom");
@@ -3862,6 +3942,22 @@ function renderSearchMiss(query) {
   showSearchResult(message);
 }
 
+function completePinnedAction(action) {
+  if (action.kind === "group_invite") {
+    submit({ type: "group_invite", group: action.group, members: [action.device] });
+    hideSearchResult();
+    toast(`@${action.query} приглашён`);
+    return;
+  }
+  if (!state.conversations.has(action.device)) {
+    state.conversations.set(action.device, { conversation: null, unread: 0 });
+  }
+  submit({ type: "directory_set", device: action.device, standing: "approved" });
+  hideSearchResult();
+  $("omni").value = "";
+  selectConversation(action.device);
+}
+
 function renderSearchHit(event) {
   const card = document.createElement("div");
 
@@ -3912,16 +4008,21 @@ function renderSearchHit(event) {
   start.className = "ghost-button";
   start.textContent = changed ? "Это правда он — продолжить" : "Отправить запрос";
   start.addEventListener("click", () => {
+    const action = {
+      kind: event.after_pin?.kind ?? "chat",
+      group: event.after_pin?.group,
+      query: event.query,
+      device: event.device,
+    };
     if (changed) {
+      if (state.pendingPinAction) return;
+      state.pendingPinAction = action;
+      start.disabled = true;
+      start.textContent = "Сохраняем новый ключ…";
       submit({ type: "pin_accept", name: event.query, device: event.device });
+      return;
     }
-    if (!state.conversations.has(event.device)) {
-      state.conversations.set(event.device, { conversation: null, unread: 0 });
-    }
-    submit({ type: "directory_set", device: event.device, standing: "approved" });
-    hideSearchResult();
-    $("omni").value = "";
-    selectConversation(event.device);
+    completePinnedAction(action);
   });
   const dismiss = document.createElement("button");
   dismiss.type = "button";
@@ -3937,7 +4038,6 @@ function renderSearchHit(event) {
 // --- книга отношений ------------------------------------------------------------
 
 /** Кто нам кто. Приходит из ядра, лежит в запечатанной базе. */
-const directory = new Map();
 
 function standingOf(device) {
   return directory.get(device)?.standing ?? null;
@@ -4015,6 +4115,12 @@ function requestCard(device, entry) {
 /** Переключает раздел списка. Отдельной функцией: ссылка на канал открывает
  *  вкладку «Публичные» сама, не дожидаясь нажатия. */
 function openTab(list) {
+  const order = ["chats", "requests", "channels"];
+  const active = document.querySelector("#section-tabs button.active")?.dataset.list ?? "chats";
+  const sidebar = document.querySelector("#screen-main .sidebar");
+  if (sidebar && active !== list) {
+    sidebar.dataset.paneDirection = order.indexOf(list) > order.indexOf(active) ? "next" : "prev";
+  }
   for (const other of document.querySelectorAll("#section-tabs button[data-list]")) {
     const chosen = other.dataset.list === list;
     other.classList.toggle("active", chosen);
@@ -4828,16 +4934,26 @@ function confirmAction(title, detail, onYes) {
   каждый день, разложенное по смыслу, — а редкий знак человек вставит через
   системную панель по Win+точка, которая никуда не делась.
 */
-const EMOJI = [
-  ["Лица", "😀 😃 😄 😁 😆 😅 🙂 🙃 😉 😊 😇 🥰 😍 😘 😗 😚 😋 😛 😜 🤪 🤗 🤔 🤨 😐 😑 😶 🙄 😏 😴 🤤 😪 😵 🤐 🥴 🤢 🤧 😷 🤒 😎 🤓 🧐 😕 😟 🙁 😮 😲 😳 🥺 😢 😭 😤 😠 😡 🤬 😱 😨 😰 😥 🤯 😬 😌 🤥"],
-  ["Жесты", "👍 👎 👌 🤌 ✌️ 🤞 🤝 👏 🙌 🙏 💪 👋 🤙 ☝️ 👆 👇 👈 👉 ✊ 👊 🤟 🤘 ✋ 🖐️ 🫡 🫶"],
-  ["Сердца", "❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝"],
-  ["Дело", "✅ ❌ ⚠️ ❗ ❓ 💡 📌 📎 🔒 🔑 📁 📄 📝 ✏️ 🔍 ⏰ 📅 📊 💬 📞 📷 🎧 ⚡ 🔥 ⭐ 🎉 🎁 ☕ 🍕 🚀 🛠️ 🧩 🌙 ☀️ 🌧️ ❄️"],
+const EMOJI_CATEGORIES = [
+  ["😀", "Лица", "😀 😃 😄 😁 😆 😅 😂 🤣 🥲 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🥸 🤩 🥳 🙂‍↕️ 😏 😒 🙂‍↔️ 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😮‍💨 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🫣 🤭 🫢 🫡 🤫 🫠 🤥 😶 🫥 😐 🫤 😑 🫨 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪 😵 😵‍💫 🤐 🥴 🤢 🤮 🤧 😷 🤒 🤕 🤑 🤠 😈 👿 👹 👺 🤡 💩 👻 💀 ☠️ 👽 👾 🤖 🎃"],
+  ["👋", "Люди и жесты", "👋 🤚 🖐️ ✋ 🖖 🫱 🫲 🫳 🫴 🫷 🫸 👌 🤌 🤏 ✌️ 🤞 🫰 🤟 🤘 🤙 👈 👉 👆 🖕 👇 ☝️ 🫵 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 🫶 👐 🤲 🤝 🙏 ✍️ 💅 🤳 💪 🦾 🦿 🦵 🦶 👂 🦻 👃 🧠 🫀 🫁 🦷 🦴 👀 👁️ 👅 👄 🫦 👶 🧒 👦 👧 🧑 👱 👨 🧔 👩 🧓 👴 👵 🙍 🙎 🙅 🙆 💁 🙋 🧏 🙇 🤦 🤷 👮 👷 💂 🕵️ 👩‍⚕️ 👩‍🌾 👩‍🍳 👩‍🎓 👩‍🎤 👩‍🏫 👩‍🏭 👩‍💻 👩‍💼 👩‍🔧 👩‍🔬 👩‍🎨 👩‍🚒 👩‍✈️ 👩‍🚀 👩‍⚖️ 🦸 🦹 🧙 🧚 🧛 🧜 🧝 🧞 🧟 🧌 💆 💇 🚶 🧍 🧎 🏃 💃 🕺 🕴️ 👯 🧖 🧗 🤺 🏇 ⛷️ 🏂 🏌️ 🏄 🚣 🏊 ⛹️ 🏋️ 🚴 🚵 🤸 🤼 🤽 🤾 🤹 🧘 🛀 🛌"],
+  ["🐻", "Животные и природа", "🐵 🐒 🦍 🦧 🐶 🐕 🦮 🐕‍🦺 🐩 🐺 🦊 🦝 🐱 🐈 🐈‍⬛ 🦁 🐯 🐅 🐆 🐴 🫎 🫏 🐎 🦄 🦓 🦌 🦬 🐮 🐂 🐃 🐄 🐷 🐖 🐗 🐽 🐏 🐑 🐐 🐪 🐫 🦙 🦒 🐘 🦣 🦏 🦛 🐭 🐁 🐀 🐹 🐰 🐇 🐿️ 🦫 🦔 🦇 🐻 🐻‍❄️ 🐨 🐼 🦥 🦦 🦨 🦘 🦡 🐾 🦃 🐔 🐓 🐣 🐤 🐥 🐦 🐧 🕊️ 🦅 🦆 🦢 🦉 🦤 🪶 🦩 🦚 🦜 🪽 🐦‍⬛ 🪿 🐦‍🔥 🐸 🐊 🐢 🦎 🐍 🐲 🐉 🦕 🦖 🐳 🐋 🐬 🦭 🐟 🐠 🐡 🦈 🐙 🐚 🪸 🪼 🐌 🦋 🐛 🐜 🐝 🪲 🐞 🦗 🪳 🕷️ 🦂 🦟 🪰 🪱 🦠 💐 🌸 💮 🪷 🌹 🥀 🌺 🌻 🌼 🌷 🪻 🌱 🪴 🌲 🌳 🌴 🌵 🌾 🌿 ☘️ 🍀 🍁 🍂 🍃 🍄 🪨 🌍 🌎 🌏 🌕 🌙 ⭐ 🌟 ✨ ⚡ ☄️ 🔥 🌪️ 🌈 ☀️ 🌤️ ⛅ 🌧️ ⛈️ ❄️ ☃️ 💧 🌊"],
+  ["🍕", "Еда и напитки", "🍏 🍎 🍐 🍊 🍋 🍋‍🟩 🍌 🍉 🍇 🍓 🫐 🍈 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🍆 🥑 🫛 🥦 🥬 🥒 🌶️ 🫑 🌽 🥕 🫒 🧄 🧅 🥔 🍠 🫚 🥐 🥯 🍞 🥖 🥨 🧀 🥚 🍳 🧈 🥞 🧇 🥓 🥩 🍗 🍖 🌭 🍔 🍟 🍕 🫓 🥪 🥙 🧆 🌮 🌯 🫔 🥗 🥘 🫕 🥫 🍝 🍜 🍲 🍛 🍣 🍱 🥟 🦪 🍤 🍙 🍚 🍘 🍥 🥠 🥮 🍢 🍡 🍧 🍨 🍦 🥧 🧁 🍰 🎂 🍮 🍭 🍬 🍫 🍿 🍩 🍪 🌰 🥜 🍯 🥛 🍼 🫖 ☕ 🍵 🧃 🥤 🧋 🍶 🍺 🍻 🥂 🍷 🥃 🍸 🍹 🧉 🍾 🧊 🥄 🍴 🍽️"],
+  ["⚽", "Спорт и занятия", "⚽ 🏀 🏈 ⚾ 🥎 🎾 🏐 🏉 🥏 🎱 🪀 🏓 🏸 🏒 🏑 🥍 🏏 🪃 🥅 ⛳ 🪁 🏹 🎣 🤿 🥊 🥋 🎽 🛹 🛼 🛷 ⛸️ 🥌 🎿 ⛷️ 🏂 🪂 🏋️ 🤼 🤸 ⛹️ 🤺 🤾 🏌️ 🏇 🧘 🎪 🎭 🩰 🎨 🎬 🎤 🎧 🎼 🎹 🥁 🪘 🎷 🎺 🪗 🎸 🪕 🎻 🪈 🎲 ♟️ 🎯 🎳 🎮 🕹️ 🧩 🧸 🪅 🪩 🪆 🃏 🀄 🎴"],
+  ["🚀", "Путешествия", "🚗 🚕 🚙 🚌 🚎 🏎️ 🚓 🚑 🚒 🚐 🛻 🚚 🚛 🚜 🏍️ 🛵 🚲 🛴 🛹 🛼 🚨 🚔 🚍 🚘 🚖 🚡 🚠 🚟 🚃 🚋 🚞 🚝 🚄 🚅 🚈 🚂 🚆 🚇 🚊 🚉 ✈️ 🛫 🛬 🛩️ 💺 🛰️ 🚀 🛸 🚁 🛶 ⛵ 🚤 🛥️ 🛳️ ⛴️ 🚢 ⚓ 🛟 ⛽ 🚧 🚦 🗺️ 🗿 🗽 🗼 🏰 🏯 🏟️ 🎡 🎢 🎠 ⛲ ⛱️ 🏖️ 🏝️ 🏜️ 🌋 ⛰️ 🏕️ 🏠 🏢 🏥 🏦 🏨 🏫 🏭 ⛪ 🕌 🛕 🕍 ⛩️ 🕋 🌅 🌄 🌠 🎇 🎆 🌆 🌃 🌌 🌉"],
+  ["💡", "Предметы", "⌚ 📱 💻 ⌨️ 🖥️ 🖨️ 🖱️ 🖲️ 🕹️ 🗜️ 💽 💾 💿 📀 📼 📷 📸 📹 🎥 📽️ 🎞️ 📞 ☎️ 📟 📠 📺 📻 🎙️ 🎚️ 🎛️ 🧭 ⏱️ ⏲️ ⏰ 🕰️ ⌛ ⏳ 📡 🔋 🪫 🔌 💡 🔦 🕯️ 🧯 🛢️ 💸 💵 💶 💷 💳 🪙 💎 ⚖️ 🪜 🧰 🪛 🔧 🔨 ⚒️ 🛠️ ⛏️ 🪚 🔩 ⚙️ 🪤 🧱 ⛓️ ⛓️‍💥 🧲 🔫 💣 🧨 🪓 🔪 🗡️ ⚔️ 🛡️ 🚬 ⚰️ 🪦 ⚱️ 🔮 📿 🧿 🪬 💈 ⚗️ 🔭 🔬 🕳️ 🩹 🩺 🩻 🚪 🛗 🪞 🪟 🛏️ 🛋️ 🪑 🚽 🪠 🚿 🛁 🪥 🧴 🧷 🧹 🧺 🧻 🪣 🧼 🫧 🪥 🧽 🧯 🛒 🎁 🎈 🎀 🪄 🪅 ✉️ 📩 📨 📧 💌 📦 🏷️ 🪧 📪 📫 📬 📭 📮 📜 📃 📄 📑 🧾 📊 📈 📉 🗒️ 🗓️ 📆 📅 🗑️ 📇 🗃️ 🗳️ 🗄️ 📋 📁 📂 🗂️ 📰 📓 📔 📒 📕 📗 📘 📙 📚 📖 🔖 🧷 🔗 📎 🖇️ 📐 📏 🧮 📌 📍 ✂️ 🖊️ 🖋️ ✒️ 🖌️ 🖍️ 📝 ✏️ 🔍 🔎 🔏 🔐 🔒 🔓"],
+  ["❤️", "Символы", "❤️ 🩷 🧡 💛 💚 💙 🩵 💜 🤎 🖤 🩶 🤍 💔 ❤️‍🔥 ❤️‍🩹 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ☮️ ✝️ ☪️ 🕉️ ☸️ ✡️ 🔯 🕎 ☯️ ☦️ 🛐 ⛎ ♈ ♉ ♊ ♋ ♌ ♍ ♎ ♏ ♐ ♑ ♒ ♓ 🆔 ⚛️ 🉑 ☢️ ☣️ 📴 📳 🈶 🈚 🈸 🈺 🈷️ ✴️ 🆚 💮 🉐 ㊙️ ㊗️ 🈴 🈵 🈹 🈲 🅰️ 🅱️ 🆎 🆑 🅾️ 🆘 ❌ ⭕ 🛑 ⛔ 📛 🚫 💯 💢 ♨️ 🚷 🚯 🚳 🚱 🔞 📵 🚭 ❗ ❕ ❓ ❔ ‼️ ⁉️ 🔅 🔆 〽️ ⚠️ 🚸 🔱 ⚜️ 🔰 ♻️ ✅ 🈯 💹 ❇️ ✳️ ❎ 🌐 💠 Ⓜ️ 🌀 💤 🏧 🚾 ♿ 🅿️ 🛗 🈳 🈂️ 🛂 🛃 🛄 🛅 🚹 🚺 🚼 ⚧️ 🚻 🚮 🎦 📶 🈁 🔣 ℹ️ 🔤 🔡 🔠 🆖 🆗 🆙 🆒 🆕 🆓 0️⃣ 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣ 8️⃣ 9️⃣ 🔟 #️⃣ *️⃣ ▶️ ⏸️ ⏯️ ⏹️ ⏺️ ⏭️ ⏮️ ⏩ ⏪ 🔀 🔁 🔂 ◀️ 🔼 🔽 ⏫ ⏬ ➡️ ⬅️ ⬆️ ⬇️ ↗️ ↘️ ↙️ ↖️ ↕️ ↔️ 🔄 ↪️ ↩️ ➿ ♾️ ✔️ ➕ ➖ ➗ ✖️ ™️ ©️ ®️"],
+  ["🏳️", "Флаги", "🏁 🚩 🎌 🏴 🏳️ 🏳️‍🌈 🏳️‍⚧️ 🏴‍☠️ 🇺🇳 🇷🇺 🇺🇦 🇧🇾 🇰🇿 🇦🇲 🇦🇿 🇬🇪 🇺🇿 🇹🇯 🇰🇬 🇲🇩 🇺🇸 🇨🇦 🇲🇽 🇧🇷 🇦🇷 🇨🇱 🇨🇴 🇵🇪 🇬🇧 🇮🇪 🇫🇷 🇩🇪 🇪🇸 🇵🇹 🇮🇹 🇳🇱 🇧🇪 🇨🇭 🇦🇹 🇵🇱 🇨🇿 🇸🇰 🇭🇺 🇷🇴 🇧🇬 🇬🇷 🇹🇷 🇸🇪 🇳🇴 🇫🇮 🇩🇰 🇮🇸 🇪🇪 🇱🇻 🇱🇹 🇷🇸 🇭🇷 🇸🇮 🇧🇦 🇲🇪 🇲🇰 🇦🇱 🇨🇾 🇲🇹 🇯🇵 🇨🇳 🇰🇷 🇮🇳 🇮🇩 🇹🇭 🇻🇳 🇸🇬 🇲🇾 🇵🇭 🇵🇰 🇧🇩 🇮🇱 🇸🇦 🇦🇪 🇮🇷 🇮🇶 🇪🇬 🇿🇦 🇳🇬 🇰🇪 🇲🇦 🇩🇿 🇹🇳 🇦🇺 🇳🇿"],
 ];
+
+const EMOJI_TONES = ["🏻", "🏼", "🏽", "🏾", "🏿"];
+const TONE_BASES = "👋 🤚 🖐️ ✋ 🖖 🫱 🫲 🫳 🫴 🫷 🫸 👌 🤌 🤏 ✌️ 🤞 🫰 🤟 🤘 🤙 👈 👉 👆 🖕 👇 ☝️ 🫵 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 🫶 👐 🤲 🙏 ✍️ 💅 🤳 💪 🦵 🦶 👂 👃 👶 🧒 👦 👧 🧑 👱 👨 🧔 👩 🧓 👴 👵".split(" ");
+EMOJI_CATEGORIES.splice(2, 0, ["🎨", "Оттенки кожи", null]);
 
 let emojiPanel = null;
 
 function closeEmoji() {
+  emojiPanel?._emojiObserver?.disconnect();
   emojiPanel?.remove();
   emojiPanel = null;
 }
@@ -4848,21 +4964,62 @@ $("emoji-open").addEventListener("click", (event) => {
 
   const panel = document.createElement("div");
   panel.className = "emoji-panel";
-  for (const [title, row] of EMOJI) {
+  const tabs = document.createElement("div");
+  tabs.className = "emoji-tabs";
+  tabs.setAttribute("role", "tablist");
+  const scroll = document.createElement("div");
+  scroll.className = "emoji-scroll";
+  panel.append(tabs, scroll);
+
+  function openEmojiCategory(index) {
+    panel._emojiObserver?.disconnect();
+    tabs.querySelectorAll("button").forEach((button, at) => button.classList.toggle("active", at === index));
+    const [, title, row] = EMOJI_CATEGORIES[index];
+    const values = row === null
+      ? TONE_BASES.flatMap((base) => EMOJI_TONES.map((tone) => `${base.replace("️", "")}${tone}`))
+      : row.split(" ");
     const heading = document.createElement("p");
     heading.className = "emoji-title";
     heading.textContent = title;
     const grid = document.createElement("div");
     grid.className = "emoji-grid";
-    for (const symbol of row.split(" ")) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = symbol;
-      button.addEventListener("click", () => insertEmoji(symbol));
-      grid.appendChild(button);
-    }
-    panel.append(heading, grid);
+    const sentinel = document.createElement("div");
+    sentinel.className = "emoji-sentinel";
+    scroll.replaceChildren(heading, grid, sentinel);
+    scroll.scrollTop = 0;
+    let rendered = 0;
+    const renderChunk = () => {
+      const fragment = document.createDocumentFragment();
+      for (const symbol of values.slice(rendered, rendered + 72)) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = symbol;
+        button.title = symbol;
+        button.addEventListener("click", () => insertEmoji(symbol));
+        fragment.appendChild(button);
+      }
+      rendered = Math.min(values.length, rendered + 72);
+      grid.appendChild(fragment);
+      if (rendered >= values.length) panel._emojiObserver?.disconnect();
+    };
+    renderChunk();
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) renderChunk();
+    }, { root: scroll, rootMargin: "100px" });
+    panel._emojiObserver = observer;
+    if (rendered < values.length) observer.observe(sentinel);
   }
+
+  EMOJI_CATEGORIES.forEach(([icon, title], index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = icon;
+    button.title = title;
+    button.setAttribute("aria-label", title);
+    button.addEventListener("click", () => openEmojiCategory(index));
+    tabs.appendChild(button);
+  });
+  openEmojiCategory(0);
   // Внутри панели щелчок не должен её закрывать: выбирают часто по нескольку.
   panel.addEventListener("click", (inner) => inner.stopPropagation());
   document.querySelector(".composer").appendChild(panel);
@@ -5322,5 +5479,6 @@ function refreshPeerState() {
   if (!peer) return;
   if (typingPeers.has(peer)) return;
   node.classList.remove("typing");
-  node.textContent = isOnline(peer) ? "в сети" : "защищённый сеанс";
+  node.textContent = isOnline(peer) ? "в сети · контроль ключа включён" : "контроль ключа включён";
+  node.title = "Приложение запоминает ключ собеседника и остановит отправку, если он неожиданно изменится";
 }

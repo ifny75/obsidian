@@ -437,6 +437,10 @@ pub struct DirectoryItem {
 pub struct ConversationItem {
     pub peer_device: String,
     pub conversation: String,
+    /// Последнее расшифрованное сообщение остаётся локальным и нужно списку
+    /// бесед вместо бесполезной одинаковой подписи «Защищённый диалог».
+    pub last_body: Option<String>,
+    pub last_at: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]

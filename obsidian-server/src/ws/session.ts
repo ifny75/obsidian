@@ -631,21 +631,39 @@ const PROFILE_COLORS = new Set([
 function onProfileSet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
   const payload = parseJsonBody(body) as {
     avatarMime?: unknown; avatarBase64?: unknown; emblem?: unknown; color?: unknown;
+    decor?: unknown;
   };
   if (!payload || typeof payload !== "object") throw new BadInput("profile payload required");
 
   // Значок и цвет приходят отдельно от аватара: менять одно, не трогая другое.
-  if ("emblem" in payload || "color" in payload) {
+  if ("emblem" in payload || "color" in payload || "decor" in payload) {
     const emblem = payload.emblem === undefined ? undefined : String(payload.emblem);
     const color = payload.color === undefined ? undefined : String(payload.color);
     if (emblem !== undefined && !EMBLEMS.has(emblem)) throw new BadInput("unknown emblem");
     if (color !== undefined && !PROFILE_COLORS.has(color)) throw new BadInput("unknown color");
+
+    /*
+      Запечатанные украшения. Внутрь мы не смотрим и смотреть не можем — там
+      шифротекст, — поэтому проверяем единственное, что поддаётся проверке:
+      размер. Значок и цвет короткие, килобайта хватает с запасом, а без
+      предела это поле стало бы бесплатным местом для хранения чего угодно.
+    */
+    let decor: Uint8Array | null = null;
+    if (payload.decor !== undefined && payload.decor !== null) {
+      if (typeof payload.decor !== "string" || payload.decor.length > 1024) {
+        throw new BadInput("bad decor blob");
+      }
+      decor = Buffer.from(payload.decor, "base64");
+    }
     const current = deps.store.ensureProfile(conn.identity!, deps.now());
     const profile = deps.store.updateDecoration(
       conn.identity!,
       emblem === undefined ? current.emblem : (emblem === "none" ? null : emblem),
       color === undefined ? current.color : (color === "none" ? null : color),
       deps.now(),
+      // Блоб не присылали — оставляем прежний: смена только цвета не должна
+      // стирать запечатанное.
+      decor ?? current.decor,
     );
     sendProfile(sock, profile, conn.devicePub!);
     return;
@@ -694,7 +712,8 @@ function validateAvatarMagic(mime: string, bytes: Uint8Array): void {
 function sendProfile(
   sock: Socket,
   profile: { identity: Uint8Array; chat_code: string; avatar_mime: string | null;
-    avatar: Uint8Array | null; emblem: string | null; color: string | null; updated_at: number },
+    avatar: Uint8Array | null; emblem: string | null; color: string | null;
+    decor: Uint8Array | null; updated_at: number },
   device: Uint8Array,
 ): void {
   sock.send(jsonFrame(OP.PROFILE, {
@@ -708,6 +727,7 @@ function sendProfile(
     avatarBase64: profile.avatar ? Buffer.from(profile.avatar).toString("base64") : null,
     emblem: profile.emblem,
     color: profile.color,
+    decor: profile.decor ? Buffer.from(profile.decor).toString("base64") : null,
     updatedAt: profile.updated_at,
   }), true);
 }
@@ -861,6 +881,7 @@ function onUsernameLookup(deps: Deps, sock: Socket, conn: ConnData, body: Uint8A
     avatarBase64: profile.avatar ? Buffer.from(profile.avatar).toString("base64") : null,
     emblem: profile.emblem,
     color: profile.color,
+    decor: profile.decor ? Buffer.from(profile.decor).toString("base64") : null,
   }), true);
 }
 

@@ -121,6 +121,9 @@ pub struct ProfilePayload {
     pub emblem: Option<String>,
     #[serde(default)]
     pub color: Option<String>,
+    /// Запечатанные значок и цвет. Открываются ключом профиля, как и аватар.
+    #[serde(default)]
+    pub decor: Option<String>,
     #[serde(rename = "updatedAt")]
     pub updated_at: i64,
 }
@@ -186,6 +189,9 @@ pub struct UsernameFound {
     pub emblem: Option<String>,
     #[serde(default)]
     pub color: Option<String>,
+    /// Запечатанные значок и цвет. Открываются ключом профиля, как и аватар.
+    #[serde(default)]
+    pub decor: Option<String>,
 }
 
 /// Ответ на любую операцию с доступом: политика, выпуск, отзыв, предъявление.
@@ -346,6 +352,17 @@ pub fn profile_decor_frame(emblem: &Option<String>, color: &Option<String>) -> R
         body.insert("color".into(), serde_json::Value::String(color.clone()));
     }
     json_frame(op::PROFILE_SET, &serde_json::Value::Object(body))
+}
+
+/// То же самое, но запечатанное: сервер видит блоб и хранит его как есть.
+pub fn profile_decor_sealed_frame(sealed: &str) -> Result<Vec<u8>> {
+    json_frame(op::PROFILE_SET, &serde_json::json!({
+        "decor": sealed,
+        // Открытые значения снимаются: иначе рядом с закрытым блобом остался
+        // бы прежний значок, и прятать его было бы незачем.
+        "emblem": "none",
+        "color": "none",
+    }))
 }
 
 /// Кадры каналов. Тело собирается из того, что дал интерфейс: у канала нет

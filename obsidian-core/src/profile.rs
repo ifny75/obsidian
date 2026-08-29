@@ -35,6 +35,9 @@ pub const SEALED_MIME: &str = "application/vnd.obsidian.sealed-avatar";
 /// AAD: привязывает блоб к назначению. Тем же ключом запечатанное что-то другое
 /// этой парой не откроется.
 const AAD: &[u8] = b"obsidian-avatar-v1";
+/// Своя привязка для значка и цвета: аватар и украшения не должны открываться
+/// одно вместо другого, даже ключ у них общий.
+const DECOR_AAD: &[u8] = b"obsidian-decor-v1";
 
 /// Новый ключ профиля. Раздаётся контактам, меняется вместе с решением
 /// «показывать заново».
@@ -80,6 +83,34 @@ pub fn open(key: &[u8], sealed_base64: &str) -> Result<(String, String)> {
     }
     let mime = std::str::from_utf8(&plain[1..1 + length]).map_err(|_| CoreError::BadFrame)?;
     Ok((mime.to_owned(), base64_encode(&plain[1 + length..])))
+}
+
+/// Запечатывает значок и цвет.
+///
+/// Они короткие и берутся из закрытого списка, поэтому прячут немного — но
+/// прячут ровно то же, что и аватар: как человек выглядит рядом со своим
+/// именем. Оставлять их открытыми, зашифровав картинку, значило бы закрыть
+/// дверь и оставить окно.
+///
+/// Плата названа честно: список значений закрытый, и проверял его сервер.
+/// Теперь проверить может только тот, кто откроет блоб, — то есть клиент
+/// получателя. Это правильное место: рисует их всё равно он.
+pub fn seal_decor(key: &[u8], emblem: Option<&str>, color: Option<&str>) -> Result<String> {
+    let master = MasterKey::from_bytes(key)?;
+    let payload = serde_json::json!({ "emblem": emblem, "color": color });
+    let sealed = master.seal(DECOR_AAD, serde_json::to_vec(&payload)?.as_slice())?;
+    Ok(base64_encode(&sealed))
+}
+
+/// Разбирает запечатанные значок и цвет.
+pub fn open_decor(key: &[u8], sealed_base64: &str) -> Result<(Option<String>, Option<String>)> {
+    let master = MasterKey::from_bytes(key)?;
+    let plain = master.open(DECOR_AAD, &base64_decode(sealed_base64)?)?;
+    let value: serde_json::Value = serde_json::from_slice(&plain)?;
+    let field = |name: &str| {
+        value.get(name).and_then(|v| v.as_str()).map(str::to_owned)
+    };
+    Ok((field("emblem"), field("color")))
 }
 
 /// Помечен ли профиль как запечатанный.
@@ -177,6 +208,30 @@ mod tests {
         // И обрезанный тоже.
         assert!(open(&key, &sealed[..sealed.len() / 2]).is_err());
         assert!(open(&key, "не base64 вовсе").is_err());
+    }
+
+    #[test]
+    fn decor_round_trips_and_is_bound_to_its_purpose() {
+        let key = new_key();
+        let sealed = seal_decor(&key, Some("flame"), Some("coral")).unwrap();
+        assert!(!sealed.contains("flame"), "значок не должен лежать открытым");
+        assert_eq!(
+            open_decor(&key, &sealed).unwrap(),
+            (Some("flame".to_owned()), Some("coral".to_owned())),
+        );
+
+        // Пустые значения — это «убрать значок», и они тоже должны доезжать.
+        let empty = seal_decor(&key, None, None).unwrap();
+        assert_eq!(open_decor(&key, &empty).unwrap(), (None, None));
+
+        // Аватар и украшения запечатаны одним ключом, но разной привязкой:
+        // подсунуть одно вместо другого нельзя.
+        let avatar = seal(&key, "image/png", IMAGE).unwrap();
+        assert!(open_decor(&key, &avatar).is_err(), "аватар не должен открываться как значок");
+        assert!(open(&key, &sealed).is_err(), "значок не должен открываться как аватар");
+
+        // И чужой ключ не открывает.
+        assert!(open_decor(&new_key(), &sealed).is_err());
     }
 
     #[test]

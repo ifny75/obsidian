@@ -60,6 +60,7 @@ export interface ProfileRow {
   avatar: Bytes | null;
   emblem: string | null;
   color: string | null;
+  decor: Bytes | null;
   updated_at: number;
 }
 
@@ -69,6 +70,13 @@ const CHAT_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
  * Весь SQL живёт здесь. Наружу торчат только эти методы — переезд на Postgres
  * это замена одного файла, остальной сервер про СУБД не знает.
  */
+/** Час, в который попало время. См. пояснение к `devices` в schema.ts. */
+export function coarseTime(now: number): number {
+  return Math.floor(now / HOUR_MS) * HOUR_MS;
+}
+
+const HOUR_MS = 3600_000;
+
 export class Store {
   readonly #db: DatabaseSync;
   /** Ключ для столбцов, которые сервер обязан читать сам. См. secretbox.ts. */
@@ -87,6 +95,7 @@ export class Store {
     this.#addRecoveryTotp();
     this.#addUsernameHash2();
     this.#forgetUserHandles();
+    this.#addProfileDecor();
     this.#secrets = SecretBox.load(path);
     this.#sealStoredTotpSecrets();
   }
@@ -181,6 +190,17 @@ export class Store {
     log.info(`legacy handles cleared: ${left}`);
   }
 
+  /** Запечатанные украшения появились позже таблицы профилей. */
+  #addProfileDecor(): void {
+    const columns = this.#db.prepare("PRAGMA table_info(profiles)").all() as unknown as {
+      name: string;
+    }[];
+    if (columns.length === 0) return;
+    if (!columns.some((column) => column.name === "decor")) {
+      this.#db.exec("ALTER TABLE profiles ADD COLUMN decor BLOB");
+    }
+  }
+
   #addChannelIcon(): void {
     const columns = this.#db.prepare("PRAGMA table_info(channels)").all() as unknown as {
       name: string;
@@ -238,12 +258,21 @@ export class Store {
         `INSERT INTO devices (id, identity, device_pub, cert, created_at, last_seen)
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, identity, devicePub, cert, now, now);
+      .run(id, identity, devicePub, cert, now, coarseTime(now));
     return id;
   }
 
+  /**
+   * Отмечает, что устройство было на связи. Время огрубляется до часа.
+   *
+   * Точность здесь не нужна никому: единственный читатель — выбор活ного
+   * устройства получателя, и он смотрит «какое свежее». Зато с точностью до
+   * миллисекунды это распорядок дня человека, лежащий на диске.
+   */
   touchDevice(devicePub: Bytes, now: number): void {
-    this.#db.prepare("UPDATE devices SET last_seen = ? WHERE device_pub = ?").run(now, devicePub);
+    this.#db
+      .prepare("UPDATE devices SET last_seen = ? WHERE device_pub = ?")
+      .run(coarseTime(now), devicePub);
   }
 
   /** Каталог: отправитель обязан сам проверить cert, сервер здесь только кэш. */
@@ -323,13 +352,21 @@ export class Store {
     return this.getProfile(identity)!;
   }
 
-  /** Значок и цвет. `null` в поле означает «убрать». */
+  /**
+   * Значок и цвет. `null` в поле означает «убрать».
+   *
+   * `decor` — тот же значок с цветом, но запечатанный ключом профиля. Сервер
+   * кладёт его как есть: содержимого он не видит и проверить не может.
+   */
   updateDecoration(identity: Bytes, emblem: string | null, color: string | null,
-    now: number): ProfileRow {
+    now: number, decor: Bytes | null = null): ProfileRow {
     this.ensureProfile(identity, now);
     this.#db
-      .prepare("UPDATE profiles SET emblem = ?, color = ?, updated_at = ? WHERE identity = ?")
-      .run(emblem, color, now, identity);
+      .prepare(
+        `UPDATE profiles SET emblem = ?, color = ?, decor = ?, updated_at = ?
+         WHERE identity = ?`,
+      )
+      .run(emblem, color, decor, now, identity);
     return this.getProfile(identity)!;
   }
 

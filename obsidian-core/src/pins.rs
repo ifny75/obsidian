@@ -27,7 +27,7 @@
 //! нельзя (тогда закрепление бессмысленно), молча запрещать — тоже (тогда
 //! мессенджер ломается на ровном месте).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +52,15 @@ pub struct Pin {
     /// Когда в последний раз подтверждали смену.
     #[serde(default)]
     pub changed_at: Option<i64>,
+    /// Новый ключ, который сервер недавно предложил под тем же именем.
+    /// Храним его до решения пользователя, чтобы нельзя было подтвердить
+    /// произвольный или уже устаревший ключ отдельной командой.
+    #[serde(default)]
+    pub pending_device: Option<String>,
+    /// Все ключи, уже замеченные как неподтверждённая смена. Последующий
+    /// кандидат не должен разблокировать предыдущий.
+    #[serde(default)]
+    pub untrusted_devices: BTreeSet<String>,
 }
 
 /// Имя → закреплённый за ним ключ.
@@ -67,25 +76,40 @@ impl Pins {
     /// Первый ключ закрепляется молча: спрашивать человека там, где сравнивать
     /// не с чем, — значит приучать его нажимать «да», не читая.
     pub fn check(&mut self, name: &str, device: &str, now: i64) -> PinState {
-        match self.names.get(name) {
+        match self.names.get_mut(name) {
             None => {
                 self.names.insert(
                     name.to_owned(),
-                    Pin { device: device.to_owned(), first_seen: now, changed_at: None },
+                    Pin {
+                        device: device.to_owned(),
+                        first_seen: now,
+                        changed_at: None,
+                        pending_device: None,
+                        untrusted_devices: BTreeSet::new(),
+                    },
                 );
                 PinState::First
             }
             Some(pin) if pin.device == device => PinState::Same,
-            Some(_) => PinState::Changed,
+            Some(pin) => {
+                pin.pending_device = Some(device.to_owned());
+                pin.untrusted_devices.insert(device.to_owned());
+                PinState::Changed
+            }
         }
     }
 
     /// Человек подтвердил новый ключ. Возвращает false, если подтверждать нечего.
     pub fn accept(&mut self, name: &str, device: &str, now: i64) -> bool {
         match self.names.get_mut(name) {
-            Some(pin) if pin.device != device => {
+            Some(pin) if pin.pending_device.as_deref() == Some(device) && pin.device != device => {
                 pin.device = device.to_owned();
                 pin.changed_at = Some(now);
+                pin.pending_device = None;
+                // Доверяем только выбранному свежему кандидату. Более ранние
+                // подмены остаются заблокированы: их мог догнать отложенный
+                // KeyPackage уже после этого подтверждения.
+                pin.untrusted_devices.remove(device);
                 true
             }
             _ => false,
@@ -96,6 +120,14 @@ impl Pins {
     /// закрепление того, с кем не переписываются, незачем.
     pub fn forget(&mut self, name: &str) -> bool {
         self.names.remove(name).is_some()
+    }
+
+    /// Кандидат со сменившимся ключом нельзя использовать, пока человек не
+    /// подтвердил именно этот результат поиска и подтверждение не сохранилось.
+    pub fn blocks_device(&self, device: &str) -> bool {
+        self.names.values().any(|pin| {
+            pin.pending_device.as_deref() == Some(device) || pin.untrusted_devices.contains(device)
+        })
     }
 }
 
@@ -126,11 +158,37 @@ mod tests {
     fn accepting_the_change_replaces_the_pin() {
         let mut pins = Pins::default();
         pins.check("mira", "aa", 1);
+        assert_eq!(pins.check("mira", "bb", 4), PinState::Changed);
         assert!(pins.accept("mira", "bb", 5));
         assert_eq!(pins.check("mira", "bb", 6), PinState::Same);
         assert_eq!(pins.names["mira"].changed_at, Some(5));
         // Первая встреча остаётся первой: она говорит, как давно мы знакомы.
         assert_eq!(pins.names["mira"].first_seen, 1);
+    }
+
+    #[test]
+    fn arbitrary_or_stale_candidate_cannot_be_accepted() {
+        let mut pins = Pins::default();
+        pins.check("mira", "aa", 1);
+        pins.check("mira", "bb", 2);
+        assert!(!pins.accept("mira", "cc", 3));
+        assert_eq!(pins.names["mira"].device, "aa");
+        assert!(pins.blocks_device("bb"));
+        assert!(!pins.blocks_device("cc"));
+    }
+
+    #[test]
+    fn a_later_candidate_does_not_unblock_an_earlier_one() {
+        let mut pins = Pins::default();
+        pins.check("mira", "aa", 1);
+        pins.check("mira", "bb", 2);
+        pins.check("mira", "cc", 3);
+        assert!(pins.blocks_device("bb"));
+        assert!(pins.blocks_device("cc"));
+        assert!(!pins.accept("mira", "bb", 4), "подтверждается только свежий ответ");
+        assert!(pins.accept("mira", "cc", 5));
+        assert!(pins.blocks_device("bb"));
+        assert!(!pins.blocks_device("cc"));
     }
 
     #[test]

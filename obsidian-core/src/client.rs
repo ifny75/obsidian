@@ -4,7 +4,7 @@
 //! шифротекста: он оперирует открытым текстом, а граница доверия проходит
 //! ровно здесь.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -399,27 +399,37 @@ fn handle_local(command: &Command, store: &Store, sink: &EventSink) -> bool {
         }
 
         Command::PinAccept { name, device } => {
-            let mut pins = load_pins(store);
-            if pins.accept(name, device, now_millis()) {
-                match save_pins(store, &pins) {
-                    Ok(()) => sink(Event::PinAccepted {
-                        name: name.clone(),
-                        device: device.clone(),
-                    }),
-                    Err(err) => fail(sink, "storage", &err.to_string()),
+            match load_pins_checked(store) {
+                Ok(mut pins) => {
+                    if pins.accept(name, device, now_millis()) {
+                        match save_pins(store, &pins) {
+                            Ok(()) => sink(Event::PinAccepted {
+                                name: name.clone(),
+                                device: device.clone(),
+                            }),
+                            Err(err) => fail(sink, "storage", &err.to_string()),
+                        }
+                    } else {
+                        fail(
+                            sink,
+                            "pin_not_pending",
+                            "этот ключ не является ожидающим подтверждения результатом поиска",
+                        );
+                    }
                 }
-            } else {
-                // Подтверждать нечего: ключ тот же или имя незнакомое. Молчать
-                // нельзя — интерфейс ждёт ответа на нажатую кнопку.
-                sink(Event::PinAccepted { name: name.clone(), device: device.clone() });
+                Err(err) => fail(sink, "storage", &err.to_string()),
             }
         }
 
         Command::PinForget { name } => {
-            let mut pins = load_pins(store);
-            pins.forget(name);
-            if let Err(err) = save_pins(store, &pins) {
-                fail(sink, "storage", &err.to_string());
+            match load_pins_checked(store) {
+                Ok(mut pins) => {
+                    pins.forget(name);
+                    if let Err(err) = save_pins(store, &pins) {
+                        fail(sink, "storage", &err.to_string());
+                    }
+                }
+                Err(err) => fail(sink, "storage", &err.to_string()),
             }
         }
 
@@ -452,9 +462,19 @@ fn handle_local(command: &Command, store: &Store, sink: &EventSink) -> bool {
             Ok(items) => sink(Event::Conversations {
                 items: items
                     .into_iter()
-                    .map(|(peer_device, conversation)| ConversationItem {
-                        peer_device: hex::encode(peer_device),
-                        conversation: hex::encode(conversation),
+                    .map(|(peer_device, conversation)| {
+                        let last = store
+                            .list_messages(&conversation, 1, None)
+                            .ok()
+                            .and_then(|mut rows| rows.pop());
+                        ConversationItem {
+                            peer_device: hex::encode(peer_device),
+                            conversation: hex::encode(conversation),
+                            last_body: last.as_ref().map(|row| {
+                                String::from_utf8_lossy(&row.body).into_owned()
+                            }),
+                            last_at: last.map(|row| row.created_at),
+                        }
                     })
                     .collect(),
             }),
@@ -1109,13 +1129,51 @@ fn unseal_avatar(
     }
 }
 
-fn load_pins(store: &Store) -> crate::pins::Pins {
-    store
-        .load_setting(PINS_KEY)
-        .ok()
-        .flatten()
-        .and_then(|raw| serde_json::from_slice(&raw).ok())
-        .unwrap_or_default()
+/// Открывает значок и цвет, если они приехали запечатанными.
+///
+/// Ключа нет — украшений для нас просто не существует: показываем то, что
+/// пришло открытым (у старого собеседника это по-прежнему обычные значения).
+fn unseal_decor(
+    store: &Store,
+    device: Option<&str>,
+    sealed: Option<&str>,
+    emblem: Option<String>,
+    color: Option<String>,
+) -> (Option<String>, Option<String>) {
+    let Some(sealed) = sealed else { return (emblem, color) };
+    let Some(device) = device else { return (None, None) };
+    let keys = load_peer_profile_keys(store);
+    let Some(key_hex) = keys.get(device) else { return (None, None) };
+    let Ok(key) = hex::decode(key_hex) else { return (None, None) };
+    crate::profile::open_decor(&key, sealed).unwrap_or((None, None))
+}
+
+fn load_pins_checked(store: &Store) -> Result<crate::pins::Pins> {
+    match store.load_setting(PINS_KEY)? {
+        Some(raw) => Ok(serde_json::from_slice(&raw)?),
+        None => Ok(crate::pins::Pins::default()),
+    }
+}
+
+fn ensure_pin_allows(store: &Store, device: &str) -> Result<()> {
+    let pins = load_pins_checked(store)?;
+    if pins.blocks_device(device) {
+        return Err(CoreError::Anomaly(
+            "ключ устройства под этим именем изменился и ещё не подтверждён".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn pin_allows_or_reports(store: &Store, sink: &EventSink, device: &[u8; KEY_LEN]) -> Result<bool> {
+    match ensure_pin_allows(store, &hex::encode(device)) {
+        Ok(()) => Ok(true),
+        Err(CoreError::Anomaly(detail)) => {
+            sink(Event::Anomaly { kind: "send_blocked".into(), detail });
+            Ok(false)
+        }
+        Err(other) => Err(other),
+    }
 }
 
 fn save_pins(store: &Store, pins: &crate::pins::Pins) -> Result<()> {
@@ -1638,6 +1696,7 @@ async fn pump(
     // эта сторона.
     let mut pending_username: Option<(String, bool)> = None;
     let mut looking_for: Option<String> = None;
+    let mut lookup_queue: VecDeque<(String, [u8; 32], [u8; 32])> = VecDeque::new();
 
     if authenticated {
         // Докладываем ровно недостающее. Раньше полная пачка уходила на каждый
@@ -1772,16 +1831,27 @@ async fn pump(
                         // Ответ сервера сверяется с тем, что мы помним об этом
                         // имени. Промолчать здесь нельзя: подмена ключа до
                         // первого письма выглядит ровно как обычная находка.
+                        let mut trust_error = None;
                         let pin = match (&query.is_empty(), &device) {
                             (false, Some(device)) => {
-                                let mut pins = load_pins(store);
-                                let state = pins.check(&query, device, now_millis());
-                                if state != crate::pins::PinState::Same {
+                                let mut pins = match load_pins_checked(store) {
+                                    Ok(pins) => pins,
+                                    Err(err) => {
+                                        trust_error = Some(err);
+                                        crate::pins::Pins::default()
+                                    }
+                                };
+                                let state = if trust_error.is_none() {
+                                    Some(pins.check(&query, device, now_millis()))
+                                } else {
+                                    None
+                                };
+                                if matches!(state, Some(value) if value != crate::pins::PinState::Same) {
                                     if let Err(err) = save_pins(store, &pins) {
-                                        fail(sink, "storage", &err.to_string());
+                                        trust_error = Some(err);
                                     }
                                 }
-                                if state == crate::pins::PinState::Changed {
+                                if state == Some(crate::pins::PinState::Changed) && trust_error.is_none() {
                                     sink(Event::Anomaly {
                                         kind: "pinned_key_changed".into(),
                                         detail: format!(
@@ -1789,27 +1859,51 @@ async fn pump(
                                         ),
                                     });
                                 }
-                                Some(state)
+                                state
                             }
                             _ => None,
                         };
 
-                        let (avatar_mime, avatar_base64) = unseal_avatar(
-                            store,
-                            device.as_deref(),
-                            found.avatar_mime,
-                            found.avatar_base64,
-                        );
-                        sink(Event::UsernameFound {
-                            query,
-                            device,
-                            pin,
-                            chat_code: found.chat_code,
-                            avatar_mime,
-                            avatar_base64,
-                            emblem: found.emblem,
-                            color: found.color,
-                        });
+                        if let Some(err) = trust_error {
+                            // Не отдаём неприкреплённый ключ UI: ошибка диска
+                            // не должна превращать TOFU в незаметный первый контакт.
+                            fail(sink, "storage", &err.to_string());
+                        } else {
+                            let (avatar_mime, avatar_base64) = unseal_avatar(
+                                store,
+                                device.as_deref(),
+                                found.avatar_mime,
+                                found.avatar_base64,
+                            );
+                            let (emblem, color) = unseal_decor(
+                                store,
+                                device.as_deref(),
+                                found.decor.as_deref(),
+                                found.emblem,
+                                found.color,
+                            );
+                            sink(Event::UsernameFound {
+                                query,
+                                device,
+                                pin,
+                                chat_code: found.chat_code,
+                                avatar_mime,
+                                avatar_base64,
+                                emblem,
+                                color,
+                            });
+                        }
+                        // На проводе нет request id, поэтому одновременно
+                        // держим ровно один поиск. Следующий уходит только
+                        // после разбора ответа на предыдущий.
+                        if let Some((next, hash, hash2)) = lookup_queue.pop_front() {
+                            looking_for = Some(next);
+                            send(
+                                &mut socket,
+                                proto::username_lookup_frame(&hash, &hash2)?,
+                            )
+                            .await?;
+                        }
                         continue;
                     }
                     if matches!(proto::split(&data), Ok((op::RECOVERY_OK, _))) {
@@ -1988,12 +2082,16 @@ async fn pump(
                             Ok(normalized) => {
                                 let hash = crate::directory::username_hash(&normalized);
                                 let hash2 = crate::directory::username_hash_v2(&normalized)?;
-                                looking_for = Some(normalized);
-                                send(
-                                    &mut socket,
-                                    proto::username_lookup_frame(&hash, &hash2)?,
-                                )
-                                .await?;
+                                if looking_for.is_some() {
+                                    lookup_queue.push_back((normalized, hash, hash2));
+                                } else {
+                                    looking_for = Some(normalized);
+                                    send(
+                                        &mut socket,
+                                        proto::username_lookup_frame(&hash, &hash2)?,
+                                    )
+                                    .await?;
+                                }
                             }
                             Err(err) => fail(sink, "bad_username", &err.to_string()),
                         }
@@ -2007,12 +2105,36 @@ async fn pump(
                     }
                     Command::ProfileDecor { emblem, color } => {
                         if greeting.decor {
-                            send(&mut socket, proto::profile_decor_frame(&emblem, &color)?).await?;
+                            // Значок и цвет прячутся тем же правилом, что и
+                            // аватар: они про то же — как человек выглядит
+                            // рядом со своим именем.
+                            let frame = if avatar_is_private(store) {
+                                let key = own_profile_key(store)?;
+                                let sealed = crate::profile::seal_decor(
+                                    &key,
+                                    emblem.as_deref().filter(|value| *value != "none"),
+                                    color.as_deref().filter(|value| *value != "none"),
+                                )?;
+                                proto::profile_decor_sealed_frame(&sealed)?
+                            } else {
+                                proto::profile_decor_frame(&emblem, &color)?
+                            };
+                            send(&mut socket, frame).await?;
                         } else {
                             fail(sink, "decor_unavailable", "сервер ещё не умеет значки и цвета");
                         }
                     }
                     Command::GroupCreate { title, kind, members } => {
+                        if let Err(err) = members.iter().try_for_each(|member| ensure_pin_allows(store, member)) {
+                            match err {
+                                CoreError::Anomaly(detail) => sink(Event::Anomaly {
+                                    kind: "send_blocked".into(),
+                                    detail,
+                                }),
+                                other => fail(sink, "storage", &other.to_string()),
+                            }
+                            continue;
+                        }
                         let kind = if kind == "channel" { "channel" } else { "chat" };
                         match mls.create_group() {
                             Ok(group_id) => {
@@ -2034,6 +2156,16 @@ async fn pump(
                         }
                     }
                     Command::GroupInvite { group, members } => {
+                        if let Err(err) = members.iter().try_for_each(|member| ensure_pin_allows(store, member)) {
+                            match err {
+                                CoreError::Anomaly(detail) => sink(Event::Anomaly {
+                                    kind: "send_blocked".into(),
+                                    detail,
+                                }),
+                                other => fail(sink, "storage", &other.to_string()),
+                            }
+                            continue;
+                        }
                         match hex::decode(&group) {
                             Ok(group_id) => {
                                 for member in members {
@@ -2210,6 +2342,14 @@ async fn pump(
                     Command::Send { recipient_device, body } => {
                         if !authenticated {
                             fail(sink, "not_authenticated", "invoice is not funded yet");
+                        } else if let Err(err) = ensure_pin_allows(store, &recipient_device) {
+                            match err {
+                                CoreError::Anomaly(detail) => sink(Event::Anomaly {
+                                    kind: "send_blocked".into(),
+                                    detail,
+                                }),
+                                other => fail(sink, "storage", &other.to_string()),
+                            }
                         } else if let Err(err) = on_send(
                             &mut socket, store, mls, sink, &mut pending, &recipient_device, body,
                             &mut live.outbox,
@@ -2294,14 +2434,21 @@ async fn on_frame(
                 profile.avatar_mime,
                 profile.avatar_base64,
             );
+            let (emblem, color) = unseal_decor(
+                store,
+                Some(profile.device.as_str()),
+                profile.decor.as_deref(),
+                profile.emblem,
+                profile.color,
+            );
             sink(Event::Profile {
                 device: profile.device,
                 chat_code: profile.chat_code,
                 handle: profile.handle,
                 avatar_mime,
                 avatar_base64,
-                emblem: profile.emblem,
-                color: profile.color,
+                emblem,
+                color,
                 updated_at: profile.updated_at,
             });
         }
@@ -2630,6 +2777,9 @@ async fn finish_invite(
     device: [u8; KEY_LEN],
     package: &[u8],
 ) -> Result<()> {
+    if !pin_allows_or_reports(store, sink, &device)? {
+        return Ok(());
+    }
     let (commit, welcome) = match mls.add_members(group_id, &[(package.to_vec(), device)]) {
         Ok(pair) => pair,
         Err(err) => {
@@ -2696,7 +2846,12 @@ async fn on_key_package(
     };
 
     let waiting = match claim {
-        Claim::Start(waiting) => waiting,
+        Claim::Start(waiting) => {
+            if !pin_allows_or_reports(store, sink, &waiting.device)? {
+                return Ok(());
+            }
+            waiting
+        }
         Claim::Invite { group_id, device } => {
             return finish_invite(socket, store, mls, sink, &group_id, device, &package).await;
         }
@@ -2760,6 +2915,9 @@ async fn deliver(
     waiting: PendingSend,
     outbox: &mut Outbox,
 ) -> Result<()> {
+    if !pin_allows_or_reports(store, sink, &waiting.device)? {
+        return Ok(());
+    }
     match store.conversation_with(&waiting.device)? {
         Some(group_id) => encrypt_and_send(socket, store, mls, sink, &group_id, waiting, outbox).await,
         None => {
@@ -2788,6 +2946,9 @@ async fn encrypt_and_send(
     waiting: PendingSend,
     outbox: &mut Outbox,
 ) -> Result<()> {
+    if !pin_allows_or_reports(store, sink, &waiting.device)? {
+        return Ok(());
+    }
     let device = &waiting.device;
     let body = waiting.body.as_str();
 
@@ -2961,5 +3122,34 @@ mod tests {
             assert_eq!(parse_cursor(&Some(bad.into())), None, "принят мусор: {bad}");
         }
         assert_eq!(parse_cursor(&None), None);
+    }
+
+    #[test]
+    fn an_unconfirmed_changed_key_is_blocked_after_reload() {
+        let store = TempStore::new("pin-gate");
+        let mut pins = crate::pins::Pins::default();
+        pins.check("mira", &"aa".repeat(32), 1);
+        pins.check("mira", &"bb".repeat(32), 2);
+        save_pins(&store.0, &pins).unwrap();
+
+        assert!(matches!(
+            ensure_pin_allows(&store.0, &"bb".repeat(32)),
+            Err(CoreError::Anomaly(_))
+        ));
+
+        let mut restored = load_pins_checked(&store.0).unwrap();
+        assert!(restored.accept("mira", &"bb".repeat(32), 3));
+        save_pins(&store.0, &restored).unwrap();
+        assert!(ensure_pin_allows(&store.0, &"bb".repeat(32)).is_ok());
+    }
+
+    #[test]
+    fn corrupt_pin_history_fails_closed() {
+        let store = TempStore::new("pin-corrupt");
+        store.0.save_setting(PINS_KEY, b"not-json").unwrap();
+        assert!(matches!(
+            ensure_pin_allows(&store.0, &"bb".repeat(32)),
+            Err(CoreError::Encoding(_))
+        ));
     }
 }

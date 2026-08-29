@@ -6,6 +6,7 @@
     <meta name="color-scheme" content="dark light" />
     <title>Obsidian</title>
     <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="assets/vendor/model-viewer/model-viewer.min.js"></script>
   </head>
   <body>
     <!--
@@ -134,63 +135,87 @@
       </div>
     </section>
 
-    <section id="screen-entry" class="screen centered-screen hidden">
-      <div class="entry-card">
-        <div class="large-logo"><img src="assets/obsidian_logo.svg" alt="" /></div>
-        <p class="eyebrow">Public Beta</p>
-        <h1>Создать приватный аккаунт</h1>
-        <p class="lead">Регистрация открыта для всех. Выберите имя — после первого входа приложение будет подключаться автоматически.</p>
-        <form id="form-entry" class="entry-form">
-          <label for="handle">Имя</label>
-          <input id="handle" type="text" placeholder="a-z, 0-9, _ — необязательно" autocomplete="username" />
-          <button class="primary-button" type="submit" id="entry-submit">Зарегистрироваться</button>
-        </form>
-        <button id="open-recover" class="link-button" type="button">Уже есть аккаунт — восстановить доступ</button>
-        <div class="security-note"><span class="ui-icon icon-shield"></span><span>Ключ базы хранится только в защищённом хранилище Windows.</span></div>
-
-        <section class="entry-explainer">
-          <h2>Как это защищено</h2>
-          <ul>
-            <li><b>Шифрование на устройстве.</b> Сообщения шифруются по MLS (RFC 9420) до отправки. Ключи не покидают компьютер: их нет ни у нас, ни у того, кто держит сервер.</li>
-            <li><b>Состав беседы задают устройства.</b> Подсунуть лишнего участника сервер не может — проверка идёт перед каждой отправкой, и при несходстве текст просто не уходит.</li>
-            <li><b>Хранилище запечатано.</b> Каждая запись зашифрована отдельно, ключ выведен из пароля устройства и на диск не попадает.</li>
-          </ul>
-          <h2>Почему серверу не нужно доверять</h2>
-          <p>Ему достаётся запечатанный конверт, адрес получателя и время — без этого письмо не доставить. Открыть конверт нечем: ключей у сервера нет, поэтому прочитать переписку он не может ни по просьбе, ни по ошибке. Проверяется это не обещанием: <a href="https://github.com/ifny75/obsidian" target="_blank" rel="noreferrer noopener">исходники открыты</a>, и сервер можно поднять свой.</p>
-        </section>
-        <p id="entry-error" class="form-error" role="alert"></p>
+    <section id="screen-language" class="screen onboarding-screen language-screen hidden">
+      <div class="language-brand" aria-label="Obsidian public beta">
+        <img src="assets/obsidian_logo.svg" alt="" />
+        <strong>Obsidian</strong>
+        <span>public beta</span>
+      </div>
+      <div class="language-choice" aria-label="Choose language">
+        <button type="button" data-language="en">Eng</button><i>/</i><button type="button" data-language="ru">Ru</button>
       </div>
     </section>
 
-    <section id="screen-recover" class="screen centered-screen hidden">
-      <div class="entry-card">
-        <div class="large-logo"><img src="assets/obsidian_logo.svg" alt="" /></div>
-        <p class="eyebrow">Восстановление</p>
-        <h1>Вернуть доступ к аккаунту</h1>
-        <p class="lead">Вернётся личность и возможность писать прежним собеседникам. Переписка не вернётся — старые сообщения защищены так, что их не может прочитать даже сервер.</p>
+    <section id="screen-intro" class="screen onboarding-screen onboarding-grid hidden">
+      <div class="onboarding-copy intro-copy">
+        <div class="onboarding-brand"><img src="assets/obsidian_logo.svg" alt="" /><b>Obsidian</b><span>public beta</span></div>
+        <h1 id="intro-title">Ваши разговоры.<br />Ваши правила.</h1>
+        <p id="intro-text">Приватный мессенджер с оконечным шифрованием, открытым кодом и маршрутизацией, которую выбираете вы.</p>
+        <div class="intro-links"><a href="https://github.com/ifny75/obsidian" target="_blank" rel="noreferrer noopener">Github</a><a href="https://getobsidian.xyz" target="_blank" rel="noreferrer noopener">Website</a><span>onion website</span></div>
+      </div>
+      <div class="phone-stage" aria-label="Obsidian on a phone">
+        <model-viewer src="assets/models/phone.glb" camera-orbit="18deg 77deg 4.2m" field-of-view="24deg" auto-rotate rotation-per-second="10deg" shadow-intensity="1" exposure="1" interaction-prompt="none" disable-zoom></model-viewer>
+      </div>
+      <button id="intro-next" class="onboarding-next" type="button"><span id="intro-next-label">Продолжить</span><b>→</b></button>
+    </section>
 
-        <div class="setting-segment" id="recover-segment">
-          <button data-mode="code" type="button" class="active">По коду</button>
-          <button data-mode="password" type="button">По логину и паролю</button>
+    <section id="screen-route" class="screen onboarding-screen onboarding-grid hidden">
+      <div class="onboarding-copy route-copy">
+        <div class="onboarding-brand"><img src="assets/obsidian_logo.svg" alt="" /><b>Obsidian</b><span>public beta</span></div>
+        <h1>Obsidian server</h1>
+        <p id="route-text">Выберите, как приложение будет соединяться с сетью. Настройку всегда можно изменить позже.</p>
+        <div class="route-list">
+          <button class="route-option active" type="button" data-transport="auto"><span class="route-diagram"><i>YOU</i><em></em><i>OBS</i></span><span><b id="route-relay-title">Relay</b><small id="route-relay-text">Быстрое прямое соединение</small></span><u>✓</u></button>
+          <button class="route-option" type="button" data-transport="multihop"><span class="route-diagram"><i>YOU</i><em></em><i>1</i><em></em><i>OBS</i></span><span><b>Multihop</b><small id="route-multi-text">Дополнительный промежуточный узел</small></span><u>✓</u></button>
+          <button class="route-option" type="button" data-transport="onion"><span class="route-diagram"><i>YOU</i><em></em><i>•••</i><em></em><i>OBS</i></span><span><b>Tor</b><small id="route-tor-text">Максимальная сетевая приватность</small></span><u>✓</u></button>
         </div>
+      </div>
+      <div class="onboarding-art" aria-hidden="true"><img src="assets/svg/spy.svg" alt="" /></div>
+      <button id="route-next" class="onboarding-next" type="button"><span id="route-next-label">Продолжить</span><b>→</b></button>
+    </section>
 
-        <form id="form-recover-code" class="entry-form">
-          <label for="recover-code">Код восстановления</label>
-          <input id="recover-code" type="text" placeholder="55 символов, 11 групп" autocomplete="off" spellcheck="false" required />
-          <button class="primary-button" type="submit">Восстановить</button>
+    <section id="screen-entry" class="screen onboarding-screen onboarding-grid hidden">
+      <div class="onboarding-copy account-copy">
+        <div class="onboarding-brand"><img src="assets/obsidian_logo.svg" alt="" /><b>Obsidian</b><span>public beta</span></div>
+        <h1 id="entry-title">Начните с Obsidian</h1>
+        <p id="entry-lead">Имя увидят собеседники. Пароль нужен для запасного входа с другого устройства.</p>
+        <form id="form-entry" class="onboarding-form" autocomplete="off">
+          <label for="handle" id="handle-label">Имя пользователя</label>
+          <input id="handle" type="text" placeholder="username" autocomplete="username" maxlength="20" />
+          <label for="entry-password" id="entry-password-label">Пароль восстановления</label>
+          <input id="entry-password" type="password" placeholder="Минимум 10 символов" autocomplete="new-password" minlength="10" />
+          <button class="onboarding-submit" type="submit" id="entry-submit">Зарегистрироваться</button>
         </form>
+        <div class="entry-actions"><button id="open-password-recover" type="button">Уже есть аккаунт</button><button id="open-recover" type="button">Восстановить по 24 словам</button></div>
+        <p id="entry-error" class="form-error" role="alert"></p>
+      </div>
+      <div class="onboarding-art" aria-hidden="true"><img src="assets/svg/spy.svg" alt="" /></div>
+    </section>
 
-        <form id="form-recover-password" class="entry-form hidden">
-          <label for="recover-login">Логин</label>
-          <input id="recover-login" type="text" placeholder="тот, что задавали при настройке" autocomplete="username" required />
-          <label for="recover-password">Пароль восстановления</label>
-          <input id="recover-password" type="password" autocomplete="current-password" required />
-          <button class="primary-button" type="submit">Восстановить</button>
+    <section id="screen-recover" class="screen onboarding-screen onboarding-grid hidden">
+      <div class="onboarding-copy recovery-copy">
+        <div class="onboarding-brand"><img src="assets/obsidian_logo.svg" alt="" /><b>Obsidian</b><span>public beta</span></div>
+        <h1 id="recover-title">Recovery 24</h1>
+        <p id="recover-lead">Введите 24 слова в том же порядке. За один шаг показываются восемь слов.</p>
+        <div class="setting-segment recovery-segment" id="recover-segment">
+          <button data-mode="code" type="button" class="active">24 слова</button>
+          <button data-mode="password" type="button">Логин и пароль</button>
+        </div>
+        <form id="form-recover-code" class="onboarding-form recovery-form">
+          <input id="recover-code" type="hidden" />
+          <div id="recovery-word-grid" class="recovery-word-grid"></div>
+          <div class="recovery-progress"><span id="recover-page-label">Слова 1–8 из 24</span><i><b id="recover-progress-bar"></b></i></div>
+          <div class="recovery-buttons"><button id="recover-prev" type="button">← <span>Назад</span></button><button id="recover-next" type="button"><span>Далее</span> →</button><button id="recover-submit" class="hidden" type="submit">Восстановить →</button></div>
         </form>
-
-        <button id="recover-back" class="link-button" type="button">Назад к регистрации</button>
+        <form id="form-recover-password" class="onboarding-form hidden">
+          <label for="recover-login">Логин</label><input id="recover-login" type="text" autocomplete="username" required />
+          <label for="recover-password">Пароль</label><input id="recover-password" type="password" autocomplete="current-password" required />
+          <button class="onboarding-submit primary-button" type="submit">Войти</button>
+        </form>
+        <button id="recover-back" class="onboarding-back" type="button">← <span>Назад к регистрации</span></button>
         <p id="recover-error" class="form-error" role="alert"></p>
       </div>
+      <div class="onboarding-art" aria-hidden="true"><img src="assets/svg/spy.svg" alt="" /></div>
     </section>
 
     <section id="screen-main" class="screen app-shell hidden">
@@ -216,9 +241,9 @@
         <div id="search-result" class="search-result hidden"></div>
 
         <div class="section-tabs" id="section-tabs" role="tablist">
-          <button type="button" data-list="chats" class="active" role="tab" aria-selected="true">Диалоги</button>
-          <button type="button" data-list="requests" role="tab" aria-selected="false">Запросы <i id="requests-count">0</i></button>
-          <button type="button" data-list="channels" role="tab" aria-selected="false">Публичные</button>
+          <button type="button" data-list="chats" class="active" role="tab" aria-selected="true"><span class="ui-icon icon-discussion"></span>Диалоги</button>
+          <button type="button" data-list="requests" role="tab" aria-selected="false"><span class="ui-icon icon-request"></span>Запросы <i id="requests-count">0</i></button>
+          <button type="button" data-list="channels" role="tab" aria-selected="false"><span class="ui-icon icon-public"></span>Публичные</button>
         </div>
         <ul id="conversations" class="conversation-list"></ul>
         <ul id="requests" class="conversation-list hidden"></ul>
@@ -250,6 +275,7 @@
             <button id="leave-group" class="ghost-button hidden" type="button">Забыть</button>
             <button id="open-search" class="ghost-button" type="button" title="Искать в переписке"><span class="ui-icon icon-search"></span></button>
             <button id="verify" class="ghost-button" type="button" disabled><span class="ui-icon icon-fingerprint"></span><span>Сверить</span></button>
+            <button class="ghost-button call-button" type="button" disabled title="Звонки появятся позже" aria-label="Позвонить"><span class="ui-icon icon-phone"></span></button>
           </div>
         </header>
 
@@ -318,18 +344,18 @@
 
         <form id="form-send" class="composer-wrap">
           <div class="session-note"><span class="ui-icon icon-lock"></span><span>E2E · сообщения шифруются на устройстве</span></div>
-          <div id="recording-bar" class="recording-bar hidden">
-            <span class="recording-dot" aria-hidden="true"></span>
-            <span>Запись <b id="recording-time">0:00</b></span>
-            <button id="recording-cancel" class="ghost-button" type="button">Отменить</button>
-            <button id="recording-stop" class="ghost-button" type="button">Отправить</button>
-          </div>
           <div class="composer">
             <button id="attach-image" class="attach-button" type="button" disabled title="Отправить фото" aria-label="Отправить фото">＋</button>
             <input id="message-image-file" type="file" accept="image/jpeg,image/png,image/webp" hidden />
-            <button id="emoji-open" class="attach-button" type="button" disabled title="Эмодзи" aria-label="Эмодзи">☺</button>
+            <button id="emoji-open" class="attach-button" type="button" disabled title="Эмодзи" aria-label="Эмодзи"><span class="ui-icon icon-smile"></span></button>
             <textarea id="composer" rows="1" placeholder="Сообщение" disabled></textarea>
-            <button id="record-voice" class="attach-button" type="button" disabled title="Голосовое сообщение" aria-label="Записать голосовое">●</button>
+            <div id="recording-bar" class="recording-bar hidden" aria-live="polite">
+              <span class="recording-dot" aria-hidden="true"></span>
+              <span>Запись <b id="recording-time">0:00</b></span>
+              <button id="recording-cancel" class="ghost-button" type="button">Отменить</button>
+              <button id="recording-stop" class="ghost-button" type="button">Отправить</button>
+            </div>
+            <button id="record-voice" class="attach-button" type="button" disabled title="Голосовое сообщение" aria-label="Записать голосовое"><span class="ui-icon icon-microphone"></span></button>
             <button id="send" class="send-button" type="submit" disabled title="Отправить" aria-label="Отправить"><span class="ui-icon icon-check"></span></button>
           </div>
         </form>
@@ -524,7 +550,7 @@
         <div class="settings-card">
           <div class="setting-block"><b>Тема</b><small>Общий фон приложения</small><div class="setting-segment" id="theme-segment"><button data-theme="dark" type="button">Тёмная</button><button data-theme="black" type="button">Black</button><button data-theme="light" type="button">Светлая</button></div></div>
           <div class="setting-block"><b>Акцентный цвет</b><small>Сообщения и активные элементы</small><div class="settings-colors">
-            <button data-color="#f4f4f4" data-text="#080808" type="button" aria-label="Белый"></button><button data-color="#a98cff" data-text="#100b19" type="button" aria-label="Фиолетовый"></button><button data-color="#70a8ff" data-text="#07101d" type="button" aria-label="Синий"></button><button data-color="#67d4a3" data-text="#07140e" type="button" aria-label="Зелёный"></button><button data-color="#ed8674" data-text="#1b0906" type="button" aria-label="Коралловый"></button><input id="custom-accent" type="color" value="#f4f4f4" aria-label="Свой цвет" />
+            <button data-color="#7b2cff" data-text="#ffffff" type="button" aria-label="Фиолетовый"></button><button data-color="#f4f4f4" data-text="#080808" type="button" aria-label="Белый"></button><button data-color="#70a8ff" data-text="#07101d" type="button" aria-label="Синий"></button><button data-color="#67d4a3" data-text="#07140e" type="button" aria-label="Зелёный"></button><button data-color="#ed8674" data-text="#1b0906" type="button" aria-label="Коралловый"></button><input id="custom-accent" type="color" value="#7b2cff" aria-label="Свой цвет" />
           </div></div>
         </div>
 
