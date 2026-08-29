@@ -215,6 +215,12 @@
   const page = await (await fetch("../src/index.html")).text();
   const parsed = new DOMParser().parseFromString(page, "text/html");
   for (const node of parsed.head.querySelectorAll("link,style")) document.head.append(node);
+  for (const source of parsed.head.querySelectorAll("script[type='module'][src]")) {
+    const module = document.createElement("script");
+    module.type = "module";
+    module.src = source.getAttribute("src");
+    document.head.append(module);
+  }
   document.body.innerHTML = parsed.body.innerHTML;
   document.body.className = parsed.body.className;
   // Обычным тегом, а не import(): в настоящем приложении main.js — классический
@@ -230,6 +236,11 @@
     document.body.append(script);
   });
   window.__ready = true;
+
+  if (new URLSearchParams(location.search).has("onboarding")) {
+    localStorage.removeItem("obsidian.onboarding.complete");
+    emit({ type: "status", has_identity: false });
+  }
 
   // Визуальный сценарий для проверки главного экрана без живого сервера.
   // В обычном стенде ничего не меняет; включается только через ?demo=1.
@@ -271,6 +282,10 @@
       { peer_device: "EXAMPLE-USER-DEMO", conversation: "demo-example", last_body: "Спасибо за ответ", last_at: now - 900_000 },
     ] });
     emit({ type: "authenticated", admin: false, queued: 0 });
+    // Реальное ядро присылает registered после каждого AUTH_OK, а не только
+    // после создания аккаунта. Стенд повторяет это, чтобы не вернуть баг с
+    // показом recovery-фразы при каждом запуске.
+    emit({ type: "registered", device: "MY-PROFILE-DEMO", identity: "DEMO-IDENTITY" });
     if (!new URLSearchParams(location.search).has("empty")) {
       setTimeout(() => document.querySelector("#conversations .conversation-button")?.click(), 50);
     }

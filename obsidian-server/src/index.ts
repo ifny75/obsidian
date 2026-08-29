@@ -28,12 +28,14 @@ const recoveryLimiter = new RateLimiter(config.maxRecoveryPerHour, 3_600_000, co
 const searchLimiter = new RateLimiter(config.maxSearchPerMinute, 60_000, config.maxRateLimitKeys);
 const sendLimiter = new RateLimiter(config.maxSendPerMinute, 60_000, config.maxRateLimitKeys);
 const postLimiter = new RateLimiter(config.maxPostsPerMinute, 60_000, config.maxRateLimitKeys);
+const claimLimiter = new RateLimiter(config.maxClaimsPerHour, 3_600_000, config.maxRateLimitKeys);
 const connections = new ConnectionCounter();
 const now = () => Date.now();
 
 const deps: Deps = {
   store, nonces, registry,
-  authLimiter, recoveryLimiter, searchLimiter, sendLimiter, postLimiter, connections, now,
+  authLimiter, recoveryLimiter, searchLimiter, sendLimiter, postLimiter, claimLimiter,
+  connections, now,
 };
 
 const app = uWS.App();

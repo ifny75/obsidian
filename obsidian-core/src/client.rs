@@ -168,9 +168,15 @@ fn load_onion_hosts(store: &Store) -> Vec<String> {
     routes
 }
 const DEFAULT_TTL_SEC: u32 = 14 * 24 * 3600;
-/// Сколько KeyPackages выкладывать при подключении. Каждый расходуется одним
-/// собеседником, поэтому запас нужен, но небольшой.
-const KEY_PACKAGES_PER_CONNECT: usize = 5;
+/// Сколько KeyPackages держать на сервере.
+///
+/// Каждый расходуется одним новым собеседником и исчезает: переиспользовать
+/// пакет нельзя, это ломает forward secrecy. Отсюда и способ навредить —
+/// вычерпать чужой запас, чтобы с человеком нельзя было начать переписку.
+/// Пяти для этого хватало любому, поэтому запас поднят: доливается он всё
+/// равно только при подключении, а между подключениями брать больше уже не
+/// дадут ограничители на стороне сервера.
+const KEY_PACKAGES_PER_CONNECT: usize = 20;
 
 /// Как представляться серверу при подключении.
 enum Entry {
@@ -230,6 +236,7 @@ fn is_transport(error: &CoreError) -> bool {
 
 pub struct Engine {
     commands: mpsc::UnboundedSender<Command>,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Engine {
@@ -244,7 +251,7 @@ impl Engine {
         let (tx, rx) = mpsc::unbounded_channel();
         let store = Store::open(&db_path, &password)?;
 
-        std::thread::Builder::new()
+        let thread = std::thread::Builder::new()
             .name("obsidian-core".into())
             .spawn(move || {
                 let runtime = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
@@ -261,13 +268,24 @@ impl Engine {
             })
             .map_err(|_| CoreError::Transport("cannot spawn core thread".into()))?;
 
-        Ok(Self { commands: tx })
+        Ok(Self { commands: tx, thread: Some(thread) })
     }
 
     pub fn submit(&self, command: Command) -> Result<()> {
         self.commands
             .send(command)
             .map_err(|_| CoreError::Transport("core thread is gone".into()))
+    }
+
+    /// Останавливает рантайм и ждёт освобождения SQLite-файлов.
+    ///
+    /// Обычный Disconnect разрывает только сеть: база остаётся открытой, что
+    /// правильно для работы в трее, но не подходит для выхода из аккаунта.
+    pub fn shutdown(mut self) {
+        drop(self.commands);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
     }
 }
 
@@ -1006,6 +1024,21 @@ const ACCESS_KEY: &str = "access";
 const USERNAME_KEY: &str = "username";
 /// Закреплённые ключи: под каким ключом мы видели каждое имя.
 const PINS_KEY: &str = "pins";
+/// Когда каждая беседа в последний раз меняла ключ. См. `rekey_stale`.
+const REKEYED_KEY: &str = "rekeyed";
+
+/// Как часто менять свой ключ в беседе.
+///
+/// Смысл не в частоте, а в том, чтобы это вообще происходило: пока эпоха не
+/// сменилась, украденные ключи открывают и то, что будет написано дальше. В
+/// диалоге вдвоём состав не меняется никогда, поэтому без этого таймера
+/// post-compromise security — свойство, ради которого и выбран MLS, — не
+/// срабатывает ни разу.
+///
+/// Сутки — размен между стоимостью (коммит это лишний конверт каждому
+/// участнику) и тем, сколько времени украденный ключ остаётся полезным.
+const REKEY_AFTER_SEC: i64 = 24 * 3600;
+
 /// Свой ключ профиля: им запечатан наш аватар.
 const PROFILE_KEY: &str = "profile_key";
 /// Ключи профилей собеседников: device в hex → ключ в hex.
@@ -1049,6 +1082,63 @@ fn username_event(store: &Store) -> Event {
 /// безопасная сторона ошибки, а не разрешающая.
 /// Закрепления. Испорченная запись означает «ничего не помним»: это заставит
 /// закрепить ключи заново, но не пропустит подмену молча под видом знакомого.
+/// Меняет наш ключ в беседах, где он не менялся дольше `REKEY_AFTER_SEC`.
+///
+/// Коммит уходит остальным участникам обычным конвертом. Пока он не дошёл,
+/// собеседник остаётся в прежней эпохе и продолжает читать — MLS держит ключи
+/// предыдущей эпохи ровно для таких опозданий.
+async fn rekey_stale(
+    socket: &mut Socket,
+    store: &Store,
+    mls: &mut Mls,
+    sink: &EventSink,
+) -> Result<()> {
+    let now = now_millis() / 1000;
+    let mut done: std::collections::BTreeMap<String, i64> = store
+        .load_setting(REKEYED_KEY)
+        .ok()
+        .flatten()
+        .and_then(|raw| serde_json::from_slice(&raw).ok())
+        .unwrap_or_default();
+
+    let mut changed = false;
+    for (_peer, group_id) in store.list_conversations()? {
+        let key = hex::encode(&group_id);
+        let last = done.get(&key).copied();
+
+        // Беседу, которую видим впервые, не перешифровываем сразу: её ключи
+        // и так только что созданы. Просто запоминаем, когда встретили.
+        let Some(last) = last else {
+            done.insert(key, now);
+            changed = true;
+            continue;
+        };
+        if now - last < REKEY_AFTER_SEC {
+            continue;
+        }
+
+        match mls.rekey(&group_id) {
+            Ok(commit) => {
+                persist(store, mls, sink);
+                fan_out(socket, mls, &group_id, &commit, None).await?;
+                done.insert(key, now);
+                changed = true;
+            }
+            Err(err) => {
+                // Одна беседа не должна мешать остальным: причин может быть
+                // много — от испорченного состояния до чужого коммита,
+                // пришедшего раньше нашего.
+                fail(sink, "rekey", &err.to_string());
+            }
+        }
+    }
+
+    if changed {
+        store.save_setting(REKEYED_KEY, &serde_json::to_vec(&done)?)?;
+    }
+    Ok(())
+}
+
 /// Перезанимает своё имя, добавляя к нему дорогой хеш.
 ///
 /// Ничего не делает, если имени нет или это уже сделано.
@@ -1735,6 +1825,19 @@ async fn pump(
         // рвать связь. Обрыв разберётся сам на следующей отправке.
         if let Err(err) = grant_missing(&mut socket, store, mls, sink, live).await {
             fail(sink, "pass_grant", &err.to_string());
+        }
+
+        // Меняем свой ключ в беседах, где он давно не менялся.
+        //
+        // Здесь же, при подключении, а не по таймеру в фоне: коммит всё равно
+        // нужно отправить, а отправлять его некуда, пока нет соединения.
+        if let Err(err) = rekey_stale(&mut socket, store, mls, sink).await {
+            if is_transport(&err) {
+                return Ok(Outcome::Retry);
+            }
+            // Не повод рвать связь: переписка работает и на прежней эпохе,
+            // а попытка повторится на следующем заходе.
+            fail(sink, "rekey", &err.to_string());
         }
 
         // Дозанимаем своё имя дорогим хешем, если этого ещё не делали.

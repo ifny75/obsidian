@@ -87,6 +87,7 @@ function makeDeps(store: Store, recoveryLimit = 1000): Deps {
     searchLimiter: new RateLimiter(recoveryLimit, 3_600_000),
     sendLimiter: new RateLimiter(1000, 60_000),
     postLimiter: new RateLimiter(1000, 60_000),
+    claimLimiter: new RateLimiter(1000, 3600_000),
     connections: new ConnectionCounter(),
     now: () => Date.now(),
   };

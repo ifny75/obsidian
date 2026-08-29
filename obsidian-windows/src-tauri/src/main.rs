@@ -47,11 +47,23 @@ struct Core {
 fn data_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
     let db = match std::env::var("OBSIDIAN_DB") {
         Ok(path) if !path.is_empty() => PathBuf::from(path),
-        _ => app
-            .path()
-            .app_data_dir()
-            .map_err(|err| format!("нет каталога данных: {err}"))?
-            .join("obsidian.db"),
+        _ => {
+            let root = app
+                .path()
+                .app_data_dir()
+                .map_err(|err| format!("нет каталога данных: {err}"))?;
+            std::fs::create_dir_all(&root)
+                .map_err(|err| format!("не создать каталог данных: {err}"))?;
+            let selected = std::fs::read_to_string(root.join("active-profile"))
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|name| {
+                    name.starts_with("obsidian-session-")
+                        && name.ends_with(".db")
+                        && name.chars().all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+                });
+            root.join(selected.as_deref().unwrap_or("obsidian.db"))
+        }
     };
     if let Some(parent) = db.parent() {
         std::fs::create_dir_all(parent)
@@ -61,7 +73,92 @@ fn data_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
     Ok((db, key))
 }
 
+/*
+   Замок приложения на Windows.
+
+   DPAPI привязывает файл ключа к учётной записи Windows — этого хватает
+   против «унесли диск», но не против чего-либо, работающего под этой же
+   учёткой: расшифровать файл сможет любая программа пользователя.
+
+   Второй аргумент DPAPI — «энтропия», произвольные байты, без которых файл не
+   открыть. Мы кладём туда ключ, выведенный Argon2id из пароля человека, и
+   пароль этот нигде не хранится. Дальше действует то же правило, что и на
+   Android: без него база не открывается, и не открывается ни для кого.
+
+   Формат файла: `OBSL1` + 16 байт соли + защищённый блоб. Файла без метки
+   касается прежний путь — заголовка там нет, замка тоже.
+*/
+const LOCK_MAGIC: &[u8] = b"OBSL1";
+const LOCK_SALT_LEN: usize = 16;
+
+/// Энтропия DPAPI из пароля. Argon2id, те же параметры, что и у базы.
+fn lock_entropy(password: &str, salt: &[u8]) -> Result<Vec<u8>, String> {
+    obsidian_core::crypto::MasterKey::derive(password.as_bytes(), salt)
+        .map(|key| key.into_bytes().to_vec())
+        .map_err(|err| format!("не вывести ключ из пароля: {err}"))
+}
+
+/// Стоит ли на файле ключа замок.
+fn key_is_locked(path: &PathBuf) -> bool {
+    std::fs::read(path)
+        .map(|raw| raw.starts_with(LOCK_MAGIC))
+        .unwrap_or(false)
+}
+
+/// Достаёт ключ базы из файла. `password` нужен, только если стоит замок.
+fn read_key_file(path: &PathBuf, password: Option<&str>) -> Result<Vec<u8>, String> {
+    let raw = std::fs::read(path).map_err(|err| format!("не прочитать ключ: {err}"))?;
+    if !raw.starts_with(LOCK_MAGIC) {
+        return unprotect_for_current_user(&raw);
+    }
+
+    let head = LOCK_MAGIC.len() + LOCK_SALT_LEN;
+    if raw.len() <= head {
+        return Err("файл ключа повреждён".into());
+    }
+    let password = password.ok_or("нужен пароль запуска")?;
+    let entropy = lock_entropy(password, &raw[LOCK_MAGIC.len()..head])?;
+    // Неверный пароль здесь неотличим от порчи файла — так и должно быть:
+    // DPAPI не рассказывает, что именно не сошлось.
+    unprotect_with_entropy(&raw[head..], Some(&entropy))
+        .map_err(|_| "неверный пароль запуска".to_string())
+}
+
+/// Кладёт ключ базы в файл. `password` — включить замок, `None` — снять.
+fn write_key_file(path: &PathBuf, secret: &[u8], password: Option<&str>) -> Result<(), String> {
+    let body = match password {
+        None => protect_for_current_user(secret)?,
+        Some(password) => {
+            let mut salt = vec![0u8; LOCK_SALT_LEN];
+            OsRng.fill_bytes(&mut salt);
+            let entropy = lock_entropy(password, &salt)?;
+            let protected = protect_with_entropy(secret, Some(&entropy))?;
+
+            let mut out = Vec::with_capacity(LOCK_MAGIC.len() + salt.len() + protected.len());
+            out.extend_from_slice(LOCK_MAGIC);
+            out.extend_from_slice(&salt);
+            out.extend_from_slice(&protected);
+            out
+        }
+    };
+
+    // Через временный файл: обрыв посреди записи не должен оставить человека
+    // с базой, которую нечем открыть.
+    let temporary = path.with_extension("key.dpapi.tmp");
+    std::fs::write(&temporary, &body).map_err(|err| format!("не записать ключ: {err}"))?;
+    std::fs::rename(&temporary, path).map_err(|err| format!("не заменить ключ: {err}"))
+}
+
 fn protect_for_current_user(secret: &[u8]) -> Result<Vec<u8>, String> {
+    protect_with_entropy(secret, None)
+}
+
+fn protect_with_entropy(secret: &[u8], entropy: Option<&[u8]>) -> Result<Vec<u8>, String> {
+    let mut entropy_blob = entropy.map(|bytes| CRYPT_INTEGER_BLOB {
+        cbData: bytes.len() as u32,
+        pbData: bytes.as_ptr().cast_mut(),
+    });
+    let entropy_blob = entropy_blob.take();
     let input_len = u32::try_from(secret.len()).map_err(|_| "ключ слишком длинный")?;
     let input = CRYPT_INTEGER_BLOB {
         cbData: input_len,
@@ -73,7 +170,7 @@ fn protect_for_current_user(secret: &[u8]) -> Result<Vec<u8>, String> {
         CryptProtectData(
             &input,
             windows::core::w!("Obsidian database key"),
-            None,
+            entropy_blob.as_ref().map(|blob| blob as *const _),
             None,
             None,
             CRYPTPROTECT_UI_FORBIDDEN,
@@ -88,6 +185,15 @@ fn protect_for_current_user(secret: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 fn unprotect_for_current_user(protected: &[u8]) -> Result<Vec<u8>, String> {
+    unprotect_with_entropy(protected, None)
+}
+
+fn unprotect_with_entropy(protected: &[u8], entropy: Option<&[u8]>) -> Result<Vec<u8>, String> {
+    let mut entropy_blob = entropy.map(|bytes| CRYPT_INTEGER_BLOB {
+        cbData: bytes.len() as u32,
+        pbData: bytes.as_ptr().cast_mut(),
+    });
+    let entropy_blob = entropy_blob.take();
     let input_len = u32::try_from(protected.len()).map_err(|_| "файл ключа слишком большой")?;
     let input = CRYPT_INTEGER_BLOB {
         cbData: input_len,
@@ -99,7 +205,7 @@ fn unprotect_for_current_user(protected: &[u8]) -> Result<Vec<u8>, String> {
         CryptUnprotectData(
             &input,
             None,
-            None,
+            entropy_blob.as_ref().map(|blob| blob as *const _),
             None,
             None,
             CRYPTPROTECT_UI_FORBIDDEN,
@@ -113,6 +219,8 @@ fn unprotect_for_current_user(protected: &[u8]) -> Result<Vec<u8>, String> {
     }
 }
 
+/// Кладёт ключ без замка. Осталось для путей, где замка быть не может:
+/// переезд старой базы, сброс неизвестной базы и выход из аккаунта.
 fn save_protected_key(path: &PathBuf, secret: &[u8]) -> Result<(), String> {
     let protected = protect_for_current_user(secret)?;
     let temporary = path.with_extension("key.dpapi.tmp");
@@ -191,33 +299,75 @@ fn start_engine(app: &AppHandle, core: &Arc<Core>, password: Vec<u8>) -> Result<
 
 /// Автоматически открывает базу. `false` означает старую базу без DPAPI-ключа:
 /// интерфейс один раз попросит прежний пароль и сохранит его защищённо.
+/// Что делать окну при запуске.
+///
+/// Три состояния вместо прежнего «да/нет»: база открыта, база под замком и
+/// ждёт пароль, база старая и просит однократного переезда.
 #[tauri::command]
-fn auto_unlock(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<bool, String> {
+fn auto_unlock(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<&'static str, String> {
     if core
         .engine
         .lock()
         .map_err(|_| "core lock poisoned")?
         .is_some()
     {
-        return Ok(true);
+        return Ok("opened");
     }
     let (db, key_path) = data_paths(&app)?;
     if key_path.exists() {
-        let protected =
-            std::fs::read(&key_path).map_err(|err| format!("не прочитать ключ: {err}"))?;
-        let secret = unprotect_for_current_user(&protected)?;
+        if key_is_locked(&key_path) {
+            return Ok("locked");
+        }
+        let secret = read_key_file(&key_path, None)?;
         start_engine(&app, &core, secret)?;
-        return Ok(true);
+        return Ok("opened");
     }
     if db.exists() {
-        return Ok(false);
+        return Ok("legacy");
     }
 
     let mut secret = vec![0u8; 32];
     OsRng.fill_bytes(&mut secret);
-    save_protected_key(&key_path, &secret)?;
+    write_key_file(&key_path, &secret, None)?;
     start_engine(&app, &core, secret)?;
-    Ok(true)
+    Ok("opened")
+}
+
+/// Открывает базу паролем запуска.
+#[tauri::command]
+fn unlock_with_password(
+    app: AppHandle,
+    core: State<'_, Arc<Core>>,
+    password: String,
+) -> Result<(), String> {
+    let (_, key_path) = data_paths(&app)?;
+    let secret = read_key_file(&key_path, Some(&password))?;
+    start_engine(&app, &core, secret)
+}
+
+/// Стоит ли пароль на запуске.
+#[tauri::command]
+fn app_lock_enabled(app: AppHandle) -> Result<bool, String> {
+    let (_, key_path) = data_paths(&app)?;
+    Ok(key_is_locked(&key_path))
+}
+
+/// Включает, меняет или снимает пароль запуска.
+///
+/// `current` нужен, когда замок уже стоит: снять его, не зная пароля, нельзя —
+/// иначе замок был бы украшением. `next` пустой означает «снять».
+#[tauri::command]
+fn set_app_lock(app: AppHandle, current: String, next: String) -> Result<bool, String> {
+    let (_, key_path) = data_paths(&app)?;
+    let locked = key_is_locked(&key_path);
+    if locked && current.is_empty() {
+        return Err("нужен текущий пароль запуска".into());
+    }
+
+    let secret = read_key_file(&key_path, if locked { Some(&current) } else { None })?;
+    let next = if next.is_empty() { None } else { Some(next.as_str()) };
+    write_key_file(&key_path, &secret, next)?;
+    Ok(next.is_some())
 }
 
 /// Однократная миграция базы, созданной старой версией приложения.
@@ -257,6 +407,47 @@ fn reset_legacy_database(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<S
     save_protected_key(&key_path, &secret)?;
     start_engine(&app, &core, secret)?;
     Ok(backup.to_string_lossy().into_owned())
+}
+
+/// Выходит только на этом компьютере. Старую базу не перемещаем: её может
+/// держать другая копия приложения в трее. Вместо этого атомарно выбираем новый
+/// пустой локальный профиль, а прежние файлы остаются нетронутыми.
+#[tauri::command]
+fn logout_local_account(app: AppHandle, core: State<'_, Arc<Core>>) -> Result<String, String> {
+    if std::env::var("OBSIDIAN_DB").is_ok_and(|path| !path.is_empty()) {
+        return Err("выход недоступен при запуске с OBSIDIAN_DB".to_string());
+    }
+
+    let engine = core
+        .engine
+        .lock()
+        .map_err(|_| "core lock poisoned")?
+        .take();
+    if let Some(engine) = engine {
+        engine.shutdown();
+    }
+
+    let (previous_db, _) = data_paths(&app)?;
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("нет каталога данных: {err}"))?;
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "системное время некорректно")?
+        .as_millis();
+    let filename = format!("obsidian-session-{timestamp}-{}.db", std::process::id());
+    let db = root.join(&filename);
+    let key_path = db.with_extension("key.dpapi");
+
+    let mut secret = vec![0u8; 32];
+    OsRng.fill_bytes(&mut secret);
+    save_protected_key(&key_path, &secret)?;
+    verify_database_key(&db, &secret)?;
+    std::fs::write(root.join("active-profile"), &filename)
+        .map_err(|err| format!("не переключить локальный профиль: {err}"))?;
+    start_engine(&app, &core, secret)?;
+    Ok(previous_db.to_string_lossy().into_owned())
 }
 
 /// Единственная точка входа для интерфейса: команда в JSON — как в FFI.
@@ -697,6 +888,7 @@ fn main() {
             auto_unlock,
             unlock_existing,
             reset_legacy_database,
+            logout_local_account,
             submit,
             is_unlocked,
             window_minimize,
@@ -711,6 +903,9 @@ fn main() {
             set_autostart,
             set_unread,
             app_version,
+            unlock_with_password,
+            app_lock_enabled,
+            set_app_lock,
             save_account_export,
             open_update
         ])

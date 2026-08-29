@@ -66,6 +66,7 @@ function makeDeps(store: Store): Deps {
     searchLimiter: new RateLimiter(1000, 3_600_000),
     sendLimiter: new RateLimiter(1000, 60_000),
     postLimiter: new RateLimiter(1000, 60_000),
+    claimLimiter: new RateLimiter(1000, 3600_000),
     connections: new ConnectionCounter(),
     now: () => Date.now(),
   };
@@ -284,5 +285,61 @@ test("запрос к устройству без пакетов отвечае�
 
   assert.equal(readKeyPackage(a.sock.take(OP.KEYPKG)).found, false);
   assert.equal(a.sock.closed, null);
+  store.close();
+});
+
+/*
+  Вычерпывание чужого запаса.
+
+  Пакет одноразовый: взял — он исчез. Значит, чужой запас можно опустошить и
+  держать пустым, чтобы с человеком нельзя было начать новую переписку. Ведро
+  считается по обеим сторонам, и проверять надо обе.
+*/
+
+test("один аккаунт не вычерпывает чужие запасы подряд", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  // Ведро берущего: три выдачи в час.
+  deps.claimLimiter = new RateLimiter(3, 3_600_000);
+
+  const bob = makeIdentity();
+  const b = register(deps, store, bob, "bob");
+  for (let i = 0; i < 6; i += 1) {
+    handleMessage(deps, b.sock, b.conn, publishFrame(ascii(`bob-${i}`)));
+  }
+
+  const a = register(deps, store, makeIdentity(), "alice");
+  let given = 0;
+  for (let i = 0; i < 6; i += 1) {
+    a.sock.sent.length = 0;
+    handleMessage(deps, a.sock, a.conn, claimFrame(random(ID_LEN), bob.devPub));
+    if (readKeyPackage(a.sock.take(OP.KEYPKG)).found) given += 1;
+  }
+  assert.equal(given, 3, "сверх ведра выдавать нельзя");
+
+  // Запас при этом не потрачен: отказ не должен обходиться жертве в пакеты.
+  assert.notEqual(store.claimKeyPackage(bob.devPub), undefined, "у жертвы обязаны остаться пакеты");
+  store.close();
+});
+
+test("отказ по ведру неотличим от пустого запаса", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  deps.claimLimiter = new RateLimiter(1, 3_600_000);
+
+  const bob = makeIdentity();
+  const b = register(deps, store, bob, "bob");
+  handleMessage(deps, b.sock, b.conn, publishFrame(ascii("bob-1"), ascii("bob-2")));
+
+  const a = register(deps, store, makeIdentity(), "alice");
+  handleMessage(deps, a.sock, a.conn, claimFrame(random(ID_LEN), bob.devPub));
+  a.sock.sent.length = 0;
+
+  // Второй запрос упирается в ведро. Ответ обязан выглядеть как «пакетов нет»:
+  // иначе берущий узнаёт, упёрся он в предел или человек правда исчерпался.
+  handleMessage(deps, a.sock, a.conn, claimFrame(random(ID_LEN), bob.devPub));
+  const refused = readKeyPackage(a.sock.take(OP.KEYPKG));
+  assert.equal(refused.found, false);
+  assert.equal(refused.keyPackage.length, 0, "в отказе не должно быть ничего лишнего");
   store.close();
 });

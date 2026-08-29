@@ -60,10 +60,12 @@ const state = {
   readIds: new Set(),
   sentReadIds: new Set(),
   recoveryCode: "",
+  recoveryWords: "",
   username: null,
   recorder: null,
   lastDisconnectReason: "",
   pendingRecoverySetup: null,
+  registrationPending: false,
 };
 /** Локальная адресная книга участвует и в выборе отображаемого имени. */
 const directory = new Map();
@@ -145,8 +147,8 @@ function sendRead(peer, ids) {
 
 function showScreen(screen) {
   for (const id of [
-    "screen-boot", "screen-migrate", "screen-language", "screen-intro", "screen-route", "screen-entry",
-    "screen-recover", "screen-backup", "screen-main",
+    "screen-boot", "screen-locked", "screen-migrate", "screen-language", "screen-intro",
+    "screen-route", "screen-entry", "screen-recover", "screen-backup", "screen-main",
   ]) {
     $(id).classList.toggle("hidden", id !== screen);
   }
@@ -290,19 +292,99 @@ $("reset-legacy").addEventListener("click", async () => {
   }
 });
 
+const ONBOARDING_LANGUAGE = "obsidian.onboarding.language";
+const ONBOARDING_COMPLETE = "obsidian.onboarding.complete";
+let onboardingLanguage = localStorage.getItem(ONBOARDING_LANGUAGE)
+  || (navigator.language.toLowerCase().startsWith("ru") ? "ru" : "en");
+let chosenTransport = "auto";
+
+const onboardingCopy = {
+  ru: {
+    introTitle: "obsidian",
+    introText: "Obsidian — приватный мессенджер с надёжным сквозным шифрованием и минимальным доверием к серверам. Сообщения шифруются на вашем устройстве, главный сервер скрыт за relay-инфраструктурой, а маршрут можно выбрать между Relay, Multihop и Tor. Приватность заложена в архитектуру. Открытый код. Номер телефона не нужен.",
+    next: "Продолжить", routeText: "Выберите, как приложение будет соединяться с сетью. Настройку всегда можно изменить позже.",
+    relay: "Быстрое прямое соединение", multi: "Дополнительный промежуточный узел", tor: "Максимальная сетевая приватность",
+    entryTitle: "Начните с Obsidian", entryLead: "Имя увидят собеседники. Пароль нужен для запасного входа с другого устройства.",
+  },
+  en: {
+    introTitle: "obsidian",
+    introText: "Obsidian is a private messenger built around strong end-to-end encryption and minimal trust in servers. Your messages are encrypted on your device, the main server is hidden behind relay infrastructure, and you can choose between Relay, Multihop, and Tor routing depending on your privacy needs. Private by design. Open source. No phone number required.",
+    next: "Continue", routeText: "Choose how the app connects to the network. You can change this later.",
+    relay: "Fast direct connection", multi: "An additional intermediate relay", tor: "Maximum network privacy",
+    entryTitle: "Get started with Obsidian", entryLead: "Your contacts see the username. The password enables recovery on another device.",
+  },
+};
+
+function applyOnboardingLanguage() {
+  const copy = onboardingCopy[onboardingLanguage];
+  document.documentElement.lang = onboardingLanguage;
+  $("intro-title").innerHTML = copy.introTitle;
+  $("intro-text").textContent = copy.introText;
+  $("intro-next-label").textContent = copy.next;
+  $("route-next-label").textContent = copy.next;
+  $("route-text").textContent = copy.routeText;
+  $("route-relay-text").textContent = copy.relay;
+  $("route-multi-text").textContent = copy.multi;
+  $("route-tor-text").textContent = copy.tor;
+  $("entry-title").textContent = copy.entryTitle;
+  $("entry-lead").textContent = copy.entryLead;
+  for (const button of document.querySelectorAll("[data-language]")) {
+    button.classList.toggle("active", button.dataset.language === onboardingLanguage);
+  }
+}
+
+for (const button of document.querySelectorAll("[data-language]")) {
+  button.addEventListener("click", () => {
+    onboardingLanguage = button.dataset.language;
+    localStorage.setItem(ONBOARDING_LANGUAGE, onboardingLanguage);
+    applyOnboardingLanguage();
+    showScreen("screen-intro");
+  });
+}
+$("intro-next").addEventListener("click", () => showScreen("screen-route"));
+$("intro-back").addEventListener("click", () => showScreen("screen-language"));
+$("route-back").addEventListener("click", () => showScreen("screen-intro"));
+$("entry-back").addEventListener("click", () => showScreen("screen-route"));
+for (const option of document.querySelectorAll(".route-option")) {
+  option.addEventListener("click", () => {
+    chosenTransport = option.dataset.transport;
+    for (const other of document.querySelectorAll(".route-option")) other.classList.toggle("active", other === option);
+  });
+}
+$("route-next").addEventListener("click", () => {
+  preferences.transport = chosenTransport;
+  savePreferences();
+  localStorage.setItem(ONBOARDING_COMPLETE, "1");
+  showScreen("screen-entry");
+});
+applyOnboardingLanguage();
+
 $("form-entry").addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = $("entry-submit");
+  const handle = $("handle").value.trim();
+  const password = $("entry-password").value;
   $("entry-error").textContent = "";
+  if (handle && !/^[a-z0-9_]{3,20}$/i.test(handle)) {
+    $("entry-error").textContent = "Имя: 3–20 символов, латиница, цифры и _";
+    return;
+  }
+  if (password && password.length < 10) {
+    $("entry-error").textContent = "Пароль должен содержать минимум 10 символов";
+    return;
+  }
+  if (password && !handle) {
+    $("entry-error").textContent = "Для запасного входа укажите имя пользователя";
+    return;
+  }
+  state.pendingRecoverySetup = password ? { login: handle, password } : null;
+  state.registrationPending = true;
   button.disabled = true;
   button.textContent = "Подключаем…";
-  const accepted = await submit({
-    type: "register",
-    url: serverUrl(),
-    handle: $("handle").value.trim() || null,
-    invite: null,
-  });
+  const accepted = await submit({ type: "register", url: serverUrl(), handle: handle || null, invite: null });
   if (!accepted) {
+    state.pendingRecoverySetup = null;
+    state.registrationPending = false;
     button.disabled = false;
     button.textContent = "Зарегистрироваться";
   }
@@ -310,10 +392,50 @@ $("form-entry").addEventListener("submit", async (event) => {
 
 // --- восстановление доступа ---------------------------------------------------
 
-$("open-recover").addEventListener("click", () => {
+const recoveryWords = Array(24).fill("");
+let recoveryPage = 0;
+
+function storeRecoveryPage() {
+  document.querySelectorAll("[data-recovery-word]").forEach((input, index) => {
+    recoveryWords[recoveryPage * 8 + index] = input.value.trim();
+  });
+}
+
+function renderRecoveryPage() {
+  const grid = $("recovery-word-grid");
+  grid.replaceChildren();
+  for (let index = 0; index < 8; index += 1) {
+    const number = recoveryPage * 8 + index + 1;
+    const label = document.createElement("label");
+    const marker = document.createElement("span");
+    marker.textContent = String(number);
+    const input = document.createElement("input");
+    input.dataset.recoveryWord = String(index);
+    input.type = "text";
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.value = recoveryWords[number - 1];
+    label.append(marker, input);
+    grid.append(label);
+  }
+  $("recover-page-label").textContent = `Слова ${recoveryPage * 8 + 1}–${recoveryPage * 8 + 8} из 24`;
+  $("recover-progress-bar").style.width = `${(recoveryPage + 1) * 33.333}%`;
+  $("recover-prev").disabled = recoveryPage === 0;
+  $("recover-next").classList.toggle("hidden", recoveryPage === 2);
+  $("recover-submit").classList.toggle("hidden", recoveryPage !== 2);
+  grid.querySelector("input")?.focus();
+}
+
+function openRecovery(mode = "code") {
   $("recover-error").textContent = "";
+  const button = document.querySelector(`#recover-segment button[data-mode="${mode}"]`);
+  button?.click();
+  if (mode === "code") renderRecoveryPage();
   showScreen("screen-recover");
-});
+}
+
+$("open-recover").addEventListener("click", () => openRecovery("code"));
+$("open-password-recover").addEventListener("click", () => openRecovery("password"));
 $("recover-back").addEventListener("click", () => showScreen("screen-entry"));
 
 for (const button of document.querySelectorAll("#recover-segment button")) {
@@ -330,7 +452,7 @@ for (const button of document.querySelectorAll("#recover-segment button")) {
 
 /** Обе формы восстановления ведут себя одинаково: блокировка и понятный отказ. */
 async function runRecovery(form, command, busyText, idleText) {
-  const button = form.querySelector(".primary-button");
+  const button = form.querySelector(".primary-button, #recover-submit");
   $("recover-error").textContent = "";
   button.disabled = true;
   button.textContent = busyText;
@@ -343,12 +465,40 @@ async function runRecovery(form, command, busyText, idleText) {
 
 $("form-recover-code").addEventListener("submit", (event) => {
   event.preventDefault();
+  storeRecoveryPage();
+  if (recoveryWords.some((word) => !word)) {
+    $("recover-error").textContent = "Заполните все 24 слова";
+    return;
+  }
+  $("recover-code").value = recoveryWords.join(" ");
   runRecovery(
     $("form-recover-code"),
     { type: "recover", url: serverUrl(), code: $("recover-code").value.trim() },
     "Проверяем код…",
     "Восстановить",
   );
+});
+
+$("recover-next").addEventListener("click", () => {
+  storeRecoveryPage();
+  recoveryPage = Math.min(2, recoveryPage + 1);
+  renderRecoveryPage();
+});
+$("recover-prev").addEventListener("click", () => {
+  storeRecoveryPage();
+  recoveryPage = Math.max(0, recoveryPage - 1);
+  renderRecoveryPage();
+});
+$("recovery-word-grid").addEventListener("paste", (event) => {
+  const pasted = event.clipboardData?.getData("text").trim().split(/\s+/).filter(Boolean) ?? [];
+  if (pasted.length < 2) return;
+  event.preventDefault();
+  const local = Number(event.target.dataset.recoveryWord || 0);
+  let start = recoveryPage * 8 + local;
+  if (pasted.length >= 24) start = 0;
+  pasted.slice(0, 24 - start).forEach((word, index) => { recoveryWords[start + index] = word; });
+  recoveryPage = Math.min(2, Math.floor(start / 8));
+  renderRecoveryPage();
 });
 
 $("form-recover-password").addEventListener("submit", (event) => {
@@ -370,9 +520,9 @@ $("form-recover-password").addEventListener("submit", (event) => {
 
 function resetRecoveryButtons() {
   for (const id of ["form-recover-code", "form-recover-password"]) {
-    const button = $(id).querySelector(".primary-button");
+    const button = $(id).querySelector(".primary-button, #recover-submit");
     button.disabled = false;
-    button.textContent = "Восстановить";
+    button.textContent = id === "form-recover-password" ? "Войти" : "Восстановить →";
   }
 }
 
@@ -390,8 +540,14 @@ async function boot() {
       }
     });
 
-    const unlocked = await invoke("auto_unlock");
-    if (!unlocked) {
+    const state = await invoke("auto_unlock");
+    if (state === "locked") {
+      // База под паролем запуска: ключ от неё не выдаст даже Windows.
+      showScreen("screen-locked");
+      $("lock-password").focus();
+      return;
+    }
+    if (state === "legacy") {
       showScreen("screen-migrate");
       return;
     }
@@ -1428,7 +1584,7 @@ function peerOf(conversation) {
 const handlers = {
   status(event) {
     if (!event.has_identity) {
-      showScreen("screen-entry");
+      showScreen(localStorage.getItem(ONBOARDING_COMPLETE) === "1" ? "screen-entry" : "screen-language");
       $("entry-submit").disabled = false;
       $("entry-submit").textContent = "Зарегистрироваться";
       return;
@@ -1586,15 +1742,23 @@ const handlers = {
     // Экран с фразой не смахиваем: AUTH_OK приходит сразу за регистрацией, и
     // без этой проверки человек увидел бы свои 24 слова на долю секунды.
     if (!backupWizardOpen()) showScreen("screen-main");
+    if (state.pendingRecoverySetup) {
+      const recovery = state.pendingRecoverySetup;
+      state.pendingRecoverySetup = null;
+      submit({ type: "recovery_setup", login: recovery.login, password: recovery.password });
+    }
     submit({ type: "conversations" });
   },
 
   registered(event) {
-    // Регистрация только что прошла — значит аккаунт новый, и фразу надо
-    // показать сейчас. Второго удобного момента не будет: пока всё работает,
-    // о потере устройства не думают, а вспоминают ровно тогда, когда поздно.
-    state.freshAccount = true;
-    submit({ type: "recovery_code" });
+    // Ядро присылает registered после любого AUTH_OK — в том числе при каждом
+    // обычном запуске. Новым считаем аккаунт лишь после register из этой формы.
+    const justRegistered = state.registrationPending;
+    state.registrationPending = false;
+    if (justRegistered) {
+      state.freshAccount = true;
+      submit({ type: "recovery_code" });
+    }
 
     state.device = event.device;
     state.identity = event.identity;
@@ -1924,7 +2088,7 @@ const handlers = {
     if (state.freshAccount) {
       // Первый показ — на своём экране, а не строкой в настройках.
       state.freshAccount = false;
-      openBackupWizard(event.words);
+      openBackupWizard();
       return;
     }
 
@@ -1990,6 +2154,8 @@ const handlers = {
     }
     const message = entryError(event);
     if (message) {
+      state.registrationPending = false;
+      state.pendingRecoverySetup = null;
       showScreen("screen-entry");
       $("entry-error").textContent = message;
       $("entry-submit").disabled = false;
@@ -2044,6 +2210,27 @@ $("copy-fingerprint").addEventListener("click", () => copyText(state.fingerprint
 $("profile-device").addEventListener("click", () => copyText(state.device, "Адрес устройства скопирован"));
 $("profile-chat-code").addEventListener("click", () => copyText(state.chatCode, "Код для чата скопирован"));
 
+$("logout-account").addEventListener("click", async () => {
+  const confirmed = window.confirm(
+    "Выйти из профиля на этом компьютере?\n\n"
+      + "Локальные ключи и переписка исчезнут из приложения, но останутся на этом компьютере. "
+      + "Сам аккаунт на сервере не удалится. Для повторного входа понадобятся 24 слова или логин и пароль.",
+  );
+  if (!confirmed) return;
+
+  const button = $("logout-account");
+  button.disabled = true;
+  button.textContent = "Выходим…";
+  try {
+    await invoke("logout_local_account");
+    window.location.reload();
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = "Выйти";
+    toast(`Не удалось выйти: ${String(error)}`);
+  }
+});
+
 function setRecoveryStatus(text, kind) {
   const node = $("recovery-status");
   node.textContent = text;
@@ -2060,17 +2247,14 @@ function setRecoveryStatus(text, kind) {
  * стойкости пароля. Если человек уйдёт после первого шага — он уйдёт с самым
  * надёжным способом в кармане.
  */
-function openBackupWizard(words) {
+function openBackupWizard() {
   showScreen("screen-backup");
   backupStep(1);
 
-  const list = $("backup-words");
-  list.replaceChildren();
-  for (const word of words.split(/\s+/)) {
-    const item = document.createElement("li");
-    item.textContent = word;
-    list.appendChild(item);
-  }
+  // Фраза не появляется ни на экране, ни в разметке без явного действия.
+  $("backup-words").replaceChildren();
+  $("backup-secret").classList.add("hidden");
+  $("backup-words-reveal").classList.remove("hidden");
 
   $("backup-written").checked = false;
   $("backup-next").disabled = true;
@@ -2108,8 +2292,23 @@ function backupStep(step) {
 function finishBackupWizard() {
   // Фраза со экрана уходит вместе с ним: держать её в разметке незачем.
   $("backup-words").replaceChildren();
+  $("backup-secret").classList.add("hidden");
+  state.recoveryWords = "";
+  state.recoveryCode = "";
   showScreen("screen-main");
 }
+
+$("backup-words-reveal").addEventListener("click", () => {
+  const list = $("backup-words");
+  list.replaceChildren();
+  for (const word of (state.recoveryWords || "").split(/\s+/).filter(Boolean)) {
+    const item = document.createElement("li");
+    item.textContent = word;
+    list.appendChild(item);
+  }
+  $("backup-words-reveal").classList.add("hidden");
+  $("backup-secret").classList.remove("hidden");
+});
 
 $("backup-written").addEventListener("change", () => {
   $("backup-next").disabled = !$("backup-written").checked;
@@ -5482,3 +5681,79 @@ function refreshPeerState() {
   node.textContent = isOnline(peer) ? "в сети · контроль ключа включён" : "контроль ключа включён";
   node.title = "Приложение запоминает ключ собеседника и остановит отправку, если он неожиданно изменится";
 }
+
+// --- пароль при запуске (Windows) ------------------------------------------
+
+/*
+  Ключ базы лежит под DPAPI, привязанным к учётной записи Windows. Это защищает
+  от «унесли диск», но не от программы, работающей под тем же пользователем:
+  она попросит Windows расшифровать файл, и Windows расшифрует.
+
+  Пароль превращается в «энтропию» DPAPI: без неё файл не открывается вовсе.
+  Сам пароль никуда не пишется — отсюда и предупреждение о невосстановимости,
+  которое стоит рядом с полем.
+*/
+$("form-locked").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const password = $("lock-password").value;
+  if (!password) return;
+  $("lock-error").textContent = "";
+  try {
+    await invoke("unlock_with_password", { password });
+    $("lock-password").value = "";
+    showBoot("Входим в аккаунт…");
+    await submit({ type: "status" });
+  } catch (error) {
+    $("lock-error").textContent = String(error);
+    $("lock-password").select();
+  }
+});
+
+async function renderLockState() {
+  try {
+    const enabled = await invoke("app_lock_enabled");
+    $("lock-state").textContent = enabled
+      ? "Пароль включён: без него база не откроется."
+      : "Пароль не задан: база открывается автоматически.";
+  } catch (error) {
+    $("lock-state").textContent = `Не удалось узнать состояние: ${String(error)}`;
+  }
+}
+
+$("lock-apply").addEventListener("click", async () => {
+  const current = $("lock-current").value;
+  const next = $("lock-next").value;
+  if (next && next.length < 8) {
+    toast("Пароль запуска — от восьми знаков");
+    return;
+  }
+  const apply = async () => {
+    try {
+      const enabled = await invoke("set_app_lock", { current, next });
+      $("lock-current").value = "";
+      $("lock-next").value = "";
+      await renderLockState();
+      toast(enabled ? "Пароль при запуске включён" : "Пароль при запуске снят");
+    } catch (error) {
+      toast(String(error));
+    }
+  };
+
+  if (!next) {
+    confirmAction(
+      "Снять пароль при запуске?",
+      "База снова будет открываться автоматически — как и для любой программы,"
+      + " работающей под вашей учётной записью Windows.",
+      apply,
+    );
+    return;
+  }
+  confirmAction(
+    "Включить пароль при запуске?",
+    "Его нигде не сохранят и не восстановят. Забудете — переписка на этом"
+    + " устройстве останется закрытой навсегда.",
+    apply,
+  );
+});
+
+renderLockState();

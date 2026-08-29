@@ -253,6 +253,31 @@ impl Mls {
         ))
     }
 
+    /// Меняет собственный ключ в беседе, не трогая состав.
+    ///
+    /// Ради этого в MLS и переходят в новую эпоху: пока эпоха не сменилась,
+    /// украденные ключи открывают всё, что будет написано дальше. Смена состава
+    /// делает это сама, но в диалоге вдвоём состав не меняется никогда — и
+    /// свойство, ради которого выбран MLS, не срабатывает ни разу.
+    ///
+    /// Возвращает коммит, который нужно доставить остальным участникам. Пока
+    /// он не дошёл, собеседник остаётся в прежней эпохе и продолжает читать:
+    /// MLS держит ключи предыдущей эпохи ровно для таких опозданий.
+    pub fn rekey(&mut self, group_id: &[u8]) -> Result<Vec<u8>> {
+        let mut group = self.load(group_id)?;
+        let bundle = group
+            .self_update(&self.provider, &self.signer, LeafNodeParameters::default())
+            .map_err(|_| CoreError::Mls("mls self update".into()))?;
+        group
+            .merge_pending_commit(&self.provider)
+            .map_err(|_| CoreError::Mls("mls merge commit".into()))?;
+
+        bundle
+            .commit()
+            .tls_serialize_detached()
+            .map_err(|_| CoreError::Mls("mls serialize commit".into()))
+    }
+
     /// Убирает участника. Возвращает коммит для оставшихся.
     ///
     /// После коммита группа переходит в новую эпоху, и прежние ключи ушедшему
@@ -677,6 +702,49 @@ mod tests {
         assert!(bigger > small, "большое сообщение обязано быть длиннее");
         // Разница кратна шагу: точный размер письма наружу не выходит.
         assert_eq!((bigger - small) % PADDING_BLOCK, 0, "шаг обязан быть кратен добивке");
+    }
+
+    /// Смена ключа переводит беседу в новую эпоху, и переписка продолжается.
+    #[test]
+    fn a_rekey_moves_the_epoch_and_keeps_the_thread() {
+        let (mut alice, _ad, mut bob, bob_device) = pair();
+        let bob_package = bob.key_packages(1).unwrap().remove(0);
+        let (group_id, welcome) = alice.start_conversation(&bob_package, &bob_device.public()).unwrap();
+        bob.process(&welcome).unwrap();
+
+        let before = alice.inspect(&group_id).unwrap().epoch_authenticator.clone();
+
+        let commit = alice.rekey(&group_id).unwrap();
+        let after = alice.inspect(&group_id).unwrap().epoch_authenticator.clone();
+        assert_ne!(before, after, "эпоха обязана смениться");
+
+        // Собеседник догоняет коммитом и снова видит то же состояние.
+        bob.process(&commit).unwrap();
+        assert_eq!(
+            bob.inspect(&group_id).unwrap().epoch_authenticator,
+            after,
+            "после коммита обе стороны обязаны сойтись",
+        );
+
+        // И переписка продолжается в обе стороны.
+        let ciphertext = alice.encrypt(&group_id, b"after rekey", &bob_device.public()).unwrap();
+        match bob.process(&ciphertext).unwrap() {
+            Incoming::Message { plaintext, .. } => assert_eq!(plaintext, b"after rekey"),
+            other => panic!("ожидали Message, получили {other:?}"),
+        }
+    }
+
+    /// Состав от смены ключа не меняется — иначе это была бы другая операция.
+    #[test]
+    fn a_rekey_does_not_touch_the_membership() {
+        let (mut alice, _ad, mut bob, bob_device) = pair();
+        let bob_package = bob.key_packages(1).unwrap().remove(0);
+        let (group_id, welcome) = alice.start_conversation(&bob_package, &bob_device.public()).unwrap();
+        bob.process(&welcome).unwrap();
+
+        let before = alice.members(&group_id).unwrap();
+        alice.rekey(&group_id).unwrap();
+        assert_eq!(alice.members(&group_id).unwrap(), before);
     }
 
     /// Группа втроём: оба приглашённых читают одно и то же сообщение.

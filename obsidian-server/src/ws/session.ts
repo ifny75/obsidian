@@ -46,6 +46,8 @@ export interface Deps {
   searchLimiter: RateLimiter;
   sendLimiter: RateLimiter;
   postLimiter: RateLimiter;
+  /** Выдача чужих KeyPackages: считается и по берущему, и по тому, у кого берут. */
+  claimLimiter: RateLimiter;
   connections: ConnectionCounter;
   now: () => number;
 }
@@ -196,7 +198,7 @@ export function handleMessage(deps: Deps, sock: Socket, conn: ConnData, msg: Uin
         return;
       case OP.KEYPKG_CLAIM:
         requireAuth(conn);
-        onKeyPackageClaim(deps, sock, body);
+        onKeyPackageClaim(deps, sock, conn, body);
         return;
       case OP.PROFILE_GET:
         requireAuth(conn);
@@ -1590,8 +1592,33 @@ function onKeyPackagePublish(deps: Deps, conn: ConnData, body: Uint8Array): void
  * ломает forward secrecy в MLS. Подлинность проверяет клиент — он сверяет
  * привязку пакета к ключу устройства и серверу здесь не верит.
  */
-function onKeyPackageClaim(deps: Deps, sock: Socket, body: Uint8Array): void {
+function onKeyPackageClaim(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
   const { clientRef, devicePub } = parseKeyPackageClaim(body);
+  const now = deps.now();
+
+  /*
+    Два ведра, и они про разное.
+
+    Первое — по тому, кто берёт: один аккаунт не должен опустошать запасы
+    подряд у всех. Второе — по тому, у кого берут: оно и защищает человека,
+    потому что десять аккаунтов уложатся в первое ведро каждый по-своему, а
+    жертва у них будет одна.
+
+    Отказ выглядит как «пакетов нет»: разные ответы рассказали бы берущему,
+    упёрся он в предел или человек действительно исчерпал запас, а знать ему
+    этого незачем.
+  */
+  const mine = deps.claimLimiter.allow(`claim:${toHex(conn.identity!)}`, now);
+  const theirs = deps.claimLimiter.allow(
+    `claimed:${toHex(devicePub)}`,
+    now,
+    config.maxClaimsPerDevicePerHour / config.maxClaimsPerHour,
+  );
+  if (!mine || !theirs) {
+    sock.send(keyPackageFrame(clientRef, null), true);
+    return;
+  }
+
   const keyPackage = deps.store.claimKeyPackage(devicePub);
   sock.send(keyPackageFrame(clientRef, keyPackage ?? null), true);
 }

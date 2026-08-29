@@ -40,6 +40,21 @@
       </div>
     </section>
 
+    <section id="screen-locked" class="screen centered-screen hidden">
+      <div class="entry-card">
+        <div class="large-logo"><img src="assets/obsidian_logo.svg" alt="" /></div>
+        <p class="eyebrow">Пароль при запуске</p>
+        <h1>Переписка закрыта</h1>
+        <p class="lead">Ключ базы зашифрован этим паролем. Он нигде не хранится, поэтому подобрать его не у кого — и восстановить тоже: забыли пароль, останется только завести базу заново.</p>
+        <form id="form-locked" class="entry-form">
+          <label for="lock-password">Пароль</label>
+          <input id="lock-password" type="password" autocomplete="current-password" required autofocus />
+          <button class="primary-button" type="submit">Открыть</button>
+        </form>
+        <p id="lock-error" class="form-error" role="alert"></p>
+      </div>
+    </section>
+
     <section id="screen-migrate" class="screen centered-screen hidden">
       <div class="entry-card">
         <div class="large-logo"><img src="assets/obsidian_logo.svg" alt="" /></div>
@@ -78,16 +93,19 @@
             устройстве. Перепишите на бумагу и держите там, где не держите компьютер.
             В переписку, скриншот и облако — нельзя.
           </p>
-          <ol id="backup-words" class="backup-words"></ol>
-          <div class="setting-actions">
-            <button id="backup-words-copy" class="ghost-button" type="button">Скопировать</button>
-            <button id="backup-words-code" class="ghost-button" type="button">Показать кодом</button>
+          <button id="backup-words-reveal" class="primary-button backup-reveal" type="button">Показать 24 слова</button>
+          <div id="backup-secret" class="hidden">
+            <ol id="backup-words" class="backup-words"></ol>
+            <div class="setting-actions">
+              <button id="backup-words-copy" class="ghost-button" type="button">Скопировать</button>
+              <button id="backup-words-code" class="ghost-button" type="button">Показать кодом</button>
+            </div>
+            <label class="backup-confirm">
+              <input id="backup-written" type="checkbox" />
+              <span>Я переписал(а) фразу на бумагу и понимаю, что второй раз её не покажут</span>
+            </label>
+            <button id="backup-next" class="primary-button" type="button" disabled>Дальше</button>
           </div>
-          <label class="backup-confirm">
-            <input id="backup-written" type="checkbox" />
-            <span>Я переписал(а) фразу на бумагу и понимаю, что второй раз её не покажут</span>
-          </label>
-          <button id="backup-next" class="primary-button" type="button" disabled>Дальше</button>
         </div>
 
         <div id="backup-step-second" class="hidden">
@@ -148,14 +166,14 @@
 
     <section id="screen-intro" class="screen onboarding-screen onboarding-grid hidden">
       <div class="onboarding-copy intro-copy">
-        <div class="onboarding-brand"><img src="assets/obsidian_logo.svg" alt="" /><b>Obsidian</b><span>public beta</span></div>
-        <h1 id="intro-title">Ваши разговоры.<br />Ваши правила.</h1>
-        <p id="intro-text">Приватный мессенджер с оконечным шифрованием, открытым кодом и маршрутизацией, которую выбираете вы.</p>
-        <div class="intro-links"><a href="https://github.com/ifny75/obsidian" target="_blank" rel="noreferrer noopener">Github</a><a href="https://getobsidian.xyz" target="_blank" rel="noreferrer noopener">Website</a><span>onion website</span></div>
+        <h1 id="intro-title">obsidian</h1>
+        <p id="intro-text">Obsidian is a private messenger built around strong end-to-end encryption and minimal trust in servers.</p>
+        <div class="intro-links"><a href="https://github.com/ifny75/obsidian" target="_blank" rel="noreferrer noopener">Github</a><i>/</i><a href="https://getobsidian.xyz" target="_blank" rel="noreferrer noopener">Website</a><i>/</i><span>onion website</span></div>
       </div>
       <div class="phone-stage" aria-label="Obsidian on a phone">
-        <model-viewer src="assets/models/phone.glb" camera-orbit="18deg 77deg 4.2m" field-of-view="24deg" auto-rotate rotation-per-second="10deg" shadow-intensity="1" exposure="1" interaction-prompt="none" disable-zoom></model-viewer>
+        <model-viewer src="assets/models/phone.glb" camera-orbit="205deg 78deg 5.5m" field-of-view="22deg" auto-rotate rotation-per-second="6deg" shadow-intensity="1" exposure="1" interaction-prompt="none" disable-zoom></model-viewer>
       </div>
+      <button id="intro-back" class="onboarding-prev" type="button">← <span>Назад</span></button>
       <button id="intro-next" class="onboarding-next" type="button"><span id="intro-next-label">Продолжить</span><b>→</b></button>
     </section>
 
@@ -165,12 +183,14 @@
         <h1>Obsidian server</h1>
         <p id="route-text">Выберите, как приложение будет соединяться с сетью. Настройку всегда можно изменить позже.</p>
         <div class="route-list">
-          <button class="route-option active" type="button" data-transport="auto"><span class="route-diagram"><i>YOU</i><em></em><i>OBS</i></span><span><b id="route-relay-title">Relay</b><small id="route-relay-text">Быстрое прямое соединение</small></span><u>✓</u></button>
+          <button class="route-option active" type="button" data-transport="auto"><span class="route-diagram"><i>YOU</i><em></em><i>OBS</i></span><span><b id="route-relay-title">Relay (automatic)</b><small id="route-relay-text">Быстрое прямое соединение</small></span><u>✓</u></button>
           <button class="route-option" type="button" data-transport="multihop"><span class="route-diagram"><i>YOU</i><em></em><i>1</i><em></em><i>OBS</i></span><span><b>Multihop</b><small id="route-multi-text">Дополнительный промежуточный узел</small></span><u>✓</u></button>
           <button class="route-option" type="button" data-transport="onion"><span class="route-diagram"><i>YOU</i><em></em><i>•••</i><em></em><i>OBS</i></span><span><b>Tor</b><small id="route-tor-text">Максимальная сетевая приватность</small></span><u>✓</u></button>
         </div>
       </div>
       <div class="onboarding-art" aria-hidden="true"><img src="assets/svg/spy.svg" alt="" /></div>
+      <a class="route-github" href="https://github.com/ifny75/obsidian" target="_blank" rel="noreferrer noopener">Github</a>
+      <button id="route-back" class="onboarding-prev" type="button">← <span>Назад</span></button>
       <button id="route-next" class="onboarding-next" type="button"><span id="route-next-label">Продолжить</span><b>→</b></button>
     </section>
 
@@ -190,12 +210,13 @@
         <p id="entry-error" class="form-error" role="alert"></p>
       </div>
       <div class="onboarding-art" aria-hidden="true"><img src="assets/svg/spy.svg" alt="" /></div>
+      <button id="entry-back" class="onboarding-prev" type="button">← <span>Назад</span></button>
     </section>
 
     <section id="screen-recover" class="screen onboarding-screen onboarding-grid hidden">
       <div class="onboarding-copy recovery-copy">
         <div class="onboarding-brand"><img src="assets/obsidian_logo.svg" alt="" /><b>Obsidian</b><span>public beta</span></div>
-        <h1 id="recover-title">Recovery 24</h1>
+        <h1 id="recover-title">Recovery phrase</h1>
         <p id="recover-lead">Введите 24 слова в том же порядке. За один шаг показываются восемь слов.</p>
         <div class="setting-segment recovery-segment" id="recover-segment">
           <button data-mode="code" type="button" class="active">24 слова</button>
@@ -445,7 +466,13 @@
             </div>
             <p id="recovery-status" class="recovery-status"></p>
           </div>
-        </section>
+</section>
+          <section class="settings-card logout-card">
+            <div class="setting-row">
+              <span><b>Выйти из профиля</b><small>Аккаунт на сервере не удалится. Приложение переключится на чистое хранилище, а прежние локальные данные останутся на этом компьютере.</small></span>
+              <button id="logout-account" class="danger-action" type="button">Выйти</button>
+            </div>
+          </section>
           </section>
 
           <section class="settings-section hidden" data-section="privacy">
@@ -686,6 +713,17 @@
                 <small>Считается вместе с журналом SQLite: свежие записи лежат в нём, и без него база с полной перепиской выглядела бы пустой.</small>
                 <p id="storage-report" class="storage-report">—</p>
                 <div class="setting-actions"><button id="storage-refresh" class="ghost-button" type="button">Обновить</button></div>
+              </div>
+              <div class="setting-block">
+                <b>Пароль при запуске</b>
+                <small>Ключ базы лежит под защитой Windows и привязан к вашей учётной записи. Этого хватает, если компьютер унесли выключенным, но не против программы, работающей под вами же: расшифровать файл сможет она сама. Пароль добавляет то, чего у неё нет, — его нигде нет и на диске тоже.</small>
+                <p class="warning-strip">Пароль не восстанавливается. Забыли — базу придётся заводить заново, переписка на этом устройстве пропадёт.</p>
+                <div class="setting-actions">
+                  <input id="lock-current" type="password" placeholder="Текущий пароль, если он есть" autocomplete="current-password" />
+                  <input id="lock-next" type="password" placeholder="Новый пароль, пусто — снять" autocomplete="new-password" />
+                  <button id="lock-apply" class="ghost-button" type="button">Применить</button>
+                </div>
+                <p id="lock-state" class="storage-report">—</p>
               </div>
               <div class="setting-block">
                 <b>Перенос аккаунта на другое устройство</b>
