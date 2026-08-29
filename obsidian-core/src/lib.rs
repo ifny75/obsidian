@@ -21,6 +21,7 @@ pub mod mls;
 pub mod passphrase;
 pub mod pins;
 pub mod privacy;
+pub mod profile;
 pub mod proto;
 pub mod recovery;
 pub mod store;

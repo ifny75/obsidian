@@ -708,6 +708,44 @@ async fn grant_missing(
         changed = true;
     }
 
+    // Ключ от аватара — тем же, кому и пропуск, и тем же каналом. Один раз на
+    // собеседника: отметка о выданном лежит в настройках, поэтому переподключение
+    // не превращается в рассылку.
+    if avatar_is_private(store) {
+        let key = own_profile_key(store)?;
+        let mut sent: std::collections::BTreeSet<String> = store
+            .load_setting(PROFILE_KEY_SENT)
+            .ok()
+            .flatten()
+            .and_then(|raw| serde_json::from_slice(&raw).ok())
+            .unwrap_or_default();
+
+        let mut shared = false;
+        for device in &peers {
+            if sent.contains(device) {
+                continue;
+            }
+            let Ok(raw) = hex::decode(device) else { continue };
+            let Ok(peer): std::result::Result<[u8; KEY_LEN], _> = raw.clone().try_into() else {
+                continue;
+            };
+            let Ok(Some(group_id)) = store.conversation_with(&raw) else { continue };
+
+            let waiting = PendingSend {
+                device: peer,
+                body: crate::access::profile_key_gift(&hex::encode(key)),
+                stored: true,
+            };
+            encrypt_and_send(socket, store, mls, sink, &group_id, waiting, &mut live.outbox)
+                .await?;
+            sent.insert(device.clone());
+            shared = true;
+        }
+        if shared {
+            store.save_setting(PROFILE_KEY_SENT, &serde_json::to_vec(&sent)?)?;
+        }
+    }
+
     if changed {
         save_access(store, &access)?;
         sink(access_event(store));
@@ -815,6 +853,12 @@ const ACCESS_KEY: &str = "access";
 const USERNAME_KEY: &str = "username";
 /// Закреплённые ключи: под каким ключом мы видели каждое имя.
 const PINS_KEY: &str = "pins";
+/// Свой ключ профиля: им запечатан наш аватар.
+const PROFILE_KEY: &str = "profile_key";
+/// Ключи профилей собеседников: device в hex → ключ в hex.
+const PEER_PROFILE_KEYS: &str = "peer_profile_keys";
+/// Кому наш ключ профиля уже отправлен.
+const PROFILE_KEY_SENT: &str = "profile_key_sent";
 
 /// Свой юзернейм из локальной базы.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -883,6 +927,55 @@ async fn upgrade_username_hash(
     Ok(())
 }
 
+/// Свой ключ профиля, заводится при первом обращении.
+fn own_profile_key(store: &Store) -> Result<[u8; 32]> {
+    if let Some(raw) = store.load_setting(PROFILE_KEY)? {
+        if let Ok(key) = <[u8; 32]>::try_from(raw.as_slice()) {
+            return Ok(key);
+        }
+    }
+    let key = crate::profile::new_key();
+    store.save_setting(PROFILE_KEY, &key)?;
+    Ok(key)
+}
+
+/// Ключи профилей собеседников. Испорченная запись означает «ключей нет»:
+/// аватары просто не покажутся, и это безопасная сторона ошибки.
+fn load_peer_profile_keys(store: &Store) -> std::collections::BTreeMap<String, String> {
+    store
+        .load_setting(PEER_PROFILE_KEYS)
+        .ok()
+        .flatten()
+        .and_then(|raw| serde_json::from_slice(&raw).ok())
+        .unwrap_or_default()
+}
+
+/// Открывает аватар, если он запечатан и ключ от него у нас есть.
+///
+/// Возвращает `None`, когда открыть нечем: аватара для нас просто нет, и
+/// показать надо инициалы, а не сломанную картинку. Так же выглядит и случай,
+/// когда человек убрал нас из контактов и сменил ключ.
+fn unseal_avatar(
+    store: &Store,
+    device: Option<&str>,
+    mime: Option<String>,
+    data: Option<String>,
+) -> (Option<String>, Option<String>) {
+    if !crate::profile::is_sealed(mime.as_deref()) {
+        return (mime, data);
+    }
+    let (Some(device), Some(data)) = (device, data) else {
+        return (None, None);
+    };
+    let keys = load_peer_profile_keys(store);
+    let Some(key_hex) = keys.get(device) else { return (None, None) };
+    let Ok(key) = hex::decode(key_hex) else { return (None, None) };
+    match crate::profile::open(&key, &data) {
+        Ok((mime, data)) => (Some(mime), Some(data)),
+        Err(_) => (None, None),
+    }
+}
+
 fn load_pins(store: &Store) -> crate::pins::Pins {
     store
         .load_setting(PINS_KEY)
@@ -937,6 +1030,22 @@ fn access_event(store: &Store) -> Event {
 /// настройку, — вместе с именными исключениями. Благодаря этому «всегда
 /// разрешать» действительно выдаёт пропуск, а «никогда» его отбирает, и
 /// поведение не расходится с тем, что человек видит на экране.
+/// Стоит ли прятать аватар от сервера.
+///
+/// Решает то же правило, которым человек уже пользуется: «аватар видят все» —
+/// прятать не от кого, всё остальное — прятать. Отдельной настройки нет
+/// намеренно: две настройки об одном и том же расходятся, и объяснить разницу
+/// потом невозможно.
+fn avatar_is_private(store: &Store) -> bool {
+    let privacy: crate::privacy::Privacy = store
+        .load_setting(PRIVACY_KEY)
+        .ok()
+        .flatten()
+        .and_then(|raw| serde_json::from_slice(&raw).ok())
+        .unwrap_or_default();
+    privacy.profile_avatar.scope != crate::privacy::Scope::Everyone
+}
+
 fn deserving(store: &Store) -> Vec<String> {
     let privacy: crate::privacy::Privacy = store
         .load_setting(PRIVACY_KEY)
@@ -1538,13 +1647,19 @@ async fn pump(
                             _ => None,
                         };
 
+                        let (avatar_mime, avatar_base64) = unseal_avatar(
+                            store,
+                            device.as_deref(),
+                            found.avatar_mime,
+                            found.avatar_base64,
+                        );
                         sink(Event::UsernameFound {
                             query,
                             device,
                             pin,
                             chat_code: found.chat_code,
-                            avatar_mime: found.avatar_mime,
-                            avatar_base64: found.avatar_base64,
+                            avatar_mime,
+                            avatar_base64,
                             emblem: found.emblem,
                             color: found.color,
                         });
@@ -1897,7 +2012,22 @@ async fn pump(
                     }
                     Command::ProfileSet { avatar_mime, avatar_base64 } => {
                         if greeting.profiles {
-                            send(&mut socket, proto::profile_set_frame(&avatar_mime, &avatar_base64)?).await?;
+                            // Прячем аватар от сервера ровно тогда, когда
+                            // человек и так велел показывать его не всем.
+                            // Правило `profile_avatar` до сих пор соблюдал
+                            // только наш собственный интерфейс — теперь его
+                            // соблюдает и хранилище.
+                            let (mime, data) = match (&avatar_mime, &avatar_base64) {
+                                (Some(mime), Some(data)) if avatar_is_private(store) => {
+                                    let key = own_profile_key(store)?;
+                                    (
+                                        Some(crate::profile::SEALED_MIME.to_owned()),
+                                        Some(crate::profile::seal(&key, mime, data)?),
+                                    )
+                                }
+                                _ => (avatar_mime.clone(), avatar_base64.clone()),
+                            };
+                            send(&mut socket, proto::profile_set_frame(&mime, &data)?).await?;
                         } else {
                             fail(sink, "profiles_unavailable", "server does not support profiles yet");
                         }
@@ -2009,12 +2139,20 @@ async fn on_frame(
         }
         op::PROFILE => {
             let profile: proto::ProfilePayload = proto::parse_json(body)?;
+            // Аватар мог приехать запечатанным. Ключ есть — открываем, нет —
+            // отдаём наверх пустоту: интерфейс покажет инициалы.
+            let (avatar_mime, avatar_base64) = unseal_avatar(
+                store,
+                Some(profile.device.as_str()),
+                profile.avatar_mime,
+                profile.avatar_base64,
+            );
             sink(Event::Profile {
                 device: profile.device,
                 chat_code: profile.chat_code,
                 handle: profile.handle,
-                avatar_mime: profile.avatar_mime,
-                avatar_base64: profile.avatar_base64,
+                avatar_mime,
+                avatar_base64,
                 emblem: profile.emblem,
                 color: profile.color,
                 updated_at: profile.updated_at,
@@ -2126,6 +2264,16 @@ async fn on_envelope(
                         let mut access = load_access(store);
                         access.hold(&device, &pass);
                         let _ = save_access(store, &access);
+                    }
+                    Some(Control::ProfileKey(key)) => {
+                        // Ключ от аватара собеседника. Кладём его рядом с
+                        // устройством, от которого он пришёл: чужой ключ на
+                        // чужой аватар всё равно не подойдёт.
+                        let mut keys = load_peer_profile_keys(store);
+                        keys.insert(hex::encode(&device), key);
+                        if let Ok(encoded) = serde_json::to_vec(&keys) {
+                            let _ = store.save_setting(PEER_PROFILE_KEYS, &encoded);
+                        }
                     }
                     Some(Control::Delete(ids)) => {
                         let group = hex::encode(&group_id);

@@ -152,6 +152,17 @@
     <string name="theme_light">Светлая</string>
     <string name="corner_radius">Скругление интерфейса</string>
     <string name="bubble_radius">Скругление сообщений</string>
+    <string name="app_lock">Замок приложения</string>
+    <string name="app_lock_hint">Спрашивать отпечаток или код разблокировки, прежде чем открыть переписку. Уже открытое приложение продолжает принимать сообщения в фоне</string>
+    <string name="app_lock_needs_credential">Сначала настройте блокировку экрана в системе — иначе подтверждать нечем</string>
+    <string name="app_lock_failed">Не удалось включить замок</string>
+    <string name="unlock">Разблокировать</string>
+    <string name="unlock_prompt">Подтвердите, что это вы</string>
+    <string name="unlock_needed">Переписка закрыта. Подтвердите, что это вы</string>
+    <string name="app_lock_after">Спрашивать снова через</string>
+    <string name="app_lock_30s">30 секунд</string>
+    <string name="app_lock_1m">1 минуту</string>
+    <string name="app_lock_5m">5 минут</string>
     <string name="screen_privacy">Прятать от снимков экрана</string>
     <string name="screen_privacy_hint">Скрывает переписку в списке недавних приложений и запрещает снимки экрана. Другие приложения на этом телефоне перестают видеть, что на экране</string>
     <string name="square_avatars">Квадратные аватары</string>

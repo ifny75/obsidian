@@ -158,6 +158,14 @@ pub fn edit_request(id: &str, body: &str) -> String {
     format!("{CONTROL_PREFIX}{payload}")
 }
 
+/// Ключ, которым открывается наш аватар.
+///
+/// Уезжает тем же шифрованным каналом, что и пропуск, и по той же причине: это
+/// то, что собеседнику нужно от нас получить, а серверу видеть незачем.
+pub fn profile_key_gift(key_hex: &str) -> String {
+    format!("{CONTROL_PREFIX}{{\"profileKey\":\"{key_hex}\"}}")
+}
+
 /// «Печатает» и «перестал печатать».
 ///
 /// Едет тем же шифрованным каналом, что и сообщения: сервер видит очередной
@@ -190,6 +198,8 @@ pub fn group_signal(title: &str, kind: &str, owner: &str) -> String {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Control {
     Pass(String),
+    /// Ключ от аватара собеседника.
+    ProfileKey(String),
     Delete(Vec<String>),
     /// Правка уже отправленного: тот же логический идентификатор, новое тело.
     Edit { id: String, body: String },
@@ -209,6 +219,14 @@ pub fn parse_signal(body: &str) -> Option<Control> {
             return None;
         }
         return Some(Control::Pass(pass.to_owned()));
+    }
+    if let Some(key) = value.get("profileKey").and_then(|v| v.as_str()) {
+        // Длина проверяется здесь по той же причине, что и у пропуска: мусор в
+        // этом поле человек не видит и починить не может.
+        if key.len() != 64 || hex::decode(key).is_err() {
+            return None;
+        }
+        return Some(Control::ProfileKey(key.to_owned()));
     }
     if let Some(edit) = value.get("edit") {
         // Обе половины обязательны: правка без тела или без адресата — это
@@ -252,6 +270,24 @@ pub fn is_control(body: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_profile_key_travels_and_comes_back_whole() {
+        let key = "ab".repeat(32);
+        let signal = profile_key_gift(&key);
+        assert!(is_control(&signal), "ключ обязан ехать служебным сообщением");
+        assert_eq!(parse_signal(&signal), Some(Control::ProfileKey(key.clone())));
+    }
+
+    #[test]
+    fn a_profile_key_of_the_wrong_shape_is_ignored() {
+        // Мусор в этом поле человек не видит и починить не может, поэтому
+        // разбирается он здесь и молча.
+        for bad in ["", "короткий", &"zz".repeat(32), &"ab".repeat(31)] {
+            let signal = format!("{CONTROL_PREFIX}{{\"profileKey\":\"{bad}\"}}");
+            assert_eq!(parse_signal(&signal), None, "принят негодный ключ: {bad}");
+        }
+    }
 
     #[test]
     fn a_pass_is_random_and_its_hash_is_stable() {

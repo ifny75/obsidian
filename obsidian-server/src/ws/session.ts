@@ -544,7 +544,20 @@ function onAuth(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): voi
 
 const CHAT_CODE_RE = /^OBS-[A-HJ-NP-Z2-9]{5}-[A-HJ-NP-Z2-9]{5}$/;
 const MAX_AVATAR_BYTES = 256 * 1024;
-const AVATAR_MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
+/**
+ * Что принимается в качестве аватара.
+ *
+ * Последний тип — не картинка, а шифротекст: клиент, у которого правило
+ * «аватар видят контакты», запечатывает его ключом, известным только им.
+ * Серверу достаётся блоб, и это ровно то, чего мы добивались, — но из этого
+ * следует и цена: подпись формата у такого аватара не проверить, потому что
+ * никакого формата снаружи нет. Остаётся ограничение размера, и его хватает:
+ * блоб всё равно нельзя отдать браузеру как картинку.
+ */
+const SEALED_AVATAR_MIME = "application/vnd.obsidian.sealed-avatar";
+const AVATAR_MIMES = new Set([
+  "image/jpeg", "image/png", "image/webp", SEALED_AVATAR_MIME,
+]);
 
 function normalizeChatCode(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -632,7 +645,12 @@ function onProfileSet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array
       sock.send(errorFrame("avatar_too_large", "avatar must be at most 256 KiB"), true);
       return;
     }
-    validateAvatarMagic(payload.avatarMime, decoded);
+    // Запечатанный аватар — шифротекст, и подписи формата у него нет по
+    // определению. Проверять её здесь значило бы требовать, чтобы шифротекст
+    // начинался с байтов PNG.
+    if (payload.avatarMime !== SEALED_AVATAR_MIME) {
+      validateAvatarMagic(payload.avatarMime, decoded);
+    }
     mime = payload.avatarMime;
     avatar = decoded;
   }

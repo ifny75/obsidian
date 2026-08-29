@@ -1172,6 +1172,16 @@ public final class MainActivity extends Activity implements Events.Listener {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == UNLOCK_REQUEST) {
+            if (resultCode == RESULT_OK) {
+                findViewById(R.id.boot_unlock).setVisibility(View.GONE);
+                ((TextView) findViewById(R.id.boot_status)).setText(R.string.boot_status);
+                autoOpenDatabase();
+            }
+            // Отказались — остаёмся на заставке с кнопкой. Закрывать приложение
+            // самим незачем: человек мог промахнуться, а не передумать.
+            return;
+        }
         if ((requestCode != AVATAR_PICK_REQUEST && requestCode != PHOTO_PICK_REQUEST)
                 || resultCode != RESULT_OK || data == null || data.getData() == null) return;
         final boolean avatar = requestCode == AVATAR_PICK_REQUEST;
@@ -1226,10 +1236,135 @@ public final class MainActivity extends Activity implements Events.Listener {
                 }
                 boolean opened = ObsidianService.core().open(db.getAbsolutePath(), secret);
                 runOnUiThread(() -> finishOpen(opened));
+            } catch (android.security.keystore.UserNotAuthenticatedException locked) {
+                // Замок включён, и система не отдала ключ: подтверждение
+                // просрочено или его ещё не было. Это не ошибка — это ровно то,
+                // ради чего замок включали.
+                runOnUiThread(this::askForUnlock);
             } catch (Throwable error) {
                 runOnUiThread(() -> showStartupError(error));
             }
         }, "obsidian-auto-open").start();
+    }
+
+    // --- замок приложения ------------------------------------------------------
+
+    /** Код ответа системного запроса подтверждения. */
+    private static final int UNLOCK_REQUEST = 4711;
+
+    /**
+     * Просит систему подтвердить, что телефон в руках владельца.
+     *
+     * Своего окна ввода у нас нет и быть не должно: пароль устройства
+     * приложению знать незачем, его проверяет система, а нам достаётся только
+     * ответ «да» или «нет».
+     */
+    private void askForUnlock() {
+        show(screenBoot);
+        TextView status = findViewById(R.id.boot_status);
+        status.setText(R.string.unlock_needed);
+        View unlock = findViewById(R.id.boot_unlock);
+        unlock.setVisibility(View.VISIBLE);
+        unlock.setOnClickListener(v -> requestUnlock());
+        requestUnlock();
+    }
+
+    private void requestUnlock() {
+        android.app.KeyguardManager keyguard = getSystemService(android.app.KeyguardManager.class);
+        if (keyguard == null) return;
+        Intent confirm = keyguard.createConfirmDeviceCredentialIntent(
+                getString(R.string.app_name), getString(R.string.unlock_prompt));
+        if (confirm == null) {
+            // Блокировку экрана сняли уже после включения замка. Ключ от этого
+            // не восстановится — честнее сказать прямо, чем крутить заставку.
+            showFatal(getString(R.string.app_lock_needs_credential));
+            return;
+        }
+        startActivityForResult(confirm, UNLOCK_REQUEST);
+    }
+
+    /** Переключатель и выбор задержки в настройках. */
+    private void wireAppLock() {
+        LocalSecretStore secrets = new LocalSecretStore(this);
+        Switch lock = findViewById(R.id.app_lock);
+        View after = findViewById(R.id.app_lock_after);
+
+        lock.setChecked(secrets.locked());
+        after.setVisibility(secrets.locked() ? View.VISIBLE : View.GONE);
+
+        markLockChoice(secrets.lockSeconds());
+
+        lock.setOnCheckedChangeListener((button, checked) -> {
+            if (checked && !secrets.deviceCredentialAvailable()) {
+                // Включить нечем: ключ с требованием подтверждения на телефоне
+                // без блокировки экрана не заводится вовсе.
+                lock.setChecked(false);
+                toast(getString(R.string.app_lock_needs_credential));
+                return;
+            }
+            boolean done = checked ? setLockDelay(secrets, DEFAULT_LOCK_SECONDS)
+                    : releaseLock(secrets);
+            if (!done) {
+                lock.setChecked(!checked);
+                return;
+            }
+            after.setVisibility(checked ? View.VISIBLE : View.GONE);
+            markLockChoice(secrets.lockSeconds());
+        });
+
+        View.OnClickListener pick = view -> {
+            int seconds = view.getId() == R.id.app_lock_30s ? 30
+                    : view.getId() == R.id.app_lock_1m ? 60 : 300;
+            if (setLockDelay(secrets, seconds)) markLockChoice(seconds);
+        };
+        findViewById(R.id.app_lock_30s).setOnClickListener(pick);
+        findViewById(R.id.app_lock_1m).setOnClickListener(pick);
+        findViewById(R.id.app_lock_5m).setOnClickListener(pick);
+    }
+
+    /** Задержка по умолчанию при включении замка. */
+    private static final int DEFAULT_LOCK_SECONDS = 30;
+
+    /**
+     * Перезаводит ключ под новую задержку.
+     *
+     * Секрет для этого нужно прочитать, а читается он тем самым ключом, который
+     * система отдаёт только после подтверждения. Поэтому «подтверждение
+     * просрочено» здесь — обычный ход событий, а не сбой: спрашиваем заново.
+     */
+    private boolean setLockDelay(LocalSecretStore secrets, int seconds) {
+        try {
+            secrets.enableLock(seconds);
+            return true;
+        } catch (android.security.keystore.UserNotAuthenticatedException expired) {
+            requestUnlock();
+            return false;
+        } catch (Throwable error) {
+            toast(getString(R.string.app_lock_failed));
+            return false;
+        }
+    }
+
+    private boolean releaseLock(LocalSecretStore secrets) {
+        try {
+            secrets.disableLock();
+            return true;
+        } catch (android.security.keystore.UserNotAuthenticatedException expired) {
+            requestUnlock();
+            return false;
+        } catch (Throwable error) {
+            toast(getString(R.string.app_lock_failed));
+            return false;
+        }
+    }
+
+    /** Показывает выбранную задержку: без этого три кнопки выглядят одинаково. */
+    private void markLockChoice(int seconds) {
+        int[] ids = { R.id.app_lock_30s, R.id.app_lock_1m, R.id.app_lock_5m };
+        int[] values = { 30, 60, 300 };
+        for (int i = 0; i < ids.length; i++) {
+            findViewById(ids[i]).setAlpha(values[i] == seconds ? 1f : 0.45f);
+        }
     }
 
     private void migrateLegacyDatabase() {
@@ -4200,6 +4335,7 @@ public final class MainActivity extends Activity implements Events.Listener {
     // --- чат и сообщения ----------------------------------------------------------
 
     private void wireChatSettings() {
+        wireAppLock();
         bindSwitch(R.id.chat_enter_sends, "enter_sends", false, checked -> applyEnterSends());
         bindSwitch(R.id.chat_confirm_delete, "confirm_delete", true, checked -> {});
         bindSwitch(R.id.chat_voice_autoplay, "voice_autoplay", false, checked -> {});
