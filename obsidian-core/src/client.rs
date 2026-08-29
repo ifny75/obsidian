@@ -1219,6 +1219,90 @@ fn unseal_avatar(
     }
 }
 
+/*
+  Подтверждение авторства в каналах.
+
+  Канал не шифруется — это принято осознанно. Но право писать до сих пор
+  проверял только сервер, и захвативший его писал бы от имени любого канала, а
+  читатель не отличил бы. Теперь автор подписывает пост, а мы проверяем.
+
+  С чем сверять, берётся из закрепления: ключ владельца запоминается при первой
+  встрече с каналом, как и ключ собеседника. Сменился — говорим вслух, а не
+  принимаем молча.
+
+  Пост помечается `verified` для интерфейса. Пометка честная: она означает
+  «подписано ключом, который мы за этим каналом помним», а не «правда».
+*/
+fn check_channel_report(store: &Store, sink: &EventSink, report: &mut serde_json::Value) {
+    let Some(handle) = report.get("handle").and_then(|v| v.as_str()).map(str::to_owned) else {
+        return;
+    };
+    let Some(owner) = report
+        .get("ownerIdentity")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+    else {
+        return;
+    };
+
+    // Закрепление живёт в той же книге, что и ключи собеседников: имя канала
+    // не может совпасть с юзернеймом — у него свой префикс.
+    let pin_name = format!("channel:{handle}");
+    let mut pins = match load_pins_checked(store) {
+        Ok(pins) => pins,
+        Err(err) => {
+            fail(sink, "storage", &err.to_string());
+            return;
+        }
+    };
+    let state = pins.check(&pin_name, &owner, now_millis());
+    if state != crate::pins::PinState::Same {
+        if let Err(err) = save_pins(store, &pins) {
+            fail(sink, "storage", &err.to_string());
+        }
+    }
+    if state == crate::pins::PinState::Changed {
+        sink(Event::Anomaly {
+            kind: "channel_owner_changed".into(),
+            detail: format!("у канала @{handle} другой ключ владельца, чем прежде"),
+        });
+    }
+
+    let trusted = pins.names.get(&pin_name).map(|pin| pin.device.clone()).unwrap_or(owner);
+    let channel_id = report
+        .get("channel")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+        .unwrap_or_default();
+
+    if let Some(post) = report.get_mut("post") {
+        mark_post(post, &channel_id, &trusted);
+    }
+    if let Some(posts) = report.get_mut("posts").and_then(|v| v.as_array_mut()) {
+        for post in posts {
+            mark_post(post, &channel_id, &trusted);
+        }
+    }
+}
+
+/// Проставляет посту `verified`: подписан ли он тем, кого мы помним владельцем.
+fn mark_post(post: &mut serde_json::Value, channel: &str, trusted_owner: &str) {
+    let verified = match crate::channels::author_of(post) {
+        Some((author, signature)) if author == trusted_owner => {
+            let id = post.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+            let created_at = post.get("createdAt").and_then(|v| v.as_i64()).unwrap_or_default();
+            let body = post.get("body").and_then(|v| v.as_str()).unwrap_or_default();
+            crate::channels::verify(&author, &signature, channel, id, created_at, body)
+        }
+        // Подписи нет вовсе (старый клиент) или подписал не владелец —
+        // в обоих случаях подтвердить авторство нечем.
+        _ => false,
+    };
+    if let Some(object) = post.as_object_mut() {
+        object.insert("verified".into(), serde_json::Value::Bool(verified));
+    }
+}
+
 /// Открывает значок и цвет, если они приехали запечатанными.
 ///
 /// Ключа нет — украшений для нас просто не существует: показываем то, что
@@ -2338,8 +2422,35 @@ async fn pump(
                             &serde_json::json!({ "handle": handle, "title": title, "about": about }))?).await?;
                     }
                     Command::ChannelPublish { channel, body } => {
+                        /*
+                          Идентификатор и время придумываем здесь.
+
+                          Подпись должна покрывать то, что увидит читатель, —
+                          а увидит он время и то, в каком канале пост стоит.
+                          Придумай их сервер, подписывать было бы нечего:
+                          автор не знает, что там появится после него.
+                        */
+                        let post_id = hex::encode(random_bytes(ID_LEN));
+                        let created_at = now_millis();
+                        // Ключ личности берём из базы: держать его копию в
+                        // цикле соединения незачем, а подписываем мы редко.
+                        let signature = match store.load_credentials() {
+                            Ok(credentials) => crate::channels::sign(
+                                &credentials.identity, &channel, &post_id, created_at, &body,
+                            ),
+                            Err(err) => {
+                                fail(sink, "no_identity", &err.to_string());
+                                continue;
+                            }
+                        };
                         send(&mut socket, proto::channel_frame(op::CHANNEL_PUBLISH,
-                            &serde_json::json!({ "channel": channel, "body": body }))?).await?;
+                            &serde_json::json!({
+                                "channel": channel,
+                                "body": body,
+                                "id": post_id,
+                                "createdAt": created_at,
+                                "signature": signature,
+                            }))?).await?;
                     }
                     Command::ChannelList => {
                         send(&mut socket, proto::channel_frame(op::CHANNEL_LIST,
@@ -2575,10 +2686,14 @@ async fn on_frame(
         }
 
         op::CHANNEL_OK => {
-            sink(Event::Channels { report: proto::parse_json(body)? });
+            let mut report: serde_json::Value = proto::parse_json(body)?;
+            check_channel_report(store, sink, &mut report);
+            sink(Event::Channels { report });
         }
         op::CHANNEL_POST => {
-            sink(Event::ChannelPost { report: proto::parse_json(body)? });
+            let mut report: serde_json::Value = proto::parse_json(body)?;
+            check_channel_report(store, sink, &mut report);
+            sink(Event::ChannelPost { report });
         }
         op::ADMIN_OK => {
             // Отчёт пересылается как есть: набор счётчиков задаёт сервер, и
@@ -3143,6 +3258,56 @@ mod tests {
         fn drop(&mut self) {
             Self::wipe(&self.1);
         }
+    }
+
+    /// Пост подтверждается только подписью того, кого мы помним владельцем.
+    #[test]
+    fn only_the_remembered_owner_confirms_a_post() {
+        let owner = crate::keys::SecretKey::generate();
+        let owner_hex = hex::encode(owner.public());
+        let body = "новость канала";
+        let signature = crate::channels::sign(&owner, "chan", "post-1", 1_700_000_000, body);
+
+        let make = || serde_json::json!({
+            "id": "post-1",
+            "body": body,
+            "createdAt": 1_700_000_000_i64,
+            "author": owner_hex,
+            "signature": signature,
+        });
+
+        let mut post = make();
+        mark_post(&mut post, "chan", &owner_hex);
+        assert_eq!(post["verified"], serde_json::Value::Bool(true));
+
+        // Тот же пост, но владельцем мы помним другого — подтверждать нечем.
+        let stranger = hex::encode(crate::keys::SecretKey::generate().public());
+        let mut post = make();
+        mark_post(&mut post, "chan", &stranger);
+        assert_eq!(post["verified"], serde_json::Value::Bool(false));
+
+        // Подменённый текст ломает подпись.
+        let mut post = make();
+        post["body"] = serde_json::Value::String("подмена".into());
+        mark_post(&mut post, "chan", &owner_hex);
+        assert_eq!(post["verified"], serde_json::Value::Bool(false));
+
+        // И перенос в другой канал тоже.
+        let mut post = make();
+        mark_post(&mut post, "other", &owner_hex);
+        assert_eq!(post["verified"], serde_json::Value::Bool(false));
+    }
+
+    /// Пост без подписи — обычное дело от старого клиента, но не подтверждён.
+    #[test]
+    fn an_unsigned_post_is_not_confirmed() {
+        let mut post = serde_json::json!({
+            "id": "post-1",
+            "body": "текст",
+            "createdAt": 1_700_000_000_i64,
+        });
+        mark_post(&mut post, "chan", &hex::encode([1u8; 32]));
+        assert_eq!(post["verified"], serde_json::Value::Bool(false));
     }
 
     #[test]

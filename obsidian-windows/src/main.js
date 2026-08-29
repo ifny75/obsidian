@@ -4556,6 +4556,26 @@ function postNode(post, channel) {
   time.textContent = new Date(post.createdAt).toLocaleString();
 
   item.append(body, time);
+
+  /*
+    Пометка о неподтверждённом авторстве.
+
+    Канал открыт, и его содержимое видит сервер — это принято. Но кто написал
+    пост, решает подпись, а не сервер: ядро сверяет её с ключом владельца,
+    который мы запомнили при первой встрече с каналом. Не сошлось — говорим
+    прямо, потому что именно так выглядел бы пост, написанный за владельца.
+
+    Ставим пометку, а не прячем пост: у старых клиентов подписи нет вовсе, и
+    прятать их записи значило бы соврать про то, что канал пуст.
+  */
+  if (post.verified === false) {
+    const mark = document.createElement("small");
+    mark.className = "post-unverified";
+    mark.textContent = "авторство не подтверждено";
+    mark.title = "Пост не подписан ключом владельца канала: так выглядит и"
+      + " запись старого клиента, и запись, сделанная за владельца.";
+    item.appendChild(mark);
+  }
   if (channel.owner) {
     const drop = document.createElement("button");
     drop.type = "button";

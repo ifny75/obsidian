@@ -30,6 +30,8 @@ import {
 import type { Registry } from "./registry.ts";
 import type { Socket } from "./registry.ts";
 
+/** Насколько время поста может расходиться с нашим. */
+const POST_TIME_WINDOW_MS = 15 * 60 * 1000;
 const DRAIN_BATCH = 200;
 /** Выше этого не пампим очередь — клиент не успевает читать. */
 const DRAIN_BACKPRESSURE_BYTES = 4 * 1024 * 1024;
@@ -930,6 +932,9 @@ function channelView(deps: Deps, row: { id: Uint8Array; owner: Uint8Array; handl
     // поле ввода, а писать могут двое разных по правам людей.
     role: owner ? "owner" : deps.store.isChannelAdmin(row.id, identity) ? "admin" : "reader",
     ownerCode: deps.store.ensureProfile(row.owner, deps.now()).chat_code,
+    // Ключ владельца — то, с чем читатель сверяет подписи постов. Новой
+    // связи это не создаёт: владелец канала и так назван кодом чата.
+    ownerIdentity: toHex(row.owner),
     // Состав редакции показываем только владельцу: читателю он не нужен, а
     // список тех, кто ведёт канал, — это лишние связи между людьми.
     admins: owner
@@ -945,12 +950,17 @@ function channelView(deps: Deps, row: { id: Uint8Array; owner: Uint8Array; handl
 }
 
 function postView(row: { seq: number; id: Uint8Array; channel: Uint8Array; body: string;
+  author: Uint8Array | null; signature: Uint8Array | null;
   created_at: number; edited_at: number | null }): Record<string, unknown> {
   return {
     seq: row.seq,
     id: toHex(row.id),
     channel: toHex(row.channel),
     body: row.body,
+    // Кто подписал и чем. Проверяет читатель: подтверждать авторство самим
+    // себе — ровно то, чего мы и хотели избежать.
+    author: row.author ? toHex(row.author) : null,
+    signature: row.signature ? toHex(row.signature) : null,
     createdAt: row.created_at,
     editedAt: row.edited_at,
   };
@@ -1004,7 +1014,9 @@ function channelFrom(deps: Deps, sock: Socket, value: unknown): ReturnType<typeo
 }
 
 function onChannelPublish(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
-  const payload = parseJsonBody(body) as { channel?: unknown; body?: unknown };
+  const payload = parseJsonBody(body) as {
+    channel?: unknown; body?: unknown; id?: unknown; createdAt?: unknown; signature?: unknown;
+  };
   if (!payload || typeof payload !== "object") throw new BadInput("post payload required");
   const channel = channelFrom(deps, sock, payload.channel);
   if (!channel) return;
@@ -1024,7 +1036,30 @@ function onChannelPublish(deps: Deps, sock: Socket, conn: ConnData, body: Uint8A
     return;
   }
 
-  const post = deps.store.addPost(random(ID_LEN), channel.id, text, deps.now());
+  /*
+    Идентификатор и время называет автор, а не мы.
+
+    Иначе ему нечего подписывать: подпись должна покрывать то, что читатель
+    увидит, а увидит он и время, и то, в каком канале пост стоит. Сервер здесь
+    только не пускает откровенную ложь — время дальше четверти часа от
+    нашего. Порядок ленты всё равно задаёт seq, а не это поле.
+  */
+  const now = deps.now();
+  const postId = payload.id === undefined ? random(ID_LEN) : fromHex(payload.id, ID_LEN);
+  const createdAt = typeof payload.createdAt === "number" ? payload.createdAt : now;
+  if (Math.abs(createdAt - now) > POST_TIME_WINDOW_MS) {
+    throw new BadInput("post timestamp out of range");
+  }
+  // Подпись мы не проверяем и проверить не можем: ключ личности автора нам
+  // известен, но смысл подписи в том, что её проверяет читатель, а не мы.
+  // Наше дело — не потерять её и не подменить.
+  const signature = payload.signature === undefined || payload.signature === null
+    ? null
+    : fromHex(payload.signature, SIG_LEN);
+
+  const post = deps.store.addPost(
+    postId, channel.id, text, createdAt, conn.identity!, signature,
+  );
   const frame = jsonFrame(OP.CHANNEL_POST, {
     channel: toHex(channel.id),
     handle: channel.handle,

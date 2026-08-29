@@ -49,6 +49,8 @@ export interface PostRow {
   id: Bytes;
   channel: Bytes;
   body: string;
+  author: Bytes | null;
+  signature: Bytes | null;
   created_at: number;
   edited_at: number | null;
 }
@@ -96,6 +98,7 @@ export class Store {
     this.#addUsernameHash2();
     this.#forgetUserHandles();
     this.#addProfileDecor();
+    this.#addPostAuthor();
     this.#secrets = SecretBox.load(path);
     this.#sealStoredTotpSecrets();
   }
@@ -199,6 +202,17 @@ export class Store {
     if (!columns.some((column) => column.name === "decor")) {
       this.#db.exec("ALTER TABLE profiles ADD COLUMN decor BLOB");
     }
+  }
+
+  /** Автор и подпись поста появились позже таблицы постов. */
+  #addPostAuthor(): void {
+    const columns = this.#db.prepare("PRAGMA table_info(channel_posts)").all() as unknown as {
+      name: string;
+    }[];
+    if (columns.length === 0) return;
+    const has = (name: string) => columns.some((column) => column.name === name);
+    if (!has("author")) this.#db.exec("ALTER TABLE channel_posts ADD COLUMN author BLOB");
+    if (!has("signature")) this.#db.exec("ALTER TABLE channel_posts ADD COLUMN signature BLOB");
   }
 
   #addChannelIcon(): void {
@@ -527,10 +541,20 @@ export class Store {
       .all(channel, except ?? null) as { device_pub: Bytes }[]).map((row) => row.device_pub);
   }
 
-  addPost(id: Bytes, channel: Bytes, body: string, now: number): PostRow {
+  addPost(
+    id: Bytes,
+    channel: Bytes,
+    body: string,
+    now: number,
+    author: Bytes | null = null,
+    signature: Bytes | null = null,
+  ): PostRow {
     this.#db
-      .prepare("INSERT INTO channel_posts (id, channel, body, created_at) VALUES (?, ?, ?, ?)")
-      .run(id, channel, body, now);
+      .prepare(
+        `INSERT INTO channel_posts (id, channel, body, author, signature, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(id, channel, body, author, signature, now);
     this.#db.prepare("UPDATE channels SET updated_at = ? WHERE id = ?").run(now, channel);
     return this.#db.prepare("SELECT * FROM channel_posts WHERE id = ?").get(id) as never as PostRow;
   }

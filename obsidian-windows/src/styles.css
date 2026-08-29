@@ -274,6 +274,7 @@ body[data-wallpaper="rays"]{--wallpaper-image:
 
 .storage-report{margin:11px 0 0;color:var(--text);font-size:11.5px;line-height:1.7;white-space:pre-line}
 /* Предупреждение о файле переноса. Полоса, а не мелкий текст: этот файл — весь аккаунт, и прочитать это должны раньше, чем нажмут кнопку. */
+.post-unverified{display:block;margin-top:5px;color:var(--warning);font-size:10.5px}
 .warning-strip{margin:10px 0 0;padding:10px 12px;border:1px solid color-mix(in srgb,var(--warning) 42%,var(--line));border-left:3px solid var(--warning);border-radius:9px;background:color-mix(in srgb,var(--warning) 9%,transparent);color:var(--text);font-size:11.5px;line-height:1.6}
 
 /*
