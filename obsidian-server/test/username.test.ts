@@ -238,3 +238,117 @@ test("поиск без входа не работает", () => {
   assert.equal(sock.closed?.code, 1008);
   store.close();
 });
+
+/*
+  Переезд на дорогой хеш.
+
+  Клиенты обновляются не одновременно, поэтому проверять надо не «работает ли
+  новый хеш», а то, что старый и новый живут рядом и никто не теряется.
+*/
+
+/** Дорогой хеш здесь подделан: сервер его не считает и считать не может. */
+const strongHash = (name: string) => toHex(sha256(ascii("argon-stub:" + name.toLowerCase())));
+
+test("имя, занятое обеими формами, находится по дорогому хешу", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  const mira = makeIdentity();
+
+  const m = register(deps, store, mira, "mira");
+  handleMessage(deps, m.sock, m.conn, jsonFrame(OP.USERNAME_SET, {
+    nameHash: nameHash("mira"),
+    nameHash2: strongHash("mira"),
+  }));
+  assert.equal(m.sock.json(OP.USERNAME_OK).cleared, false);
+
+  const s = register(deps, store, makeIdentity(), "seeker");
+  handleMessage(deps, s.sock, s.conn, jsonFrame(OP.USERNAME_LOOKUP, {
+    nameHash: nameHash("mira"),
+    nameHash2: strongHash("mira"),
+  }));
+  assert.equal(s.sock.json(OP.USERNAME_FOUND).device, toHex(mira.devPub));
+  store.close();
+});
+
+test("не обновившийся владелец по-прежнему находится", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  const mira = makeIdentity();
+
+  // Старый клиент второго хеша не шлёт вовсе.
+  const m = register(deps, store, mira, "mira");
+  handleMessage(deps, m.sock, m.conn, jsonFrame(OP.USERNAME_SET, { nameHash: nameHash("mira") }));
+  assert.equal(m.sock.json(OP.USERNAME_OK).cleared, false, "старый клиент обязан занимать имя");
+
+  // Новый ищущий шлёт оба: находка обязана произойти по старому.
+  const s = register(deps, store, makeIdentity(), "seeker");
+  handleMessage(deps, s.sock, s.conn, jsonFrame(OP.USERNAME_LOOKUP, {
+    nameHash: nameHash("mira"),
+    nameHash2: strongHash("mira"),
+  }));
+  assert.equal(s.sock.json(OP.USERNAME_FOUND).device, toHex(mira.devPub));
+  store.close();
+});
+
+test("не обновившийся ищущий находит обновившегося", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  const mira = makeIdentity();
+
+  const m = register(deps, store, mira, "mira");
+  handleMessage(deps, m.sock, m.conn, jsonFrame(OP.USERNAME_SET, {
+    nameHash: nameHash("mira"),
+    nameHash2: strongHash("mira"),
+  }));
+
+  // Старый клиент шлёт только прежний хеш — он обязан продолжать работать.
+  const s = register(deps, store, makeIdentity(), "seeker");
+  handleMessage(deps, s.sock, s.conn, jsonFrame(OP.USERNAME_LOOKUP, { nameHash: nameHash("mira") }));
+  assert.equal(s.sock.json(OP.USERNAME_FOUND).device, toHex(mira.devPub));
+  store.close();
+});
+
+test("владелец дозанимает своё имя, не теряя его", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  const mira = makeIdentity();
+
+  const m = register(deps, store, mira, "mira");
+  handleMessage(deps, m.sock, m.conn, jsonFrame(OP.USERNAME_SET, { nameHash: nameHash("mira") }));
+  m.sock.clear();
+
+  // Это и делает обновлённый клиент при первом заходе.
+  handleMessage(deps, m.sock, m.conn, jsonFrame(OP.USERNAME_SET, {
+    nameHash: nameHash("mira"),
+    nameHash2: strongHash("mira"),
+  }));
+  assert.equal(m.sock.json(OP.USERNAME_OK).cleared, false, "своё имя перезанимается свободно");
+
+  const s = register(deps, store, makeIdentity(), "seeker");
+  handleMessage(deps, s.sock, s.conn, jsonFrame(OP.USERNAME_LOOKUP, {
+    nameHash: nameHash("mira"),
+    nameHash2: strongHash("mira"),
+  }));
+  assert.equal(s.sock.json(OP.USERNAME_FOUND).device, toHex(mira.devPub));
+  store.close();
+});
+
+test("чужое имя не занять и дорогим хешем", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+
+  const first = register(deps, store, makeIdentity(), "first");
+  handleMessage(deps, first.sock, first.conn, jsonFrame(OP.USERNAME_SET, {
+    nameHash: nameHash("mira"),
+    nameHash2: strongHash("mira"),
+  }));
+  assert.equal(first.sock.json(OP.USERNAME_OK).cleared, false);
+
+  const second = register(deps, store, makeIdentity(), "second");
+  handleMessage(deps, second.sock, second.conn, jsonFrame(OP.USERNAME_SET, {
+    nameHash: nameHash("mira"),
+    nameHash2: strongHash("mira"),
+  }));
+  assert.equal(second.sock.json(OP.ERROR).code, "username_taken");
+  store.close();
+});

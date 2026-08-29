@@ -269,9 +269,19 @@ pub fn recovery_get_frame(login_id: &[u8], token: &[u8], code: Option<&str>) -> 
 }
 
 /// Занимает юзернейм. На сервер уезжает хеш — самого имени он не увидит.
-pub fn username_set_frame(name_hash: &[u8], discoverable: bool) -> Result<Vec<u8>> {
+/// Занимает имя обеими формами хеша сразу.
+///
+/// Старая форма нужна, пока живы клиенты, которые ищут только по ней; новая —
+/// чтобы утёкшая таблица не перебиралась по словарю. Сервер, который про
+/// вторую не знает, просто её не заметит: лишнее поле в JSON он игнорирует.
+pub fn username_set_frame(
+    name_hash: &[u8],
+    name_hash2: &[u8],
+    discoverable: bool,
+) -> Result<Vec<u8>> {
     json_frame(op::USERNAME_SET, &serde_json::json!({
         "nameHash": hex::encode(name_hash),
+        "nameHash2": hex::encode(name_hash2),
         "discoverable": discoverable,
     }))
 }
@@ -280,8 +290,13 @@ pub fn username_clear_frame() -> Result<Vec<u8>> {
     json_frame(op::USERNAME_SET, &serde_json::json!({ "clear": true }))
 }
 
-pub fn username_lookup_frame(name_hash: &[u8]) -> Result<Vec<u8>> {
-    json_frame(op::USERNAME_LOOKUP, &serde_json::json!({ "nameHash": hex::encode(name_hash) }))
+/// Ищет по обеим формам: по новой — тех, кто уже обновился, по старой —
+/// остальных. Выбирает сервер, клиенту знать о чужих версиях незачем.
+pub fn username_lookup_frame(name_hash: &[u8], name_hash2: &[u8]) -> Result<Vec<u8>> {
+    json_frame(op::USERNAME_LOOKUP, &serde_json::json!({
+        "nameHash": hex::encode(name_hash),
+        "nameHash2": hex::encode(name_hash2),
+    }))
 }
 
 pub fn access_set_frame(policy: &str) -> Result<Vec<u8>> {

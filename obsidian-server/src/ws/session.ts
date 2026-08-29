@@ -755,7 +755,7 @@ const USERNAME_HASH_LEN = 32;
  */
 function onUsernameSet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
   const payload = parseJsonBody(body) as
-    { nameHash?: unknown; discoverable?: unknown; clear?: unknown };
+    { nameHash?: unknown; nameHash2?: unknown; discoverable?: unknown; clear?: unknown };
   if (!payload || typeof payload !== "object") throw new BadInput("username payload required");
 
   if (payload.clear === true) {
@@ -765,9 +765,14 @@ function onUsernameSet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Arra
   }
 
   const nameHash = fromHex(payload.nameHash, USERNAME_HASH_LEN);
+  // Второй хеш необязателен: старый клиент его не шлёт, и отказывать ему из-за
+  // этого нельзя — он лишится имени на ровном месте.
+  const nameHash2 = payload.nameHash2 === undefined || payload.nameHash2 === null
+    ? null
+    : fromHex(payload.nameHash2, USERNAME_HASH_LEN);
   const discoverable = payload.discoverable !== false;
 
-  if (!deps.store.claimUsername(nameHash, conn.identity!, discoverable, deps.now())) {
+  if (!deps.store.claimUsername(nameHash, nameHash2, conn.identity!, discoverable, deps.now())) {
     sock.send(errorFrame("username_taken", "this username is already taken"), true);
     return;
   }
@@ -785,9 +790,12 @@ function onUsernameSet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Arra
  * в способ проверять существование юзернеймов.
  */
 function onUsernameLookup(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
-  const payload = parseJsonBody(body) as { nameHash?: unknown };
+  const payload = parseJsonBody(body) as { nameHash?: unknown; nameHash2?: unknown };
   if (!payload || typeof payload !== "object") throw new BadInput("username query required");
   const nameHash = fromHex(payload.nameHash, USERNAME_HASH_LEN);
+  const nameHash2 = payload.nameHash2 === undefined || payload.nameHash2 === null
+    ? null
+    : fromHex(payload.nameHash2, USERNAME_HASH_LEN);
   const now = deps.now();
 
   // Перебор по словарю ограничивается здесь: хеш имени подобрать несложно.
@@ -796,7 +804,7 @@ function onUsernameLookup(deps: Deps, sock: Socket, conn: ConnData, body: Uint8A
     return;
   }
 
-  const identity = deps.store.findByUsername(nameHash);
+  const identity = deps.store.findByUsername(nameHash, nameHash2);
   const device = identity ? deps.store.activeDevice(identity) : undefined;
   if (!identity || !device) {
     sock.send(jsonFrame(OP.USERNAME_FOUND, { found: false }), true);

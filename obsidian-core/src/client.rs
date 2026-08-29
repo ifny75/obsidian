@@ -823,6 +823,10 @@ struct OwnUsername {
     name: Option<String>,
     #[serde(default = "yes")]
     discoverable: bool,
+    /// Занято ли имя дорогим хешем. У баз, заведённых раньше, поля нет — и
+    /// `false` здесь правильное значение: оно означает «ещё не занимали».
+    #[serde(default)]
+    strong_hash: bool,
 }
 
 fn yes() -> bool {
@@ -848,6 +852,37 @@ fn username_event(store: &Store) -> Event {
 /// безопасная сторона ошибки, а не разрешающая.
 /// Закрепления. Испорченная запись означает «ничего не помним»: это заставит
 /// закрепить ключи заново, но не пропустит подмену молча под видом знакомого.
+/// Перезанимает своё имя, добавляя к нему дорогой хеш.
+///
+/// Ничего не делает, если имени нет или это уже сделано.
+async fn upgrade_username_hash(
+    socket: &mut Socket,
+    store: &Store,
+    sink: &EventSink,
+) -> Result<()> {
+    let mut own = load_username(store);
+    let Some(name) = own.name.clone() else { return Ok(()) };
+    if own.strong_hash {
+        return Ok(());
+    }
+
+    let normalized = match crate::directory::normalize_username(&name) {
+        Ok(normalized) => normalized,
+        // Имя, которое больше не проходит проверку, перезанимать нечем.
+        // Это не повод рвать соединение — человек сменит его сам.
+        Err(_) => return Ok(()),
+    };
+    let hash = crate::directory::username_hash(&normalized);
+    let hash2 = crate::directory::username_hash_v2(&normalized)?;
+    send(socket, proto::username_set_frame(&hash, &hash2, own.discoverable)?).await?;
+
+    own.strong_hash = true;
+    if let Err(err) = store.save_setting(USERNAME_KEY, &serde_json::to_vec(&own)?) {
+        fail(sink, "storage", &err.to_string());
+    }
+    Ok(())
+}
+
 fn load_pins(store: &Store) -> crate::pins::Pins {
     store
         .load_setting(PINS_KEY)
@@ -1387,6 +1422,19 @@ async fn pump(
             fail(sink, "pass_grant", &err.to_string());
         }
 
+        // Дозанимаем своё имя дорогим хешем, если этого ещё не делали.
+        //
+        // Сервер не может пересчитать хеш сам — имени он не знает и знать не
+        // должен. Значит, обновить строку способен только тот, у кого имя
+        // есть, то есть клиент, и делает он это молча при первом же заходе
+        // после обновления. Один раз: отметка лежит рядом с самим именем.
+        if let Err(err) = upgrade_username_hash(&mut socket, store, sink).await {
+            if is_transport(&err) {
+                return Ok(Outcome::Retry);
+            }
+            fail(sink, "username_upgrade", &err.to_string());
+        }
+
         // Объявляемся тем, кому это разрешено правилом «сейчас в сети».
         if let Err(err) = announce_presence(&mut socket, store, mls, sink, &mut live.outbox).await {
             fail(sink, "presence", &err.to_string());
@@ -1434,10 +1482,18 @@ async fn pump(
                     // логин знает только эта сторона — сервер его не видел.
                     if matches!(proto::split(&data), Ok((op::USERNAME_OK, _))) {
                         let own = match pending_username.take() {
-                            Some((name, discoverable)) => {
-                                OwnUsername { name: Some(name), discoverable }
-                            }
-                            None => OwnUsername { name: None, discoverable: true },
+                            // Имя, занятое этим клиентом, всегда занято обеими
+                            // формами хеша: дозанимать его потом не нужно.
+                            Some((name, discoverable)) => OwnUsername {
+                                name: Some(name),
+                                discoverable,
+                                strong_hash: true,
+                            },
+                            None => OwnUsername {
+                                name: None,
+                                discoverable: true,
+                                strong_hash: false,
+                            },
                         };
                         match serde_json::to_vec(&own)
                             .map_err(CoreError::from)
@@ -1645,9 +1701,18 @@ async fn pump(
                     Command::UsernameSet { name, discoverable } => {
                         match crate::directory::normalize_username(&name) {
                             Ok(normalized) => {
+                                // Argon2id считается здесь и держит поток ядра
+                                // около десятой доли секунды. Это цена за то,
+                                // чтобы утёкшая таблица имён не перебиралась
+                                // словарём, и платится она дважды за имя.
                                 let hash = crate::directory::username_hash(&normalized);
+                                let hash2 = crate::directory::username_hash_v2(&normalized)?;
                                 pending_username = Some((normalized, discoverable));
-                                send(&mut socket, proto::username_set_frame(&hash, discoverable)?).await?;
+                                send(
+                                    &mut socket,
+                                    proto::username_set_frame(&hash, &hash2, discoverable)?,
+                                )
+                                .await?;
                             }
                             Err(err) => fail(sink, "bad_username", &err.to_string()),
                         }
@@ -1660,8 +1725,13 @@ async fn pump(
                         match crate::directory::normalize_username(&name) {
                             Ok(normalized) => {
                                 let hash = crate::directory::username_hash(&normalized);
+                                let hash2 = crate::directory::username_hash_v2(&normalized)?;
                                 looking_for = Some(normalized);
-                                send(&mut socket, proto::username_lookup_frame(&hash)?).await?;
+                                send(
+                                    &mut socket,
+                                    proto::username_lookup_frame(&hash, &hash2)?,
+                                )
+                                .await?;
                             }
                             Err(err) => fail(sink, "bad_username", &err.to_string()),
                         }

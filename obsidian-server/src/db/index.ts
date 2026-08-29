@@ -85,6 +85,7 @@ export class Store {
     this.#addProfileDecoration();
     this.#addChannelIcon();
     this.#addRecoveryTotp();
+    this.#addUsernameHash2();
     this.#secrets = SecretBox.load(path);
     this.#sealStoredTotpSecrets();
   }
@@ -138,6 +139,21 @@ export class Store {
     if (columns.length === 0) return;
     if (!columns.some((column) => column.name === "totp_secret")) {
       this.#db.exec("ALTER TABLE recoveries ADD COLUMN totp_secret BLOB");
+    }
+  }
+
+  /**
+   * Второй хеш имени появился позже таблицы. Заполнять его здесь нечем: имени
+   * сервер не знает, и пересчитать хеш может только владелец.
+   */
+  #addUsernameHash2(): void {
+    const columns = this.#db.prepare("PRAGMA table_info(usernames)").all() as unknown as {
+      name: string;
+    }[];
+    if (columns.length === 0) return;
+    if (!columns.some((column) => column.name === "name_hash2")) {
+      this.#db.exec("ALTER TABLE usernames ADD COLUMN name_hash2 BLOB");
+      this.#db.exec("CREATE INDEX IF NOT EXISTS usernames_hash2 ON usernames(name_hash2)");
     }
   }
 
@@ -734,7 +750,13 @@ export class Store {
    * false — имя занято другой личностью. Перенос своего же имени на себя
    * разрешён: так работает смена настройки видимости без освобождения имени.
    */
-  claimUsername(nameHash: Bytes, identity: Bytes, discoverable: boolean, now: number): boolean {
+  claimUsername(
+    nameHash: Bytes,
+    nameHash2: Bytes | null,
+    identity: Bytes,
+    discoverable: boolean,
+    now: number,
+  ): boolean {
     return this.#tx(() => {
       const owner = this.#db
         .prepare("SELECT identity FROM usernames WHERE name_hash = ?")
@@ -745,10 +767,10 @@ export class Store {
       this.#db.prepare("DELETE FROM usernames WHERE identity = ?").run(identity);
       this.#db
         .prepare(
-          `INSERT INTO usernames (name_hash, identity, discoverable, updated_at)
-           VALUES (?, ?, ?, ?)`,
+          `INSERT INTO usernames (name_hash, name_hash2, identity, discoverable, updated_at)
+           VALUES (?, ?, ?, ?, ?)`,
         )
-        .run(nameHash, identity, discoverable ? 1 : 0, now);
+        .run(nameHash, nameHash2, identity, discoverable ? 1 : 0, now);
       return true;
     });
   }
@@ -757,8 +779,20 @@ export class Store {
     this.#db.prepare("DELETE FROM usernames WHERE identity = ?").run(identity);
   }
 
-  /** Личность по хешу имени. `undefined` и «скрыт» неотличимы снаружи. */
-  findByUsername(nameHash: Bytes): Bytes | undefined {
+  /**
+   * Личность по хешу имени. `undefined` и «скрыт» неотличимы снаружи.
+   *
+   * Сначала по дорогому хешу, потом по прежнему: первый есть у тех, кто уже
+   * перезанял имя обновлённым клиентом, второй — у всех остальных. Порядок
+   * важен только для скорости; найденная строка в обоих случаях одна и та же.
+   */
+  findByUsername(nameHash: Bytes, nameHash2: Bytes | null): Bytes | undefined {
+    if (nameHash2 !== null) {
+      const strong = this.#db
+        .prepare("SELECT identity FROM usernames WHERE name_hash2 = ? AND discoverable = 1")
+        .get(nameHash2) as { identity: Bytes } | undefined;
+      if (strong !== undefined) return strong.identity;
+    }
     const row = this.#db
       .prepare("SELECT identity FROM usernames WHERE name_hash = ? AND discoverable = 1")
       .get(nameHash) as { identity: Bytes } | undefined;
