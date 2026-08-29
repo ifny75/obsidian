@@ -696,12 +696,15 @@
             <div class="settings-card">
               <div class="setting-block">
                 <b>Версия приложения</b>
-                <small>Obsidian сам проверяет свежую Public Beta. Установка запускается только после вашего нажатия.</small>
-                <p id="update-status" class="storage-report">Версия 0.6.3 · проверяем обновления…</p>
+                <small>Obsidian сам проверяет свежую Public Beta. Установка запускается только после вашего нажатия. Список версий подписан ключом, которого на сервере нет: неподтверждённое обновление окно не предложит.</small>
+                <p id="update-status" class="storage-report">Проверяем обновления…</p>
                 <div class="setting-actions">
                   <button id="update-check" class="ghost-button" type="button">Проверить обновления</button>
                   <button id="update-download" class="ghost-button hidden" type="button" data-url="https://getobsidian.xyz/downloads/Obsidian-Setup.exe">Скачать новую версию</button>
+                  <button id="update-verify" class="ghost-button hidden" type="button">Сверить скачанный файл</button>
                 </div>
+                <p id="update-hash" class="storage-report"></p>
+                <input id="update-file" type="file" accept=".exe,application/octet-stream" class="hidden" />
               </div>
               <div class="setting-block">
                 <b>Локальная база</b>

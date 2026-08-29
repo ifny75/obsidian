@@ -784,6 +784,37 @@ fn open_link(url: String) -> Result<(), String> {
         .map_err(|err| format!("не открыть ссылку: {err}"))
 }
 
+/*
+   Ключ, которым подписан манифест обновлений.
+
+   Открытая половина ключа, приватная лежит офлайн и на сервере её нет
+   (см. deploy/sign-release.mjs). Смысл ровно один: сервер может назвать любую
+   версию и любую ссылку, но не может подделать подпись — а клиент без неё
+   обновление не предлагает.
+
+   Меняется только вместе с новой сборкой клиента. Если ключ потерян, старые
+   клиенты перестанут подтверждать обновления и попросят скачать вручную —
+   это неприятно, но честно, в отличие от «доверяем чему пришлют».
+*/
+const RELEASE_PUBLIC_KEY: &str =
+    "a14e480c6926a1379f0d5bb4362f2c7bf214643b016edf6a7b008db0752388ec";
+
+/// Проверяет подпись манифеста обновлений.
+///
+/// Проверяется ровно та строка, которую отдал сервер, — поэтому она и приходит
+/// строкой, а не разобранным объектом: любая пересборка JSON расходится с
+/// подписанными байтами.
+#[tauri::command]
+fn verify_release(manifest: String, signature: String) -> bool {
+    let (Ok(signature), Ok(public)) = (
+        hex::decode(signature.trim()),
+        hex::decode(RELEASE_PUBLIC_KEY),
+    ) else {
+        return false;
+    };
+    obsidian_core::keys::verify(&signature, manifest.as_bytes(), &public)
+}
+
 #[tauri::command]
 fn open_update(url: String) -> Result<(), String> {
     if !url.starts_with("https://getobsidian.xyz/downloads/") {
@@ -903,6 +934,7 @@ fn main() {
             set_autostart,
             set_unread,
             app_version,
+            verify_release,
             unlock_with_password,
             app_lock_enabled,
             set_app_lock,

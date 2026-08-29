@@ -183,6 +183,12 @@ export const config = {
 
   cleanupIntervalSec: num("OBSIDIAN_CLEANUP_SEC", 3600),
 
+  /**
+   * Подписанный манифест релизов. Кладётся рядом с базой и обновляется
+   * выкладкой; ключа для его подписи на сервере нет и быть не должно.
+   */
+  releasesFile: resolve(root, str("OBSIDIAN_RELEASES_FILE", "data/releases.json")),
+
   releases: {
     windowsVersion: str("OBSIDIAN_WINDOWS_VERSION", "0.6.3"),
     windowsUrl: str("OBSIDIAN_WINDOWS_URL", "https://getobsidian.xyz/downloads/Obsidian-Setup.exe"),

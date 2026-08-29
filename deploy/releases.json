@@ -1,0 +1,4 @@
+{
+  "manifest": "{\"v\":1,\"channel\":\"public-beta\",\"publishedAt\":\"2026-08-29T20:33:35.927Z\",\"windows\":{\"version\":\"0.10.0\",\"url\":\"https://getobsidian.xyz/downloads/Obsidian-0.10.0.exe\",\"sha256\":\"f3f6906f62f66e742ab6588c92b25de16c48c3036bb0009b0d7ac2ba3205c569\",\"bytes\":7267328},\"android\":{\"version\":\"0.6.1\",\"url\":\"https://getobsidian.xyz/downloads/Obsidian-0.6.1.apk\",\"sha256\":\"d32ba6aecf3c79b42cc30c34e7bee080ae4162bae2c1843015a69ebd1e032a72\",\"bytes\":5185923}}",
+  "signature": "9af832e4c0196a1456d063d47aff0c767e8f6f6a92270a47280a8f859dfdf875f05ddec115423c01e3a788431b9a0d2f7945e3d17319c4879a2295e3c3397e08"
+}

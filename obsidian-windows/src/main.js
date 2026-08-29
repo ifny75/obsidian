@@ -3934,29 +3934,95 @@ function compareVersions(left, right) {
   return 0;
 }
 
+/*
+  Проверка обновлений.
+
+  Обновление предлагается только по подписанному манифесту. Сервер может
+  назвать любую версию и любую ссылку — но подписать их нечем: ключ живёт
+  офлайн и на сервере его нет. Не сошлась подпись — говорим прямо и ничего не
+  предлагаем: молча вести человека за неподтверждённой сборкой хуже, чем не
+  обновиться, потому что подменённый клиент обесценивает и шифрование, и
+  замок, и всё остальное разом.
+*/
 async function checkForUpdates(showFailure = false) {
   const status = $("update-status");
   const download = $("update-download");
   appVersion = await invoke("app_version").catch(() => appVersion);
   if (status) status.textContent = `Версия ${appVersion} · проверяем обновления…`;
+
   try {
     const response = await fetch(RELEASES_URL, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const release = (await response.json()).windows;
-    const available = release && compareVersions(release.version, appVersion) > 0;
-    if (status) status.textContent = available
-      ? `Доступна версия ${release.version}`
-      : `Версия ${appVersion} · установлена последняя`;
+    const payload = await response.json();
+    if (typeof payload.manifest !== "string" || typeof payload.signature !== "string") {
+      throw new Error("ответ без подписи");
+    }
+    const trusted = await invoke("verify_release", {
+      manifest: payload.manifest,
+      signature: payload.signature,
+    });
+    if (!trusted) throw new Error("подпись не сходится");
+
+    const release = JSON.parse(payload.manifest).windows;
+    const available = Boolean(release) && compareVersions(release.version, appVersion) > 0;
+    if (status) {
+      status.textContent = available
+        ? `Доступна версия ${release.version}`
+        : `Версия ${appVersion} · установлена последняя`;
+    }
     if (download) {
       download.classList.toggle("hidden", !available);
       if (release?.url) download.dataset.url = release.url;
+      if (release?.sha256) download.dataset.sha256 = release.sha256;
     }
+    $("update-verify").classList.toggle("hidden", !available);
+    $("update-hash").textContent = available ? `Ожидаемый SHA-256: ${release.sha256}` : "";
     if (available) toast(`Доступно обновление Obsidian ${release.version}`);
-  } catch {
-    if (status) status.textContent = `Версия ${appVersion} · не удалось проверить`;
-    if (showFailure) toast("Не удалось проверить обновления");
+  } catch (error) {
+    const reason = String(error?.message ?? error);
+    if (status) status.textContent = `Версия ${appVersion} · не подтвердить: ${reason}`;
+    if (showFailure) toast(`Обновления: ${reason}`);
+    $("update-verify").classList.add("hidden");
+    $("update-hash").textContent = "";
+    download?.classList.add("hidden");
   }
 }
+
+/*
+  Сверка скачанного файла.
+
+  Скачивание идёт браузером, и подсунуть туда проверку мы не можем. Зато можем
+  проверить то, что уже лежит на диске: человек указывает файл, окно считает
+  SHA-256 и сравнивает с подписанным. Это и есть то место, где подпись
+  превращается в защиту, а не в надпись.
+*/
+$("update-verify").addEventListener("click", () => $("update-file").click());
+
+$("update-file").addEventListener("change", async () => {
+  const file = $("update-file").files?.[0];
+  $("update-file").value = "";
+  if (!file) return;
+
+  const expected = $("update-download").dataset.sha256;
+  if (!expected) {
+    toast("Сначала проверьте обновления");
+    return;
+  }
+  $("update-hash").textContent = "Считаем хеш…";
+  try {
+    const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+    const actual = [...new Uint8Array(digest)]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+    const same = actual === expected;
+    $("update-hash").textContent = same
+      ? `Файл совпадает с подписанным: ${actual}`
+      : `НЕ совпадает. Ожидали ${expected}, получили ${actual}`;
+    toast(same ? "Файл подтверждён" : "Файл не тот — запускать нельзя");
+  } catch (error) {
+    $("update-hash").textContent = `Не удалось посчитать хеш: ${String(error)}`;
+  }
+});
 
 $("update-check").addEventListener("click", () => checkForUpdates(true));
 $("update-download").addEventListener("click", () =>

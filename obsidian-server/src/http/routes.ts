@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { HttpResponse, TemplatedApp } from "uWebSockets.js";
 import { config, PROTOCOL_VERSION } from "../config.ts";
@@ -50,23 +50,52 @@ export function registerRoutes(app: TemplatedApp): void {
   });
 
   app.get("/v1/releases/latest", (res) => {
-    json(res, 200, {
-      channel: "public-beta",
-      publishedAt: new Date().toISOString(),
-      windows: {
-        version: config.releases.windowsVersion,
-        url: config.releases.windowsUrl,
-      },
-      android: {
-        version: config.releases.androidVersion,
-        url: config.releases.androidUrl,
-      },
-    }, true);
+    json(res, 200, releasePayload(), true);
   });
 
   app.any("/*", (res) => {
     json(res, 404, { error: "not_found" });
   });
+}
+
+/*
+  Что клиент узнаёт об обновлениях.
+
+  Раньше сервер собирал этот ответ сам из переменных окружения — и значит,
+  всякий, кто получил сервер, мог назвать любую версию и любую ссылку. Человек
+  скачал бы троян с правильного адреса, и на этом закончилось бы всё
+  остальное: и шифрование переписки, и замок приложения.
+
+  Теперь версии и хеши подписаны ключом, которого на сервере нет
+  (`deploy/sign-release.mjs`). Манифест отдаётся строкой байт в байт, вместе с
+  подписью: подменить его незаметно нельзя, а подменить заметно — значит
+  сломать проверку у клиента.
+
+  Прежние поля остаются рядом для уже выпущенных клиентов: они про подпись не
+  знают и разбирают именно их.
+*/
+function releasePayload(): Record<string, unknown> {
+  const legacy = {
+    channel: "public-beta",
+    publishedAt: new Date().toISOString(),
+    windows: { version: config.releases.windowsVersion, url: config.releases.windowsUrl },
+    android: { version: config.releases.androidVersion, url: config.releases.androidUrl },
+  };
+
+  try {
+    const signed = JSON.parse(readFileSync(config.releasesFile, "utf8")) as {
+      manifest?: unknown;
+      signature?: unknown;
+    };
+    if (typeof signed.manifest !== "string" || typeof signed.signature !== "string") {
+      return legacy;
+    }
+    return { ...legacy, manifest: signed.manifest, signature: signed.signature };
+  } catch {
+    // Файла нет или он испорчен — отдаём то, что умели раньше. Клиент увидит
+    // ответ без подписи и обновление предлагать не станет.
+    return legacy;
+  }
 }
 
 export function blobPath(id: Uint8Array): string {
