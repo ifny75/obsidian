@@ -118,8 +118,6 @@ CREATE TABLE IF NOT EXISTS usernames (
   updated_at   INTEGER NOT NULL
 ) WITHOUT ROWID;
 
-CREATE INDEX IF NOT EXISTS usernames_hash2 ON usernames(name_hash2);
-
 -- Каналы: открытая лента, которую ведёт один человек.
 --
 -- Здесь, в отличие от переписки, содержимое лежит В ОТКРЫТОМ ВИДЕ. Это

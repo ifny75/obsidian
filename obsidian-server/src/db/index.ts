@@ -153,8 +153,12 @@ export class Store {
     if (columns.length === 0) return;
     if (!columns.some((column) => column.name === "name_hash2")) {
       this.#db.exec("ALTER TABLE usernames ADD COLUMN name_hash2 BLOB");
-      this.#db.exec("CREATE INDEX IF NOT EXISTS usernames_hash2 ON usernames(name_hash2)");
     }
+    // Индекс создаётся здесь, а не в SCHEMA, и это не вкусовщина: SCHEMA
+    // выполняется раньше этой миграции, а `CREATE TABLE IF NOT EXISTS` на
+    // существующей базе столбец не добавляет — индекс по нему падал бы на
+    // каждом запуске сервера, у которого уже есть данные.
+    this.#db.exec("CREATE INDEX IF NOT EXISTS usernames_hash2 ON usernames(name_hash2)");
   }
 
   #addChannelIcon(): void {
