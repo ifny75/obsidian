@@ -86,6 +86,7 @@ export class Store {
     this.#addChannelIcon();
     this.#addRecoveryTotp();
     this.#addUsernameHash2();
+    this.#forgetUserHandles();
     this.#secrets = SecretBox.load(path);
     this.#sealStoredTotpSecrets();
   }
@@ -161,6 +162,25 @@ export class Store {
     this.#db.exec("CREATE INDEX IF NOT EXISTS usernames_hash2 ON usernames(name_hash2)");
   }
 
+  /**
+   * Вычищает человекочитаемые имена из старых баз.
+   *
+   * Разово и молча: поле больше не заполняется, а то, что успело в него
+   * попасть, — открытая связка «имя ↔ ключ личности», которой здесь не место.
+   * Никто его не читает, поэтому и терять нечего.
+   */
+  #forgetUserHandles(): void {
+    const columns = this.#db.prepare("PRAGMA table_info(users)").all() as unknown as {
+      name: string;
+    }[];
+    if (!columns.some((column) => column.name === "handle")) return;
+    const left = (this.#db.prepare("SELECT COUNT(*) AS n FROM users WHERE handle IS NOT NULL")
+      .get() as unknown as { n: number }).n;
+    if (left === 0) return;
+    this.#db.exec("UPDATE users SET handle = NULL WHERE handle IS NOT NULL");
+    log.info(`legacy handles cleared: ${left}`);
+  }
+
   #addChannelIcon(): void {
     const columns = this.#db.prepare("PRAGMA table_info(channels)").all() as unknown as {
       name: string;
@@ -199,14 +219,10 @@ export class Store {
     return this.#db.prepare("SELECT 1 FROM users WHERE identity = ?").get(identity) !== undefined;
   }
 
-  handleTaken(handle: string): boolean {
-    return this.#db.prepare("SELECT 1 FROM users WHERE handle = ?").get(handle) !== undefined;
-  }
-
-  createUser(identity: Bytes, handle: string | null, now: number): void {
+  createUser(identity: Bytes, now: number): void {
     this.#db
-      .prepare("INSERT INTO users (identity, handle, created_at) VALUES (?, ?, ?)")
-      .run(identity, handle, now);
+      .prepare("INSERT INTO users (identity, created_at) VALUES (?, ?)")
+      .run(identity, now);
   }
 
   getDevice(devicePub: Bytes): DeviceRow | undefined {
@@ -235,13 +251,6 @@ export class Store {
     return this.#db
       .prepare("SELECT * FROM devices WHERE identity = ? ORDER BY created_at")
       .all(identity) as unknown as DeviceRow[];
-  }
-
-  getUserHandle(identity: Bytes): string | null {
-    const row = this.#db.prepare("SELECT handle FROM users WHERE identity = ?").get(identity) as
-      | { handle: string | null }
-      | undefined;
-    return row?.handle ?? null;
   }
 
   resolveHandle(handle: string): Bytes | undefined {

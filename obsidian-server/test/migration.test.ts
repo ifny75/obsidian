@@ -89,6 +89,34 @@ test("база прежней версии открывается и допол�
   }
 });
 
+test("человекочитаемые имена из старой базы вычищаются при открытии", () => {
+  const { dir, db } = scratch();
+  try {
+    const identity = random(32);
+    const old = new DatabaseSync(db);
+    old.exec(OLD_SHAPE);
+    old.prepare("INSERT INTO users (identity, handle, created_at) VALUES (?, ?, ?)")
+      .run(identity, "zzzzz", Date.now());
+    old.close();
+
+    const store = new Store(db);
+    // Связка «как человека зовут ↔ его ключ личности» не должна пережить
+    // обновление: читать её всё равно некому, а лежала она открытым текстом.
+    assert.equal(store.resolveHandle("zzzzz"), undefined);
+    store.close();
+
+    const check = new DatabaseSync(db, { readOnly: true });
+    const row = check.prepare("SELECT handle FROM users").get() as { handle: string | null };
+    assert.equal(row.handle, null, "имя обязано исчезнуть из строки");
+    // Сама личность на месте: чистится поле, а не аккаунт.
+    const count = (check.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number }).n;
+    assert.equal(count, 1);
+    check.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("пустой файл базы разворачивается с нуля", () => {
   const { dir, db } = scratch();
   try {

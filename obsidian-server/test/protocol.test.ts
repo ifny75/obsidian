@@ -203,22 +203,22 @@ test("повтор перехваченного AUTH на новом соеди�
   store.close();
 });
 
-test("занятый handle не сжигает инвайт, и AUTH_ERR даёт новый challenge", () => {
+test("имя из старого клиента принимается молча и никуда не ложится", () => {
   const store = new Store(":memory:");
   const deps = makeDeps(store);
   register(deps, store, makeIdentity(), "alice");
 
+  // Старые сборки всё ещё присылают handle. Отказывать им нельзя, а хранить
+  // имя — тем более: это открытая связка «как зовут ↔ ключ личности».
   const code = newInvite(store);
   const bob = makeIdentity();
   const { sock, conn, nonce } = connect(deps);
   handleMessage(deps, sock, conn, authFrame(bob, nonce, { invite: code, handle: "alice" }));
 
-  const err = sock.json(OP.AUTH_ERR);
-  assert.equal(err.code, "handle_taken");
+  // Занятое кем-то имя больше не повод отказать: имён никто не занимает.
+  assert.ok(sock.has(OP.AUTH_OK), `вход не прошёл: ${sock.opcodes()}`);
 
-  // Тот же инвайт и то же соединение — вторая попытка с другим именем проходит.
-  handleMessage(deps, sock, conn, authFrame(bob, fromHex(err.nonce, 32), { invite: code, handle: "bob" }));
-  assert.ok(sock.has(OP.AUTH_OK), `retry failed: ${sock.opcodes()}`);
+  assert.equal(store.resolveHandle("alice"), undefined, "имя не должно оседать в базе");
   store.close();
 });
 
@@ -511,7 +511,9 @@ test("профиль выдаёт короткий код, разрешает е
   handleMessage(deps, b.sock, b.conn, jsonFrame(OP.PROFILE_GET, { query: own.chatCode }));
   const resolved = b.sock.latestJson(OP.PROFILE);
   assert.equal(resolved.device, toHex(alice.devPub));
-  assert.equal(resolved.handle, "alice");
+  // Человекочитаемое имя сервер больше не хранит и не раздаёт: раньше здесь
+  // приезжало «alice» — открытая связка имени с ключом личности.
+  assert.equal(resolved.handle, null);
   assert.equal(resolved.avatarMime, "image/jpeg");
   store.close();
 });

@@ -39,7 +39,7 @@ function rawSecret(dbPath: string): Uint8Array {
 function seed(store: Store, secret: Uint8Array | null): Uint8Array {
   const identity = random(32);
   const loginId = random(32);
-  store.createUser(identity, null, Date.now());
+  store.createUser(identity, Date.now());
   assert.equal(
     store.setRecovery(loginId, identity, random(32), random(64), Date.now(), secret),
     true,

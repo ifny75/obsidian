@@ -30,7 +30,6 @@ import {
 import type { Registry } from "./registry.ts";
 import type { Socket } from "./registry.ts";
 
-const HANDLE_RE = /^[a-z0-9_]{3,20}$/;
 const DRAIN_BATCH = 200;
 /** Выше этого не пампим очередь — клиент не успевает читать. */
 const DRAIN_BACKPRESSURE_BYTES = 4 * 1024 * 1024;
@@ -559,7 +558,7 @@ function onAuth(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): voi
     true,
   );
 
-  sendProfile(deps, sock, deps.store.ensureProfile(identity, now), devicePub);
+  sendProfile(sock, deps.store.ensureProfile(identity, now), devicePub);
 
   drainQueue(deps, sock, devicePub, now);
 }
@@ -611,7 +610,7 @@ function onProfileGet(deps: Deps, sock: Socket, body: Uint8Array): void {
     sock.send(errorFrame("profile_not_found", "profile has no active device"), true);
     return;
   }
-  sendProfile(deps, sock, profile, device);
+  sendProfile(sock, profile, device);
 }
 
 /**
@@ -648,7 +647,7 @@ function onProfileSet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array
       color === undefined ? current.color : (color === "none" ? null : color),
       deps.now(),
     );
-    sendProfile(deps, sock, profile, conn.devicePub!);
+    sendProfile(sock, profile, conn.devicePub!);
     return;
   }
 
@@ -677,7 +676,7 @@ function onProfileSet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array
     avatar = decoded;
   }
   const profile = deps.store.updateAvatar(conn.identity!, mime, avatar, deps.now());
-  sendProfile(deps, sock, profile, conn.devicePub!);
+  sendProfile(sock, profile, conn.devicePub!);
 }
 
 function validateAvatarMagic(mime: string, bytes: Uint8Array): void {
@@ -693,7 +692,6 @@ function validateAvatarMagic(mime: string, bytes: Uint8Array): void {
 }
 
 function sendProfile(
-  deps: Deps,
   sock: Socket,
   profile: { identity: Uint8Array; chat_code: string; avatar_mime: string | null;
     avatar: Uint8Array | null; emblem: string | null; color: string | null; updated_at: number },
@@ -702,7 +700,10 @@ function sendProfile(
   sock.send(jsonFrame(OP.PROFILE, {
     device: toHex(device),
     chatCode: profile.chat_code,
-    handle: deps.store.getUserHandle(profile.identity),
+    // Всегда пусто: человекочитаемое имя сервер больше не хранит. Поле
+    // осталось в кадре ради выпущенных клиентов — они его разбирают, а
+    // отсутствие поля приняли бы за битый профиль.
+    handle: null,
     avatarMime: profile.avatar_mime,
     avatarBase64: profile.avatar ? Buffer.from(profile.avatar).toString("base64") : null,
     emblem: profile.emblem,
@@ -1444,15 +1445,15 @@ function admit(
   identity: Uint8Array,
   now: number,
 ): boolean {
-  const handle = normalizeHandle(payload.handle);
-  if (handle === undefined) {
-    authFail(deps, sock, conn, "bad_handle", "handle must match [a-z0-9_]{3,20}");
-    return false;
-  }
-  if (handle !== null && deps.store.handleTaken(handle)) {
-    authFail(deps, sock, conn, "handle_taken", "handle already in use");
-    return false;
-  }
+  /*
+    Поле `handle` из кадра AUTH намеренно игнорируется.
+
+    Раньше оно ложилось в базу открытым текстом рядом с ключом личности —
+    связка «как человека зовут ↔ кто он криптографически», которую никто не
+    читал: находят людей через usernames, где лежат хеши. Старые сборки это
+    поле ещё присылают, и отказывать им из-за него нельзя; мы просто ничего с
+    ним не делаем.
+  */
 
   if (typeof payload.paymentRef === "string" && payload.paymentRef.length > 0) {
     const payment = deps.store.getPayment(payload.paymentRef);
@@ -1479,18 +1480,11 @@ function admit(
     return false;
   }
 
-  deps.store.createUser(identity, handle, now);
+  deps.store.createUser(identity, now);
   log.info("user registered");
   return true;
 }
 
-/** `undefined` — невалидно, `null` — handle не задан (это допустимо). */
-function normalizeHandle(raw: unknown): string | null | undefined {
-  if (raw === undefined || raw === null || raw === "") return null;
-  if (typeof raw !== "string") return undefined;
-  const handle = raw.toLowerCase();
-  return HANDLE_RE.test(handle) ? handle : undefined;
-}
 
 // --- SEND / ACK ---------------------------------------------------------------
 
