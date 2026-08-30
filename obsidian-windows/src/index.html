@@ -94,18 +94,6 @@
             В переписку, скриншот и облако — нельзя.
           </p>
           <button id="backup-words-reveal" class="primary-button backup-reveal" type="button">Показать 24 слова</button>
-          <div id="backup-secret" class="hidden">
-            <ol id="backup-words" class="backup-words"></ol>
-            <div class="setting-actions">
-              <button id="backup-words-copy" class="ghost-button" type="button">Скопировать</button>
-              <button id="backup-words-code" class="ghost-button" type="button">Показать кодом</button>
-            </div>
-            <label class="backup-confirm">
-              <input id="backup-written" type="checkbox" />
-              <span>Я переписал(а) фразу на бумагу и понимаю, что второй раз её не покажут</span>
-            </label>
-            <button id="backup-next" class="primary-button" type="button" disabled>Перейти в чаты</button>
-          </div>
         </div>
 
         <div id="backup-step-second" class="hidden">
@@ -153,6 +141,18 @@
       </div>
       </div>
       <div class="onboarding-art" aria-hidden="true"><canvas class="onboarding-shader"></canvas><img src="assets/svg/spy.svg" alt="" /></div>
+      <div id="backup-secret" class="hidden">
+        <ol id="backup-words" class="backup-words"></ol>
+        <div class="setting-actions">
+          <button id="backup-words-copy" class="ghost-button" type="button">Скопировать</button>
+          <button id="backup-words-code" class="ghost-button" type="button">Показать кодом</button>
+        </div>
+        <label class="backup-confirm">
+          <input id="backup-written" type="checkbox" />
+          <span>Я переписал(а) фразу на бумагу и понимаю, что второй раз её не покажут</span>
+        </label>
+        <button id="backup-next" class="primary-button" type="button" disabled>Перейти в чаты</button>
+      </div>
     </section>
 
     <section id="screen-language" class="screen onboarding-screen language-screen hidden">
@@ -195,9 +195,9 @@
         <h1 id="route-title">Obsidian server</h1>
         <p id="route-text">Выберите, как приложение будет соединяться с сетью. Настройку всегда можно изменить позже.</p>
         <div class="route-list">
-          <button class="route-option active" type="button" data-transport="auto"><img src="assets/onboarding/route-relay.png" alt="" /><i class="route-flow"></i><span><b id="route-relay-title">Relay (automatic)</b><small id="route-relay-text">Быстрое прямое соединение</small></span><u>✓</u></button>
-          <button class="route-option" type="button" data-transport="multihop"><img src="assets/onboarding/route-multihop.png" alt="" /><i class="route-flow"></i><span><b>Multihop</b><small id="route-multi-text">Дополнительный промежуточный узел</small></span><u>✓</u></button>
-          <button class="route-option" type="button" data-transport="onion"><img src="assets/onboarding/route-tor.png" alt="" /><i class="route-flow"></i><span><b>Tor</b><small id="route-tor-text">Максимальная сетевая приватность</small></span><u>✓</u></button>
+          <button class="route-option active" type="button" data-transport="auto"><img src="assets/onboarding/route-relay.png" alt="" /><i class="route-flow"><b></b><b></b><b></b></i><span><b id="route-relay-title">Relay (automatic)</b><small id="route-relay-text">Быстрое прямое соединение</small></span><u>✓</u></button>
+          <button class="route-option" type="button" data-transport="multihop"><img src="assets/onboarding/route-multihop.png" alt="" /><i class="route-flow"><b></b><b></b><b></b></i><span><b>Multihop</b><small id="route-multi-text">Дополнительный промежуточный узел</small></span><u>✓</u></button>
+          <button class="route-option" type="button" data-transport="onion"><img src="assets/onboarding/route-tor.png" alt="" /><i class="route-flow"><b></b><b></b><b></b></i><span><b>Tor</b><small id="route-tor-text">Максимальная сетевая приватность</small></span><u>✓</u></button>
         </div>
       </div>
       <div class="onboarding-art" aria-hidden="true"><canvas id="route-shader" class="onboarding-shader"></canvas><img src="assets/svg/spy.svg" alt="" /></div>

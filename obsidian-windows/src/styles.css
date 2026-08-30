@@ -1445,6 +1445,45 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
   #screen-backup .backup-card{max-height:none}.route-flow{height:4px}
 }
 @media(prefers-reduced-motion:reduce){.route-flow::after,.onboarding-slider:not(.dragging) .onboarding-slider-thumb{animation:none}}
+
+/* Точный финальный размер слайдера: бегунок заполняет высоту и доходит до края. */
+.onboarding-slider{width:min(372px,calc(100% - 36px));height:60px;padding:0 62px;border-color:rgba(255,255,255,.1);border-radius:17px;background:rgba(9,9,9,.66);box-shadow:none}
+.onboarding-slider-fill{inset:4px auto 4px 4px;width:calc(var(--slide-x) + 52px);border-radius:13px;opacity:.5}
+.onboarding-slider-thumb{top:4px;left:4px;width:52px;height:52px;border-radius:13px;font-size:22px;box-shadow:0 7px 25px color-mix(in srgb,var(--accent) 34%,transparent)}
+.onboarding-slider>span{font-size:11px;color:#a5a5a5}
+
+/* Навигация спокойная, без контрастных плашек, и не касается shader-панели. */
+#screen-route .onboarding-prev,#screen-route .onboarding-next,#screen-entry .onboarding-prev{height:40px;border-color:rgba(255,255,255,.055);border-radius:11px;background:rgba(5,5,5,.38);box-shadow:none;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);color:#838383}
+#screen-route .onboarding-prev:hover,#screen-route .onboarding-next:hover,#screen-entry .onboarding-prev:hover{border-color:rgba(255,255,255,.11);background:rgba(10,10,10,.52);color:#c2c2c2}
+#screen-route .onboarding-next{right:auto;left:calc(47.2% - 206px)}
+#screen-route .onboarding-next b{width:auto;height:auto;background:transparent;color:var(--accent);font-size:17px}
+
+/* Импульсы обрезаны ровно размерами белых горизонтальных соединений. */
+.route-flow{position:absolute;inset:0;z-index:2;width:auto;height:auto;overflow:visible;pointer-events:none;transform:none;filter:none;opacity:.2}
+.route-flow::after{display:none}
+.route-flow>b{position:absolute;top:50%;height:5px;overflow:hidden;border-radius:99px;transform:translateY(-50%)}
+.route-flow>b::after{content:"";position:absolute;inset:0;width:62%;border-radius:inherit;background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--accent) 58%,#fff),#fff,transparent);filter:drop-shadow(0 0 5px var(--accent));animation:route-segment-flow 1.35s linear infinite;transform:translateX(-110%)}
+.route-option.active .route-flow{opacity:1}.route-option:not(.active) .route-flow{opacity:.08}
+.route-option[data-transport="auto"] .route-flow>b:nth-child(1){left:21%;width:12%}.route-option[data-transport="auto"] .route-flow>b:nth-child(2){left:68%;width:12%}.route-option[data-transport="auto"] .route-flow>b:nth-child(3){display:none}
+.route-option:not([data-transport="auto"]) .route-flow>b:nth-child(1){left:18%;width:8%}.route-option:not([data-transport="auto"]) .route-flow>b:nth-child(2){left:47%;width:8%}.route-option:not([data-transport="auto"]) .route-flow>b:nth-child(3){left:77%;width:8%}
+.route-flow>b:nth-child(2)::after{animation-delay:-.45s}.route-flow>b:nth-child(3)::after{animation-delay:-.9s}
+@keyframes route-segment-flow{to{transform:translateX(180%)}}
+
+/* Seed-фраза раскрывается поверх всего приложения; вся подложка размывается. */
+#screen-backup #backup-secret:not(.hidden){position:fixed;inset:0;z-index:120;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:clamp(26px,5vw,72px);overflow:auto;border:0;border-radius:0;background:color-mix(in srgb,var(--accent) 5%,rgba(0,0,0,.66));backdrop-filter:blur(34px) saturate(.72);-webkit-backdrop-filter:blur(34px) saturate(.72)}
+#screen-backup #backup-secret:not(.hidden)>.backup-words,#screen-backup #backup-secret:not(.hidden)>.setting-actions,#screen-backup #backup-secret:not(.hidden)>.backup-confirm,#screen-backup #backup-secret:not(.hidden)>#backup-next{width:min(880px,100%)}
+#screen-backup #backup-secret:not(.hidden)>.backup-words{grid-template-columns:repeat(4,minmax(0,1fr));padding:20px;box-shadow:0 30px 100px rgba(0,0,0,.45),0 0 70px color-mix(in srgb,var(--accent) 10%,transparent)}
+#screen-backup #backup-secret:not(.hidden)>.setting-actions{justify-content:center}
+#screen-backup #backup-secret:not(.hidden)>.backup-confirm{margin-top:18px}
+#screen-backup #backup-secret:not(.hidden)>#backup-next{margin-top:16px}
+
+@media(max-width:1000px){#screen-route .onboarding-next{right:auto;left:calc(62% - 178px)}}
+@media(max-width:720px){
+  #screen-route .onboarding-next{right:20px;left:auto}
+  #screen-backup #backup-secret:not(.hidden)>.backup-words{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:430px){#screen-backup #backup-secret:not(.hidden)>.backup-words{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.route-flow>b::after{animation:none}}
 @media(max-width:420px){
   .landing-copy h1{font-size:40px}.landing-copy>p{font-size:18px}.landing-copy .intro-links{gap:5px;font-size:8.5px}
   #screen-route .route-copy h1{font-size:34px}#screen-route .route-option{padding:12px}#screen-route .route-diagram i{width:45px;height:45px;font-size:7px}
@@ -1517,5 +1556,45 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
   #screen-route .route-list{width:min(520px,100%);margin-top:72px;gap:45px}#screen-route .route-option:first-child{aspect-ratio:620/306}#screen-route .route-option:not(:first-child){aspect-ratio:621/158}
   #screen-route .onboarding-next{right:20px;left:auto}#screen-route .onboarding-prev{left:20px!important}
   #screen-entry .onboarding-prev{left:20px!important}.entry-skip{margin-bottom:18px}
+}
+
+/* Финальная геометрия стартового слайдера: крупный бегунок без пустого хвоста. */
+.onboarding-slider{width:min(372px,calc(100% - 40px));height:64px;padding:0 68px;border-radius:19px}
+.onboarding-slider-fill{inset:4px auto 4px 4px;width:calc(var(--slide-x) + 56px);border-radius:15px}
+.onboarding-slider-thumb{top:4px;left:4px;width:56px;height:56px;border-radius:15px;font-size:25px}
+.onboarding-slider>span{padding:0;text-align:center}
+/* ID нужен, чтобы старое правило `.landing-start b` не сжимало яркий drag-handle до 35 px. */
+#intro-next .onboarding-slider-thumb{top:3px;left:3px;width:58px;height:58px;border-radius:16px;font-size:27px;background:var(--accent)}
+
+/* Навигация совпадает с краями routing-плашек и визуально остаётся спокойной. */
+#screen-route{--route-card-width:min(620px,calc((100vh - 190px)*.74),calc(47.2vw - 48px))}
+#screen-route .route-list{width:var(--route-card-width)}
+#screen-route .onboarding-prev,#screen-route .onboarding-next{
+  bottom:18px;height:38px;padding:0 13px;border:1px solid rgba(255,255,255,.075);
+  border-radius:11px;background:rgba(8,8,8,.32);box-shadow:none;color:#8f8f8f;
+  font:500 11px/1 "Inter UI",sans-serif;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)
+}
+#screen-route .onboarding-prev{left:calc((47.2% - var(--route-card-width))/2);width:100px}
+#screen-route .onboarding-next{right:auto;left:calc((47.2% + var(--route-card-width))/2 - 138px);width:138px;color:#b8b8b8}
+#screen-route .onboarding-next b{width:auto;height:auto;border-radius:0;background:transparent;color:var(--accent);font-size:17px}
+#screen-route .onboarding-prev:hover,#screen-route .onboarding-next:hover{border-color:rgba(255,255,255,.14);background:rgba(14,14,14,.48);color:#e2e2e2}
+
+@media(max-width:1000px) and (min-width:721px){
+  #screen-route{--route-card-width:min(520px,calc((100vh - 175px)*.74),calc(62vw - 48px))}
+  #screen-route .onboarding-prev{left:calc((62% - var(--route-card-width))/2)}
+  #screen-route .onboarding-next{right:auto;left:calc((62% + var(--route-card-width))/2 - 138px)}
+}
+@media(max-width:720px){
+  #screen-route{--route-card-width:calc(100vw - 40px)}
+  #screen-route .onboarding-prev{left:20px!important}
+  #screen-route .onboarding-next{right:20px;left:auto}
+}
+
+/* Shader входа/регистрации занимает правый бок целиком: без старого padding по вертикали. */
+#screen-entry,#screen-recover{padding-block:0;overflow:hidden}
+#screen-entry .onboarding-art,#screen-recover .onboarding-art{align-self:stretch;min-height:100%;margin:0;border:0}
+#screen-entry .onboarding-shader,#screen-recover .onboarding-shader{inset:0;width:100%;height:100%}
+@media(max-width:720px){
+  #screen-entry,#screen-recover{overflow-y:auto}
 }
 

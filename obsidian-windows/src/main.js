@@ -422,13 +422,13 @@ let startSliderProgress = 0;
 function paintStartSlider(progress) {
   startSliderProgress = Math.max(0, Math.min(1, progress));
   startSlider.style.setProperty("--slide-progress", startSliderProgress);
-  startSlider.style.setProperty("--slide-x", `${Math.max(0, startSlider.clientWidth - 58) * startSliderProgress}px`);
+  startSlider.style.setProperty("--slide-x", `${Math.max(0, startSlider.clientWidth - 64) * startSliderProgress}px`);
   startSlider.setAttribute("aria-valuenow", String(Math.round(startSliderProgress * 100)));
 }
 
 function moveStartSlider(clientX) {
   const bounds = startSlider.getBoundingClientRect();
-  const thumb = 50;
+  const thumb = 58;
   paintStartSlider((clientX - bounds.left - thumb / 2) / Math.max(1, bounds.width - thumb));
 }
 

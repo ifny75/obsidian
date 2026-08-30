@@ -1,4 +1,4 @@
 {
-  "manifest": "{\"v\":1,\"channel\":\"public-beta\",\"publishedAt\":\"2026-08-29T20:33:35.927Z\",\"windows\":{\"version\":\"0.10.0\",\"url\":\"https://getobsidian.xyz/downloads/Obsidian-0.10.0.exe\",\"sha256\":\"f3f6906f62f66e742ab6588c92b25de16c48c3036bb0009b0d7ac2ba3205c569\",\"bytes\":7267328},\"android\":{\"version\":\"0.6.1\",\"url\":\"https://getobsidian.xyz/downloads/Obsidian-0.6.1.apk\",\"sha256\":\"d32ba6aecf3c79b42cc30c34e7bee080ae4162bae2c1843015a69ebd1e032a72\",\"bytes\":5185923}}",
-  "signature": "9af832e4c0196a1456d063d47aff0c767e8f6f6a92270a47280a8f859dfdf875f05ddec115423c01e3a788431b9a0d2f7945e3d17319c4879a2295e3c3397e08"
+  "manifest": "{\"v\":1,\"channel\":\"public-beta\",\"publishedAt\":\"2026-08-30T12:46:34.734Z\",\"windows\":{\"version\":\"0.11.0\",\"url\":\"https://getobsidian.xyz/downloads/Obsidian-0.11.0.exe\",\"sha256\":\"3b888edd896dc242fc9f6e0d521761fef1e63a12fda16757c1b809d1528cf4b0\",\"bytes\":16199680},\"android\":{\"version\":\"0.6.2\",\"url\":\"https://getobsidian.xyz/downloads/Obsidian-0.6.2.apk\",\"sha256\":\"02e8ecf8375b4c551e93d04ad958a0935807499d7b8738e9b2765608f34a73f7\",\"bytes\":5218987}}",
+  "signature": "b0a3bb4c87e177b3aeaf9ea7d92b3d2a8635c43539cb4d35b2888e7968fab0402b55a4f75f551ef4a13dab95c1870bac77a5abccf75e804862ce0f7a4ab4ff00"
 }
