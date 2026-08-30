@@ -93,6 +93,32 @@ export function isOnion(peer: string, route: string, trusted: readonly string[])
   return route === "onion" && trusted.includes(peer);
 }
 
+/**
+ * Ключ клиента: жетон от входного узла, если он есть.
+ *
+ * Настоящего адреса здесь больше нет и быть не должно — узел заменяет его на
+ * HMAC, из которого IP не восстановить (deploy/mesh/obsidian-blind.js).
+ * Приложению этого достаточно: адрес нужен ему ровно для того, чтобы считать
+ * лимиты «на клиента», а для счёта годится любая устойчивая строка.
+ *
+ * Верим по тому же правилу, что и метке входа: только от доверенного адреса,
+ * то есть от своего же nginx с петли. Жетона нет — значит, запрос пришёл мимо
+ * узла (разработческая машина, прямое соединение), и работает прежний путь по
+ * настоящему адресу.
+ */
+export function blindedClient(
+  peer: string,
+  token: string,
+  trusted: readonly string[],
+): string | null {
+  if (!trusted.includes(peer)) return null;
+  const clean = token.trim();
+  // Жетон узла — шестнадцать шестнадцатеричных знаков. Всё прочее игнорируем:
+  // подстроить сюда что-то своё клиент не может, но и доверять форме, которую
+  // мы не выдавали, незачем.
+  return /^[0-9a-f]{16}$/.test(clean) ? clean : null;
+}
+
 export function clientAddress(peer: string, claimed: string, trusted: readonly string[]): string {
   if (claimed === "" || !trusted.includes(peer)) return peer;
   // Заголовок может прийти списком: первый в нём — исходный клиент.

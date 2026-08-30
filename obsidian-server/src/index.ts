@@ -6,7 +6,7 @@ import { Store } from "./db/index.ts";
 import { NonceStore } from "./auth/nonce.ts";
 import { RateLimiter } from "./util/ratelimit.ts";
 import {
-  ConnectionCounter, ONION_KEY, clientAddress, isOnion, limitKey,
+  ConnectionCounter, ONION_KEY, blindedClient, clientAddress, isOnion, limitKey,
 } from "./util/connections.ts";
 import { Registry, type Socket } from "./ws/registry.ts";
 import {
@@ -75,11 +75,15 @@ app.ws<ConnData>("/ws", {
       делят один ключ и свои, отдельные потолки.
     */
     const onion = isOnion(peer, req.getHeader("x-obsidian-route"), config.trustedProxies);
+    // Жетон вместо адреса. Схлопывание IPv6 до /64 сделано на узле, до
+    // хеширования: иначе владелец подсети получал бы новый жетон на каждый
+    // адрес и обходил любой потолок, ни разу его не превысив.
+    const blinded = blindedClient(peer, req.getHeader("x-obsidian-client"), config.trustedProxies);
     const ip = onion
       ? ONION_KEY
-      // Ключ лимитов, а не адрес: IPv6 схлопывается до /64, иначе владелец
-      // подсети обходит любой потолок сменой последних групп.
-      : limitKey(clientAddress(peer, req.getHeader("cf-connecting-ip"), config.trustedProxies));
+      : blinded
+      // Прямое соединение мимо узла — считаем по настоящему адресу, как раньше.
+      ?? limitKey(clientAddress(peer, req.getHeader("cf-connecting-ip"), config.trustedProxies));
 
     res.upgrade<ConnData>(newConnData(ip, onion), key, protocol, extensions, context);
   },

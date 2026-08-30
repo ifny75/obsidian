@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { ONION_KEY, clientAddress, isOnion } from "../src/util/connections.ts";
+import { ONION_KEY, blindedClient, clientAddress, isOnion } from "../src/util/connections.ts";
 import { RateLimiter } from "../src/util/ratelimit.ts";
 
 const TRUSTED = ["127.0.0.1", "::1"];
@@ -77,4 +77,37 @@ test("множитель не подменяет настройку ограни
   const shared = new RateLimiter(3, 60_000);
   for (let i = 0; i < 6; i++) assert.equal(shared.allow("k", 0, 2), true);
   assert.equal(shared.allow("k", 0, 2), false, "множитель считается от неё же");
+});
+
+/*
+  Жетон вместо адреса.
+
+  Настоящий IP до приложения больше не доезжает: узел заменяет его на HMAC.
+  Проверяется то же, что и у метки входа, — что верим мы только своему nginx, —
+  и что форма жетона задана нами, а не тем, кто его прислал.
+*/
+
+test("жетон принимается только от своего же nginx", () => {
+  const token = "0123456789abcdef";
+  assert.equal(blindedClient("127.0.0.1", token, TRUSTED), token);
+
+  // Пришедший мимо узла назначил бы себе любой жетон и делил бы лимиты с кем
+  // угодно — или, наоборот, выедал чужие.
+  assert.equal(blindedClient("203.0.113.7", token, TRUSTED), null);
+});
+
+test("форму жетона задаём мы, а не отправитель", () => {
+  // Шестнадцать шестнадцатеричных знаков — то, что выдаёт узел. Всё прочее
+  // игнорируется: доверять форме, которую мы не выдавали, незачем.
+  for (const bad of ["", "короткий", "0123456789ABCDEF", "0123456789abcdefff", "не жетон"]) {
+    assert.equal(blindedClient("127.0.0.1", bad, TRUSTED), null, `принят негодный: ${bad}`);
+  }
+  // Пробелы по краям — обычное дело для заголовка.
+  assert.equal(blindedClient("127.0.0.1", " 0123456789abcdef ", TRUSTED), "0123456789abcdef");
+});
+
+test("без жетона остаётся прежний путь по адресу", () => {
+  // Прямое соединение мимо узла: разработческая машина или проверка руками.
+  assert.equal(blindedClient("127.0.0.1", "", TRUSTED), null);
+  assert.equal(clientAddress("127.0.0.1", "203.0.113.7", TRUSTED), "203.0.113.7");
 });

@@ -147,7 +147,7 @@ function sendRead(peer, ids) {
 
 function showScreen(screen) {
   for (const id of [
-    "screen-boot", "screen-locked", "screen-migrate", "screen-language", "screen-intro",
+    "screen-boot", "screen-locked", "screen-migrate", "screen-language",
     "screen-route", "screen-entry", "screen-recover", "screen-backup", "screen-main",
   ]) {
     $(id).classList.toggle("hidden", id !== screen);
@@ -301,15 +301,23 @@ let chosenTransport = "auto";
 const onboardingCopy = {
   ru: {
     introTitle: "obsidian",
-    introText: "Obsidian — приватный мессенджер с надёжным сквозным шифрованием и минимальным доверием к серверам. Сообщения шифруются на вашем устройстве, главный сервер скрыт за relay-инфраструктурой, а маршрут можно выбрать между Relay, Multihop и Tor. Приватность заложена в архитектуру. Открытый код. Номер телефона не нужен.",
-    next: "Продолжить", routeText: "Выберите, как приложение будет соединяться с сетью. Настройку всегда можно изменить позже.",
+    introParts: [
+      "Obsidian — приватный мессенджер с надёжным сквозным шифрованием.",
+      "Сообщения шифруются на вашем устройстве. Главный сервер скрыт за relay-инфраструктурой, а маршрут можно выбрать между Relay, Multihop и Tor.",
+      "Приватность заложена в архитектуру. Открытый код. Номер телефона не нужен.",
+    ],
+    start: "Проведите, чтобы начать", next: "Продолжить", routeText: "Выберите, как приложение будет соединяться с сетью. Настройку всегда можно изменить позже.",
     relay: "Быстрое прямое соединение", multi: "Дополнительный промежуточный узел", tor: "Максимальная сетевая приватность",
     entryTitle: "Начните с Obsidian", entryLead: "Имя увидят собеседники. Пароль нужен для запасного входа с другого устройства.",
   },
   en: {
     introTitle: "obsidian",
-    introText: "Obsidian is a private messenger built around strong end-to-end encryption and minimal trust in servers. Your messages are encrypted on your device, the main server is hidden behind relay infrastructure, and you can choose between Relay, Multihop, and Tor routing depending on your privacy needs. Private by design. Open source. No phone number required.",
-    next: "Continue", routeText: "Choose how the app connects to the network. You can change this later.",
+    introParts: [
+      "Obsidian is a private messenger with reliable end-to-end encryption.",
+      "Messages are encrypted on your device. The main server stays behind relay infrastructure, with Relay, Multihop and Tor routing.",
+      "Privacy by design. Open source. No phone number required.",
+    ],
+    start: "Slide to start", next: "Continue", routeText: "Choose how the app connects to the network. You can change this later.",
     relay: "Fast direct connection", multi: "An additional intermediate relay", tor: "Maximum network privacy",
     entryTitle: "Get started with Obsidian", entryLead: "Your contacts see the username. The password enables recovery on another device.",
   },
@@ -319,8 +327,10 @@ function applyOnboardingLanguage() {
   const copy = onboardingCopy[onboardingLanguage];
   document.documentElement.lang = onboardingLanguage;
   $("intro-title").innerHTML = copy.introTitle;
-  $("intro-text").textContent = copy.introText;
-  $("intro-next-label").textContent = copy.next;
+  document.querySelectorAll("[data-intro-part]").forEach((part, index) => {
+    part.textContent = copy.introParts[index] || "";
+  });
+  $("intro-next-label").textContent = copy.start;
   $("route-next-label").textContent = copy.next;
   $("route-text").textContent = copy.routeText;
   $("route-relay-text").textContent = copy.relay;
@@ -338,12 +348,87 @@ for (const button of document.querySelectorAll("[data-language]")) {
     onboardingLanguage = button.dataset.language;
     localStorage.setItem(ONBOARDING_LANGUAGE, onboardingLanguage);
     applyOnboardingLanguage();
-    showScreen("screen-intro");
   });
 }
-$("intro-next").addEventListener("click", () => showScreen("screen-route"));
-$("intro-back").addEventListener("click", () => showScreen("screen-language"));
-$("route-back").addEventListener("click", () => showScreen("screen-intro"));
+const landing = $("onboarding-landing");
+let landingMotionFrame = 0;
+landing.addEventListener("scroll", () => {
+  if (landingMotionFrame) return;
+  landingMotionFrame = requestAnimationFrame(() => {
+    const progress = Math.max(0, Math.min(1, landing.scrollTop / Math.max(1, landing.clientHeight)));
+    document.documentElement.style.setProperty("--welcome-phone-shift", `${(0.5 - progress) * 46}px`);
+    document.documentElement.style.setProperty("--welcome-copy-shift", `${(1 - progress) * 18}px`);
+    landingMotionFrame = 0;
+  });
+}, { passive: true });
+
+document.querySelector(".landing-scroll-hint").addEventListener("click", () => {
+  $("landing-about").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+const landingObserver = new IntersectionObserver(([entry]) => {
+  $("landing-about").classList.toggle("is-visible", entry.isIntersecting);
+}, { root: $("onboarding-landing"), threshold: 0.22 });
+landingObserver.observe($("landing-about"));
+
+const startSlider = $("intro-next");
+let startSliderDragging = false;
+let startSliderProgress = 0;
+
+function paintStartSlider(progress) {
+  startSliderProgress = Math.max(0, Math.min(1, progress));
+  startSlider.style.setProperty("--slide-progress", startSliderProgress);
+  startSlider.style.setProperty("--slide-x", `${Math.max(0, startSlider.clientWidth - 62) * startSliderProgress}px`);
+  startSlider.setAttribute("aria-valuenow", String(Math.round(startSliderProgress * 100)));
+}
+
+function moveStartSlider(clientX) {
+  const bounds = startSlider.getBoundingClientRect();
+  const thumb = 50;
+  paintStartSlider((clientX - bounds.left - thumb / 2) / Math.max(1, bounds.width - thumb));
+}
+
+startSlider.addEventListener("pointerdown", (event) => {
+  if (!event.target.closest(".onboarding-slider-thumb")) return;
+  event.preventDefault();
+  startSliderDragging = true;
+  startSlider.setPointerCapture(event.pointerId);
+  startSlider.classList.add("dragging");
+  moveStartSlider(event.clientX);
+});
+startSlider.addEventListener("pointermove", (event) => {
+  if (startSliderDragging) moveStartSlider(event.clientX);
+});
+startSlider.addEventListener("pointerup", (event) => {
+  if (!startSliderDragging) return;
+  startSliderDragging = false;
+  startSlider.releasePointerCapture(event.pointerId);
+  startSlider.classList.remove("dragging");
+  if (startSliderProgress >= 0.82) {
+    paintStartSlider(1);
+    setTimeout(() => { paintStartSlider(0); showScreen("screen-route"); }, 120);
+  } else {
+    paintStartSlider(0);
+  }
+});
+startSlider.addEventListener("pointercancel", () => {
+  startSliderDragging = false;
+  startSlider.classList.remove("dragging");
+  paintStartSlider(0);
+});
+startSlider.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    paintStartSlider(1);
+    setTimeout(() => { paintStartSlider(0); showScreen("screen-route"); }, 120);
+  }
+});
+
+$("route-back").addEventListener("click", () => {
+  showScreen("screen-language");
+  requestAnimationFrame(() => {
+    landing.scrollTop = $("landing-about").offsetTop;
+  });
+});
 $("entry-back").addEventListener("click", () => showScreen("screen-route"));
 for (const option of document.querySelectorAll(".route-option")) {
   option.addEventListener("click", () => {
@@ -351,6 +436,137 @@ for (const option of document.querySelectorAll(".route-option")) {
     for (const other of document.querySelectorAll(".route-option")) other.classList.toggle("active", other === option);
   });
 }
+
+function initRouteShader() {
+  const canvas = $("route-shader");
+  const gl = canvas?.getContext("webgl", { alpha: false, antialias: false })
+    || canvas?.getContext("experimental-webgl", { alpha: false, antialias: false });
+  if (!gl) {
+    canvas?.classList.add("shader-unavailable");
+    return;
+  }
+
+  const vertexSource = `
+    attribute vec2 a_position;
+    void main() { gl_Position = vec4(a_position, 0.0, 1.0); }
+  `;
+  const fragmentSource = `
+    precision highp float;
+    uniform vec2 u_resolution;
+    uniform float u_time;
+    uniform vec3 u_accent;
+
+    float hash(vec2 p) {
+      p = fract(p * vec2(123.34, 456.21));
+      p += dot(p, p + 45.32);
+      return fract(p.x * p.y);
+    }
+    float noise(vec2 p) {
+      vec2 i = floor(p), f = fract(p);
+      float a = hash(i), b = hash(i + vec2(1.0, 0.0));
+      float c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));
+      vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+    }
+    float fbm(vec2 p) {
+      float v = 0.0, a = 0.5;
+      for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.05; a *= 0.5; }
+      return v;
+    }
+    float ribbon(vec2 p, float yOffset, float freq, float amp, float speed, float widthBase, float phase) {
+      float centerY = yOffset + sin(p.x * freq + u_time * speed + phase) * amp
+        + fbm(vec2(p.x * 1.3 + u_time * speed * 0.5, phase)) * amp * 0.35;
+      float width = widthBase + 0.02 * sin(p.x * 3.0 + u_time * 0.4 + phase);
+      float d = abs(p.y - centerY);
+      return smoothstep(width, width * 0.15, d) + smoothstep(width * 3.0, 0.0, d) * 0.3;
+    }
+    void main() {
+      vec2 uv = gl_FragCoord.xy / u_resolution.xy;
+      vec2 p = uv;
+      float aspect = u_resolution.x / u_resolution.y;
+      p.x *= aspect;
+      float t = u_time * 0.06;
+      vec2 flowUv = p * 1.4 + vec2(t * 0.5, -t * 0.3);
+      float clouds = fbm(flowUv + fbm(flowUv * 1.6 + t));
+      float glow = smoothstep(1.6, 0.0, length((p - vec2(aspect * 1.15, -0.2)) * vec2(1.0, 1.1)));
+      float vertical = smoothstep(1.05, -0.35, uv.y);
+      float lum = clamp(vertical * 0.5 + glow * 0.45 + clouds * 0.3, 0.0, 1.3);
+      vec3 colDark = u_accent * 0.025;
+      vec3 colMid = u_accent * 0.48;
+      vec3 colHot = mix(u_accent, vec3(1.0), 0.28);
+      vec3 color = mix(colDark, colMid, smoothstep(0.0, 0.75, lum));
+      color = mix(color, colHot, smoothstep(0.75, 1.2, lum));
+      float r1 = ribbon(p, 0.62, 1.4, 0.10, 0.35, 0.030, 0.0);
+      float r2 = ribbon(p, 0.45, 1.1, 0.14, -0.28, 0.022, 2.1);
+      color += mix(u_accent, vec3(1.0), 0.55) * r1 * 0.9 + u_accent * r2 * 0.9;
+      color += (hash(gl_FragCoord.xy) - 0.5) * 0.055;
+      float vig = smoothstep(1.2, 0.3, length(uv - 0.5) * 1.3);
+      color *= mix(0.82, 1.0, vig);
+      gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+    }
+  `;
+
+  function compile(type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      console.error(gl.getShaderInfoLog(shader));
+      gl.deleteShader(shader);
+      return null;
+    }
+    return shader;
+  }
+
+  const vertex = compile(gl.VERTEX_SHADER, vertexSource);
+  const fragment = compile(gl.FRAGMENT_SHADER, fragmentSource);
+  if (!vertex || !fragment) return;
+  const program = gl.createProgram();
+  gl.attachShader(program, vertex);
+  gl.attachShader(program, fragment);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return;
+  gl.useProgram(program);
+
+  const buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]), gl.STATIC_DRAW);
+  const position = gl.getAttribLocation(program, "a_position");
+  gl.enableVertexAttribArray(position);
+  gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+  const resolution = gl.getUniformLocation(program, "u_resolution");
+  const time = gl.getUniformLocation(program, "u_time");
+  const accent = gl.getUniformLocation(program, "u_accent");
+  const started = performance.now();
+
+  function accentRgb() {
+    let value = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#7b2cff";
+    if (/^#[0-9a-f]{3}$/i.test(value)) value = `#${value.slice(1).split("").map((part) => part + part).join("")}`;
+    if (!/^#[0-9a-f]{6}$/i.test(value)) value = "#7b2cff";
+    return [1, 3, 5].map((start) => Number.parseInt(value.slice(start, start + 2), 16) / 255);
+  }
+
+  function render(now) {
+    const bounds = canvas.getBoundingClientRect();
+    const density = Math.min(window.devicePixelRatio || 1, 1.5);
+    const width = Math.max(1, Math.round(bounds.width * density));
+    const height = Math.max(1, Math.round(bounds.height * density));
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+      gl.viewport(0, 0, width, height);
+    }
+    const color = accentRgb();
+    gl.uniform2f(resolution, width, height);
+    gl.uniform1f(time, (now - started) / 1000);
+    gl.uniform3f(accent, color[0], color[1], color[2]);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
+}
+
+initRouteShader();
 $("route-next").addEventListener("click", () => {
   preferences.transport = chosenTransport;
   savePreferences();
@@ -388,6 +604,12 @@ $("form-entry").addEventListener("submit", async (event) => {
     button.disabled = false;
     button.textContent = "Зарегистрироваться";
   }
+});
+
+$("skip-registration").addEventListener("click", () => {
+  $("handle").value = "";
+  $("entry-password").value = "";
+  $("form-entry").requestSubmit();
 });
 
 // --- восстановление доступа ---------------------------------------------------
@@ -428,6 +650,13 @@ function renderRecoveryPage() {
 
 function openRecovery(mode = "code") {
   $("recover-error").textContent = "";
+  const russian = onboardingLanguage === "ru";
+  $("recover-title").textContent = mode === "password"
+    ? (russian ? "Войти в Obsidian" : "Sign in to Obsidian")
+    : (russian ? "Recovery phrase" : "Recovery phrase");
+  $("recover-lead").textContent = mode === "password"
+    ? (russian ? "Введите логин и пароль восстановления, созданные на другом устройстве." : "Enter the recovery login and password created on another device.")
+    : (russian ? "Введите 24 слова в том же порядке. За один шаг показываются восемь слов." : "Enter all 24 words in the original order. Eight words are shown per step.");
   const button = document.querySelector(`#recover-segment button[data-mode="${mode}"]`);
   button?.click();
   if (mode === "code") renderRecoveryPage();
@@ -2223,6 +2452,7 @@ $("logout-account").addEventListener("click", async () => {
   button.textContent = "Выходим…";
   try {
     await invoke("logout_local_account");
+    localStorage.removeItem("obsidian.preferences");
     window.location.reload();
   } catch (error) {
     button.disabled = false;
@@ -2284,7 +2514,7 @@ function backupWizardOpen() {
 }
 
 function backupStep(step) {
-  $("backup-step-now").textContent = String(step);
+  if ($("backup-step-now")) $("backup-step-now").textContent = String(step);
   $("backup-step-words").classList.toggle("hidden", step !== 1);
   $("backup-step-second").classList.toggle("hidden", step !== 2);
 }
@@ -2338,7 +2568,7 @@ $("backup-words-code").addEventListener("click", () => {
   }
 });
 
-$("backup-next").addEventListener("click", () => backupStep(2));
+$("backup-next").addEventListener("click", () => finishBackupWizard());
 
 $("backup-totp").addEventListener("change", () => {
   const on = $("backup-totp").checked;

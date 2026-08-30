@@ -1278,3 +1278,185 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
 @media(max-width:1100px){#screen-intro .intro-copy>p{font-size:27px}#screen-route .route-list{margin-top:80px}.language-brand img{height:230px}.language-brand strong{font-size:54px}}
 @media(max-width:760px){#screen-intro,#screen-route,#screen-entry,#screen-recover{display:block}#screen-intro .intro-copy,#screen-route .route-copy,#screen-entry .account-copy,#screen-recover .recovery-copy{padding:48px 26px 90px}.onboarding-art,.phone-stage{opacity:.12}.onboarding-prev{left:24px}.route-github{display:none}#screen-route .route-list{margin-top:80px}#screen-entry .onboarding-form{margin-top:35px}}
 
+/* Третий проход onboarding: единая прокручиваемая главная и адаптивные шаги. */
+#screen-language{display:block;overflow:hidden}
+.landing-scroll{height:100%;overflow-x:hidden;overflow-y:auto;scroll-behavior:smooth;scroll-snap-type:y mandatory;overscroll-behavior-y:contain}
+.landing-hero,.landing-about{position:relative;min-height:100%;scroll-snap-align:start;scroll-snap-stop:always}
+.landing-hero{display:grid;place-items:center;background:radial-gradient(circle at 50% 45%,rgba(123,44,255,.045),transparent 35%)}
+.landing-hero .language-brand{transform:translateY(-1.5vh)}
+.landing-hero .language-choice{position:absolute;bottom:clamp(32px,6vh,66px)}
+.landing-scroll-hint{position:absolute;right:clamp(18px,3vw,48px);bottom:clamp(24px,4vh,46px);display:flex;flex-direction:column;align-items:center;gap:7px;padding:0;border:0;background:transparent;color:#5d5d5d;font-size:9px;letter-spacing:.16em;text-transform:uppercase;transition:.2s}
+.landing-scroll-hint i{font:400 18px/1 "Inter UI",sans-serif;animation:landing-arrow 1.8s ease-in-out infinite}.landing-scroll-hint:hover{color:#fff}
+@keyframes landing-arrow{50%{transform:translateY(6px)}}
+.landing-about{display:grid;grid-template-columns:minmax(0,64%) minmax(280px,36%);overflow:hidden;background:radial-gradient(circle at 76% 52%,color-mix(in srgb,var(--accent) 16%,transparent),transparent 29%),#020202}
+.landing-about::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(110deg,transparent 46%,rgba(255,255,255,.018),transparent 70%)}
+.landing-copy{position:relative;z-index:2;display:flex;flex-direction:column;min-width:0;padding:clamp(70px,12vh,130px) 30px clamp(72px,8vh,90px) clamp(38px,6vw,116px);opacity:0;transform:translateY(34px);transition:opacity .7s ease,transform .8s cubic-bezier(.16,1,.3,1)}
+.landing-about.is-visible .landing-copy{opacity:1;transform:none}
+.landing-copy h1{margin:0 0 clamp(25px,4vh,44px);font:600 clamp(54px,6vw,112px)/.92 "Unbounded",sans-serif;letter-spacing:-.075em;text-transform:lowercase}
+.landing-copy>p{max-width:1050px;margin:0;color:#f4f4f4;font:600 clamp(22px,2.05vw,39px)/1.16 "Unbounded",sans-serif;letter-spacing:-.045em;text-wrap:balance}
+.landing-copy .intro-links{display:flex;align-items:center;gap:9px;margin-top:auto;color:#373737;font-size:14px}.landing-copy .intro-links a,.landing-copy .intro-links span{color:inherit;text-decoration:none}.landing-copy .intro-links i{font-style:normal}.landing-copy .intro-links a:hover{color:#aaa}
+.landing-about .phone-stage{position:relative;z-index:2;min-width:0;overflow:visible;background:none;opacity:0;transform:translateX(70px) rotate(2deg);transition:opacity .85s .12s ease,transform 1s .12s cubic-bezier(.16,1,.3,1)}
+.landing-about.is-visible .phone-stage{opacity:1;transform:none}.landing-about .phone-stage::before{display:none}
+.landing-about .phone-stage model-viewer{width:145%;height:91%;margin:4% 0 0 -50%;background:transparent;filter:drop-shadow(0 34px 38px rgba(0,0,0,.75));--poster-color:transparent}
+.landing-start{position:absolute;right:clamp(25px,3.7vw,70px);bottom:clamp(23px,4vh,44px);height:54px;padding:0 11px 0 25px;gap:34px;border:1px solid rgba(255,255,255,.1);border-radius:15px;background:rgba(12,12,12,.62);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);color:#eee}.landing-start b{width:35px;height:35px;border-radius:10px;background:var(--accent);color:#fff}
+
+/* Routing сохраняет пропорции макета, но больше не обрезается по высоте. */
+#screen-route .route-copy{min-height:0;padding:clamp(18px,3vh,34px) clamp(34px,7vw,118px) 58px}
+#screen-route .route-copy h1{flex:none;font-size:clamp(44px,3.65vw,70px)}
+#screen-route .route-list{flex:1;align-content:center;gap:clamp(38px,5.1vh,55px);width:min(620px,100%);margin:clamp(58px,8vh,86px) auto 0}
+#screen-route .route-option{min-height:clamp(105px,13.5vh,146px);padding:clamp(14px,2vh,22px);border-radius:clamp(17px,2vw,24px)}
+#screen-route .route-option:first-child{min-height:clamp(190px,24vh,260px)}
+#screen-route .route-option>span:nth-child(2){top:clamp(-42px,-4.2vh,-34px)}
+#screen-route .route-option>span:nth-child(2) b{font-size:clamp(20px,1.55vw,28px)}
+#screen-route .route-diagram i{width:clamp(56px,6vh,76px);height:clamp(56px,6vh,76px);border-width:4px}
+#screen-route .route-diagram em{height:clamp(3px,.55vh,6px)}
+
+/* Вход и recovery: компактная форма, читаемая и на невысоком окне. */
+#screen-entry .account-copy,#screen-recover .recovery-copy{min-height:0;overflow-y:auto;padding:clamp(45px,7vh,76px) clamp(38px,9vw,150px) 66px clamp(48px,8vw,146px)}
+#screen-entry .onboarding-brand,#screen-recover .onboarding-brand{width:clamp(52px,5vw,76px);height:clamp(78px,9vh,112px)}
+#screen-entry .onboarding-brand img,#screen-recover .onboarding-brand img{width:100%;height:100%}
+#screen-entry .account-copy h1{max-width:560px;margin:clamp(8px,1.5vh,16px) 0 8px;font-size:clamp(34px,3vw,56px)}
+#screen-entry .account-copy>p{max-width:540px;color:#777;font:500 clamp(13px,1vw,17px)/1.35 "Unbounded",sans-serif}
+#screen-entry .onboarding-form{width:min(520px,100%);margin-top:clamp(24px,4.5vh,47px);padding:clamp(16px,2vw,24px);border:1px solid rgba(255,255,255,.075);border-radius:20px;background:rgba(12,12,12,.58);box-shadow:0 28px 70px rgba(0,0,0,.24);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+#screen-entry .onboarding-form label{margin:12px 2px 7px;font:600 clamp(13px,1vw,16px) "Unbounded",sans-serif}
+#screen-entry .onboarding-form label:first-child{margin-top:0}
+#screen-entry .onboarding-form input:not([type="hidden"]){height:47px;padding-inline:14px;border-color:rgba(255,255,255,.12);background:rgba(0,0,0,.36);font:500 15px "Inter UI",sans-serif}
+#screen-entry .onboarding-submit{height:49px;margin-top:20px;background:var(--accent);color:#fff;font:600 15px "Unbounded",sans-serif;box-shadow:0 12px 35px color-mix(in srgb,var(--accent) 20%,transparent)}
+#screen-entry .entry-actions{width:min(520px,100%);padding-inline:4px}.entry-actions button{font-family:"Inter UI",sans-serif;font-size:11px}
+#screen-recover .recovery-copy{padding-top:clamp(54px,8vh,92px)}
+#screen-recover .recovery-copy h1{margin:12px 0 6px;font-size:clamp(34px,3vw,50px)}
+#screen-recover .recovery-form{margin-top:clamp(24px,4vh,40px)}
+
+@media(max-height:760px) and (min-width:761px){
+  .language-brand img{width:120px;height:180px}.language-brand strong{margin-top:8px;font-size:48px}.language-brand span{font-size:19px}
+  #screen-route .route-list{gap:34px;margin-top:54px}#screen-route .route-option:first-child{min-height:170px}#screen-route .route-option{min-height:92px}
+  #screen-entry .account-copy,#screen-recover .recovery-copy{padding-top:32px}.account-copy .onboarding-brand,.recovery-copy .onboarding-brand{height:68px!important}
+  #screen-entry .onboarding-form{margin-top:18px}#screen-entry .account-copy h1{font-size:32px}#screen-entry .account-copy>p{font-size:12px}
+}
+@media(max-width:1000px){
+  .landing-about{grid-template-columns:minmax(0,67%) minmax(230px,33%)}.landing-copy>p{font-size:clamp(20px,2.6vw,28px)}
+  #screen-route,#screen-entry,#screen-recover{grid-template-columns:minmax(520px,62%) minmax(0,38%)}
+  #screen-route .route-copy{padding-inline:42px}#screen-route .route-list{max-width:520px}
+}
+@media(max-width:720px){
+  .landing-scroll{scroll-snap-type:y proximity}.landing-hero .language-brand img{width:105px;height:155px}.landing-hero .language-brand strong{margin-top:10px;font-size:42px}.landing-hero .language-brand span{font-size:17px}.landing-hero .language-choice{bottom:72px}.landing-scroll-hint{right:50%;bottom:22px;transform:translateX(50%)}
+  .landing-about{display:flex;min-height:max(100%,720px);flex-direction:column;overflow:hidden}.landing-copy{min-height:100%;padding:70px 22px 120px}.landing-copy h1{font-size:48px}.landing-copy>p{font-size:21px;line-height:1.22}.landing-copy .intro-links{font-size:10px}.landing-about .phone-stage{position:absolute;inset:0;z-index:1;opacity:.13!important;pointer-events:none}.landing-about .phone-stage model-viewer{width:100%;height:100%;margin:0}.landing-start{right:20px;bottom:22px}
+  #screen-route,#screen-entry,#screen-recover{display:block;overflow-y:auto}#screen-route .onboarding-art,#screen-entry .onboarding-art,#screen-recover .onboarding-art{display:none}
+  #screen-route .route-copy,#screen-entry .account-copy,#screen-recover .recovery-copy{min-height:100%;overflow:visible;padding:34px 20px 82px}
+  #screen-route .route-copy h1{font-size:40px}#screen-route .route-list{gap:38px;margin-top:68px}#screen-route .route-option:first-child{min-height:170px}#screen-route .route-option{min-height:100px}#screen-route .route-diagram i{width:52px;height:52px;border-width:3px}#screen-route .route-option>span:nth-child(2) b{font-size:20px}
+  #screen-entry .onboarding-brand,#screen-recover .onboarding-brand{height:72px}#screen-entry .account-copy h1{font-size:34px}#screen-entry .onboarding-form{margin-top:26px;padding:16px;border-radius:16px}
+  #screen-recover .recovery-word-grid{grid-template-columns:1fr 1fr;gap:9px}.onboarding-prev{left:20px!important}.onboarding-next{right:20px}.route-github{display:none}
+}
+
+/* Обычная прокрутка и scroll-reactive приветственный экран. */
+.landing-scroll{scroll-behavior:smooth;scroll-snap-type:none}
+.landing-hero .language-brand img{animation:welcome-logo-float 4.2s ease-in-out infinite;will-change:transform}
+@keyframes welcome-logo-float{0%,100%{transform:translateY(-7px)}50%{transform:translateY(9px)}}
+.intro-story{max-width:980px;display:grid;gap:clamp(15px,2.2vh,26px);transform:translateY(var(--welcome-copy-shift,18px));transition:transform .16s linear}
+.intro-story p{margin:0;color:#f3f3f3;font-family:"Unbounded",sans-serif;letter-spacing:-.04em;text-wrap:balance;opacity:0;transform:translateY(28px);transition:opacity .62s ease,transform .78s cubic-bezier(.16,1,.3,1)}
+.intro-story p:first-child{font-size:clamp(24px,2.25vw,42px);font-weight:600;line-height:1.14}
+.intro-story p:nth-child(2){max-width:900px;color:#b7b7b7;font-size:clamp(16px,1.42vw,27px);font-weight:500;line-height:1.32}
+.intro-story p:nth-child(3){color:color-mix(in srgb,var(--accent) 58%,#d8d8d8);font-size:clamp(13px,1vw,18px);font-weight:500;line-height:1.4}
+.landing-about.is-visible .intro-story p{opacity:1;transform:none}.landing-about.is-visible .intro-story p:nth-child(2){transition-delay:.12s}.landing-about.is-visible .intro-story p:nth-child(3){transition-delay:.24s}
+
+/* Готовый мокап телефона вместо GLB. */
+.landing-about .phone-stage{background:radial-gradient(circle at 48% 52%,color-mix(in srgb,var(--accent) 19%,transparent),transparent 43%)}
+.phone-mokker{position:absolute;top:0;left:42%;z-index:2;width:auto;height:100%;max-width:none;object-fit:contain;filter:drop-shadow(0 35px 50px rgba(0,0,0,.72));transform:translate(-50%,var(--welcome-phone-shift,23px)) scale(.94);transition:transform .16s linear,filter .35s ease}
+.landing-about.is-visible .phone-mokker{filter:drop-shadow(0 35px 50px rgba(0,0,0,.76)) drop-shadow(0 0 24px color-mix(in srgb,var(--accent) 16%,transparent))}
+
+/* Shader из prototype/silk_ribbons_shader.html занимает всю правую панель. */
+#screen-route .onboarding-art{position:relative;isolation:isolate;overflow:hidden;background:#050008}
+#route-shader{position:absolute;inset:0;z-index:0;width:100%;height:100%;display:block;background:radial-gradient(circle at 55% 65%,color-mix(in srgb,var(--accent) 78%,#08000f),#08000f 68%)}
+#route-shader.shader-unavailable{background:radial-gradient(circle at 55% 70%,var(--accent),color-mix(in srgb,var(--accent) 24%,#050008) 48%,#050008 78%)}
+#screen-route .onboarding-art>img{position:relative;z-index:2;display:block!important;width:min(64%,650px);height:auto;margin:auto;align-self:center;object-fit:contain;filter:brightness(0);opacity:.95}
+
+/* Стабильная привязка обеих кнопок к левой панели. */
+#screen-route .onboarding-prev{left:clamp(24px,3.1vw,60px);min-width:98px;justify-content:center}
+#screen-route .onboarding-next{right:calc(52.8% + 18px);left:auto;min-width:144px;justify-content:center}
+
+/* Recovery после регистрации — один фиолетовый шаг без запасного входа. */
+#screen-backup{background:radial-gradient(circle at 50% 35%,color-mix(in srgb,var(--accent) 16%,transparent),transparent 42%),#020202}
+#screen-backup .backup-card{border-color:color-mix(in srgb,var(--accent) 22%,rgba(255,255,255,.08));background:color-mix(in srgb,var(--accent) 5%,rgba(10,10,10,.9));box-shadow:0 30px 90px rgba(0,0,0,.55),0 0 70px color-mix(in srgb,var(--accent) 8%,transparent)}
+#screen-backup .primary-button{background:var(--accent);color:var(--accent-text)}
+
+@media(max-width:1000px){#screen-route .onboarding-next{right:calc(38% + 18px);left:auto}}
+@media(max-width:720px){
+  .landing-about .phone-stage{display:block;opacity:.3!important}.phone-mokker{left:50%;height:100%;opacity:.78}
+  #screen-route .onboarding-next{right:20px;left:auto}
+  .intro-story p:first-child{font-size:22px}.intro-story p:nth-child(2){font-size:16px}.intro-story p:nth-child(3){font-size:13px}
+}
+@media(prefers-reduced-motion:reduce){.landing-hero .language-brand img{animation:none}.intro-story,.phone-mokker{transform:none;transition:none}.intro-story p{opacity:1;transform:none;transition:none}}
+@media(max-width:420px){
+  .landing-copy h1{font-size:40px}.landing-copy>p{font-size:18px}.landing-copy .intro-links{gap:5px;font-size:8.5px}
+  #screen-route .route-copy h1{font-size:34px}#screen-route .route-option{padding:12px}#screen-route .route-diagram i{width:45px;height:45px;font-size:7px}
+  #screen-entry .account-copy h1,#screen-recover .recovery-copy h1{font-size:29px}#screen-entry .account-copy>p{font-size:11px}.entry-actions{flex-direction:column;gap:5px!important}
+  #screen-recover .recovery-word-grid{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){.landing-scroll{scroll-behavior:auto}.landing-copy,.landing-about .phone-stage{opacity:1;transform:none;transition:none}.landing-scroll-hint i{animation:none}}
+
+/* Финальная полировка onboarding по prototype/screen. */
+.onboarding-screen{--onboard-purple:var(--accent)}
+.landing-scroll{scroll-snap-type:none;scrollbar-width:none;-ms-overflow-style:none}
+.landing-scroll::-webkit-scrollbar{display:none;width:0;height:0}
+
+/* Слайдер подтверждает намерение и не срабатывает от случайного клика. */
+.onboarding-slider{--slide-x:0px;position:absolute;z-index:9;width:min(350px,calc(100% - 40px));height:60px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid rgba(255,255,255,.13);border-radius:18px;background:rgba(12,12,12,.7);color:#aaa;font:600 11px "Unbounded",sans-serif;user-select:none;touch-action:none;backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);box-shadow:0 18px 55px rgba(0,0,0,.35);transition:border-color .2s,box-shadow .2s}
+.onboarding-slider:hover,.onboarding-slider:focus-visible{border-color:rgba(255,255,255,.25);outline:none;box-shadow:0 18px 65px rgba(0,0,0,.5),0 0 0 3px color-mix(in srgb,var(--accent) 13%,transparent)}
+.onboarding-slider-fill{position:absolute;inset:5px auto 5px 5px;width:calc(var(--slide-x) + 52px);border-radius:13px;background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 55%,#120026),color-mix(in srgb,var(--accent) 24%,transparent));opacity:.72;transition:width .32s cubic-bezier(.2,.8,.2,1)}
+.onboarding-slider.dragging .onboarding-slider-fill{transition:none}.onboarding-slider>span{position:relative;z-index:1;padding-left:26px;pointer-events:none;letter-spacing:-.02em}
+.onboarding-slider-thumb{position:absolute;top:6px;left:6px;z-index:2;width:48px;height:48px;display:grid;place-items:center;border-radius:13px;background:var(--accent);color:#fff;font:500 20px "Inter UI",sans-serif;box-shadow:0 6px 24px color-mix(in srgb,var(--accent) 38%,transparent);transform:translateX(var(--slide-x));transition:transform .32s cubic-bezier(.2,.8,.2,1)}
+.onboarding-slider.dragging .onboarding-slider-thumb{transition:none;cursor:grabbing}.landing-start{right:clamp(24px,3.7vw,70px);bottom:clamp(22px,4vh,44px);padding:0}
+
+/* Телефон виден сразу как объёмный placeholder, затем бесшовно сменяется GLB. */
+.phone-fallback{position:absolute;z-index:0;top:50%;left:47%;width:clamp(150px,17vw,300px);aspect-ratio:.49;border:3px solid rgba(255,255,255,.64);border-radius:clamp(25px,3vw,48px);background:linear-gradient(155deg,#17121f,#050506 46%,#260a55);box-shadow:inset 0 0 0 8px #070707,0 35px 80px rgba(0,0,0,.7),0 0 80px color-mix(in srgb,var(--accent) 22%,transparent);transform:translate(-50%,-50%) perspective(900px) rotateY(-18deg) rotateX(5deg) rotateZ(4deg);transition:opacity .55s ease}
+.phone-fallback::before{content:"";position:absolute;top:14px;left:50%;width:28%;height:8px;border-radius:99px;background:#090909;transform:translateX(-50%)}
+.phone-fallback i{position:absolute;inset:9%;border-radius:18px;background:radial-gradient(circle at 58% 34%,color-mix(in srgb,var(--accent) 64%,transparent),transparent 31%),linear-gradient(160deg,#09090b,#120023 64%,#050505)}
+.phone-fallback span{position:absolute;bottom:19px;left:50%;width:29%;height:4px;border-radius:99px;background:rgba(255,255,255,.55);transform:translateX(-50%)}
+.phone-stage model-viewer{position:relative;z-index:1;opacity:0;transition:opacity .55s ease}.phone-stage.model-ready model-viewer{opacity:1}.phone-stage.model-ready .phone-fallback{opacity:0}.phone-stage.model-error .phone-fallback{border-color:color-mix(in srgb,var(--accent) 65%,#fff)}
+.landing-about .phone-stage{background:radial-gradient(circle at 43% 52%,color-mix(in srgb,var(--accent) 23%,transparent),transparent 42%)}
+.landing-about .phone-stage model-viewer{width:112%;height:96%;margin:2% 0 0 -20%;filter:drop-shadow(0 34px 44px rgba(0,0,0,.82)) drop-shadow(0 0 24px color-mix(in srgb,var(--accent) 14%,transparent))}
+
+/* Точные SVG-плашки из третьего макета. */
+#screen-route{background:#020202}
+#screen-route .onboarding-art{background:#070007 url("assets/onboarding/route-exact.svg") right center/200% 100% no-repeat}
+#screen-route .route-copy{padding-top:clamp(20px,3.7vh,42px)}
+#screen-route .route-list{display:grid;align-content:center;gap:clamp(42px,5.6vh,62px);width:min(620px,calc((100vh - 190px)*.74),100%);margin:clamp(58px,8vh,88px) auto 0}
+#screen-route .route-option,#screen-route .route-option:first-child{position:relative;display:block;width:100%;min-height:0;padding:0;border:0;border-radius:24px;background:transparent;box-shadow:none;transform:none}
+#screen-route .route-option:first-child{aspect-ratio:620/306}#screen-route .route-option:not(:first-child){aspect-ratio:621/158}
+#screen-route .route-option:hover{background:transparent;transform:translateY(-2px)}
+#screen-route .route-option img{display:block;width:100%;height:100%;border-radius:inherit;object-fit:fill;opacity:.76;transition:opacity .2s,filter .2s,transform .2s}
+#screen-route .route-option:hover img{opacity:.95}#screen-route .route-option.active img{opacity:1;filter:drop-shadow(0 16px 32px rgba(0,0,0,.4))}
+#screen-route .route-option.active::after{content:"";position:absolute;inset:0;border:2px solid color-mix(in srgb,var(--accent) 52%,transparent);border-radius:inherit;pointer-events:none;box-shadow:0 0 30px color-mix(in srgb,var(--accent) 11%,transparent)}
+#screen-route .route-option>span:nth-child(2){position:absolute;top:clamp(-43px,-4.3vh,-34px);left:0;width:100%;text-align:center;pointer-events:none}
+#screen-route .route-option>span:nth-child(2) b{font-size:clamp(19px,1.55vw,28px)}#screen-route .route-option>span:nth-child(2) small{display:none}
+#screen-route .route-option u{top:12px;right:12px;z-index:3;width:25px;height:25px;border-color:#555;background:rgba(0,0,0,.6);backdrop-filter:blur(8px)}
+#screen-route .route-option.active u{background:var(--accent);color:#fff}
+
+/* Явная навигация: назад слева, продолжить на прежнем центральном месте. */
+#screen-route .onboarding-prev,#screen-route .onboarding-next,#screen-entry .onboarding-prev{height:43px;display:flex;align-items:center;gap:9px;padding:0 17px;border:1px solid rgba(255,255,255,.11);border-radius:13px;background:rgba(15,15,15,.68);color:#bdbdbd;font-size:12px;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);box-shadow:0 12px 35px rgba(0,0,0,.24)}
+#screen-route .onboarding-prev{left:clamp(24px,3.1vw,60px);bottom:18px}
+#screen-route .onboarding-next{right:auto;left:calc(47.2% - 144px);bottom:18px;color:#fff}
+#screen-route .onboarding-next b{width:25px;height:25px;display:grid;place-items:center;border-radius:8px;background:var(--accent);color:#fff}
+#screen-route .onboarding-prev:hover,#screen-route .onboarding-next:hover,#screen-entry .onboarding-prev:hover{border-color:rgba(255,255,255,.25);background:rgba(27,27,27,.8)}
+
+/* Регистрация, вход и recovery используют одну визуальную систему. */
+#screen-entry .onboarding-form,#screen-recover .onboarding-form:not(.hidden){border:1px solid rgba(255,255,255,.09);border-radius:20px;background:rgba(11,11,11,.7);box-shadow:0 26px 70px rgba(0,0,0,.3);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+#screen-recover #form-recover-password{width:min(520px,100%);margin-top:32px;padding:22px}
+#screen-recover #form-recover-password label{color:#eee;font:600 14px "Unbounded",sans-serif}
+#screen-recover #form-recover-password input{height:48px;margin-bottom:3px;background:rgba(0,0,0,.36)}
+#screen-recover #form-recover-password .onboarding-submit{background:var(--accent);color:#fff;font:600 15px "Unbounded",sans-serif}
+.entry-skip{width:min(520px,100%);height:42px;margin-top:12px;border:1px dashed rgba(255,255,255,.13);border-radius:12px;background:transparent;color:#777;font-size:11px;transition:.18s}.entry-skip:hover{border-color:color-mix(in srgb,var(--accent) 45%,transparent);background:color-mix(in srgb,var(--accent) 7%,transparent);color:#ddd}
+#screen-entry .onboarding-prev{left:calc(47.2% - 124px);bottom:18px}
+
+@media(max-width:1000px){
+  #screen-route .route-list{width:min(520px,calc((100vh - 175px)*.74),100%)}
+  #screen-route .onboarding-next{left:calc(62% - 144px)}
+}
+@media(max-width:720px){
+  .landing-about .phone-stage{display:block;opacity:.22!important}.phone-fallback{width:190px}.landing-about .phone-stage model-viewer{width:100%;height:100%;margin:0}
+  .onboarding-slider{width:calc(100% - 40px)}
+  #screen-route .route-list{width:min(520px,100%);margin-top:72px;gap:45px}#screen-route .route-option:first-child{aspect-ratio:620/306}#screen-route .route-option:not(:first-child){aspect-ratio:621/158}
+  #screen-route .onboarding-next{right:20px;left:auto}#screen-route .onboarding-prev{left:20px!important}
+  #screen-entry .onboarding-prev{left:20px!important}.entry-skip{margin-bottom:18px}
+}
+
