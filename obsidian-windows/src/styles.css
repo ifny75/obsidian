@@ -274,6 +274,18 @@ body[data-wallpaper="rays"]{--wallpaper-image:
 
 .storage-report{margin:11px 0 0;color:var(--text);font-size:11.5px;line-height:1.7;white-space:pre-line}
 /* Предупреждение о файле переноса. Полоса, а не мелкий текст: этот файл — весь аккаунт, и прочитать это должны раньше, чем нажмут кнопку. */
+/* Значок с пояснением у карточки маршрута.
+
+   Кружок лежит внутри кнопки и намеренно не получает фокус: вложенный в
+   кнопку фокусируемый элемент — невалидная разметка и ловушка для клавиатуры.
+   Поэтому подсказка показывается и по наведению на значок, и по фокусу самой
+   кнопки: мышью и с клавиатуры доступно одинаково. */
+.route-help{position:relative;display:inline-flex;align-items:center;margin-left:auto;margin-right:10px}
+.route-info{display:grid;place-items:center;width:17px;height:17px;border:1px solid var(--line-strong);border-radius:50%;color:var(--muted);font:600 11px/1 "Inter UI",sans-serif;cursor:help;transition:color .16s,border-color .16s}
+.routing-option:hover .route-info{color:var(--text);border-color:var(--text)}
+.route-tip{position:absolute;right:-6px;bottom:calc(100% + 9px);z-index:5;width:270px;padding:10px 12px;border:1px solid var(--line-strong);border-radius:10px;background:var(--panel-solid);box-shadow:var(--shadow);color:var(--muted);font-size:11.5px;line-height:1.5;text-align:left;white-space:normal;opacity:0;visibility:hidden;transform:translateY(3px);transition:opacity .16s,transform .16s,visibility .16s}
+.route-info:hover+.route-tip,.routing-option:focus-visible .route-tip{opacity:1;visibility:visible;transform:translateY(0)}
+@media (prefers-reduced-motion:reduce){.route-tip{transition:none}}
 .post-unverified{display:block;margin-top:5px;color:var(--warning);font-size:10.5px}
 .warning-strip{margin:10px 0 0;padding:10px 12px;border:1px solid color-mix(in srgb,var(--warning) 42%,var(--line));border-left:3px solid var(--warning);border-radius:9px;background:color-mix(in srgb,var(--warning) 9%,transparent);color:var(--text);font-size:11.5px;line-height:1.6}
 
@@ -1597,4 +1609,17 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
 @media(max-width:720px){
   #screen-entry,#screen-recover{overflow-y:auto}
 }
+
+/* Точная маска анимации по координатам белых линий в route PNG (620 px). */
+.route-flow>b{height:4px;overflow:hidden;contain:paint;clip-path:inset(0 round 99px);transform:translateY(-50%)}
+.route-flow>b::after{height:100%;filter:none}
+.route-option[data-transport="auto"] .route-flow>b:nth-child(1){left:20.95%;top:45.13%;width:10.55%}
+.route-option[data-transport="auto"] .route-flow>b:nth-child(2){left:68.55%;top:43.51%;width:10.55%}
+.route-option[data-transport="auto"] .route-flow>b:nth-child(3){display:none}
+.route-option[data-transport="multihop"] .route-flow>b:nth-child(1),
+.route-option[data-transport="onion"] .route-flow>b:nth-child(1){left:19.03%;top:50%;width:7.42%}
+.route-option[data-transport="multihop"] .route-flow>b:nth-child(2),
+.route-option[data-transport="onion"] .route-flow>b:nth-child(2){left:47.26%;top:50%;width:7.42%}
+.route-option[data-transport="multihop"] .route-flow>b:nth-child(3),
+.route-option[data-transport="onion"] .route-flow>b:nth-child(3){left:74.35%;top:50%;width:7.58%}
 
