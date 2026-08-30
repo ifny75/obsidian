@@ -309,6 +309,14 @@ const onboardingCopy = {
     start: "Проведите, чтобы начать", next: "Продолжить", routeText: "Выберите, как приложение будет соединяться с сетью. Настройку всегда можно изменить позже.",
     relay: "Быстрое прямое соединение", multi: "Дополнительный промежуточный узел", tor: "Максимальная сетевая приватность",
     entryTitle: "Начните с Obsidian", entryLead: "Имя увидят собеседники. Пароль нужен для запасного входа с другого устройства.",
+    routeTitle: "сервер Obsidian", back: "Назад", relayTitle: "Relay (автоматически)",
+    username: "Имя пользователя", usernamePlaceholder: "username", recoveryPassword: "Пароль восстановления", passwordPlaceholder: "Минимум 10 символов",
+    register: "Зарегистрироваться", signIn: "← Вернуться ко входу", recoverWords: "Восстановить по 24 словам", skip: "Skip — продолжить без логина и пароля",
+    recoveryTitle: "Recovery phrase", recoveryLead: "Введите 24 слова в том же порядке. За один шаг показываются восемь слов.",
+    login: "Логин", password: "Пароль", loginAction: "Войти", backToRegister: "Назад к регистрации",
+    backupTitle: "Запишите фразу", backupLead: "Двадцать четыре слова — это и есть ваш аккаунт. Перепишите их на бумагу и храните отдельно от компьютера. Не сохраняйте фразу в переписке, скриншотах или облаке.",
+    revealWords: "Показать 24 слова", copy: "Скопировать", showCode: "Показать кодом", enterChats: "Перейти в чаты", previous: "Назад", forward: "Далее", restore: "Восстановить",
+    confirmPhrase: "Я переписал(а) фразу на бумагу и понимаю, что второй раз её не покажут", security: "Фраза и пароль никогда не передаются с устройства в открытом виде.",
   },
   en: {
     introTitle: "obsidian",
@@ -320,6 +328,14 @@ const onboardingCopy = {
     start: "Slide to start", next: "Continue", routeText: "Choose how the app connects to the network. You can change this later.",
     relay: "Fast direct connection", multi: "An additional intermediate relay", tor: "Maximum network privacy",
     entryTitle: "Get started with Obsidian", entryLead: "Your contacts see the username. The password enables recovery on another device.",
+    routeTitle: "Obsidian server", back: "Back", relayTitle: "Relay (automatic)",
+    username: "Username", usernamePlaceholder: "username", recoveryPassword: "Recovery password", passwordPlaceholder: "At least 10 characters",
+    register: "Create account", signIn: "← Return to sign in", recoverWords: "Recover with 24 words", skip: "Skip — continue without login and password",
+    recoveryTitle: "Recovery phrase", recoveryLead: "Enter all 24 words in the original order. Eight words are shown per step.",
+    login: "Login", password: "Password", loginAction: "Sign in", backToRegister: "Back to registration",
+    backupTitle: "Write down the phrase", backupLead: "These twenty-four words are your account. Write them on paper and keep them away from the computer. Do not store them in chats, screenshots or cloud storage.",
+    revealWords: "Show 24 words", copy: "Copy", showCode: "Show as code", enterChats: "Open chats", previous: "Back", forward: "Next", restore: "Restore",
+    confirmPhrase: "I wrote the phrase down on paper and understand it will not be shown a second time", security: "The phrase and password never leave your device unencrypted.",
   },
 };
 
@@ -338,6 +354,35 @@ function applyOnboardingLanguage() {
   $("route-tor-text").textContent = copy.tor;
   $("entry-title").textContent = copy.entryTitle;
   $("entry-lead").textContent = copy.entryLead;
+  $("route-title").textContent = copy.routeTitle;
+  $("route-back-label").textContent = copy.back;
+  $("entry-back-label").textContent = copy.back;
+  $("route-relay-title").textContent = copy.relayTitle;
+  $("handle-label").textContent = copy.username;
+  $("handle").placeholder = copy.usernamePlaceholder;
+  $("entry-password-label").textContent = copy.recoveryPassword;
+  $("entry-password").placeholder = copy.passwordPlaceholder;
+  $("entry-submit").textContent = copy.register;
+  $("open-password-recover").textContent = copy.signIn;
+  $("open-recover").textContent = copy.recoverWords;
+  $("skip-registration").textContent = copy.skip;
+  $("recover-title").textContent = copy.recoveryTitle;
+  $("recover-lead").textContent = copy.recoveryLead;
+  document.querySelector('label[for="recover-login"]').textContent = copy.login;
+  document.querySelector('label[for="recover-password"]').textContent = copy.password;
+  $("form-recover-password").querySelector("button").textContent = copy.loginAction;
+  $("recover-back").querySelector("span").textContent = copy.backToRegister;
+  $("backup-title").textContent = copy.backupTitle;
+  $("backup-lead").textContent = copy.backupLead;
+  $("backup-words-reveal").textContent = copy.revealWords;
+  $("backup-words-copy").textContent = copy.copy;
+  $("backup-words-code").textContent = copy.showCode;
+  $("backup-next").textContent = copy.enterChats;
+  $("backup-written").nextElementSibling.textContent = copy.confirmPhrase;
+  $("screen-backup").querySelector(".security-note span:last-child").textContent = copy.security;
+  $("recover-prev").querySelector("span").textContent = copy.previous;
+  $("recover-next").querySelector("span").textContent = copy.forward;
+  $("recover-submit").textContent = `${copy.restore} →`;
   for (const button of document.querySelectorAll("[data-language]")) {
     button.classList.toggle("active", button.dataset.language === onboardingLanguage);
   }
@@ -377,7 +422,7 @@ let startSliderProgress = 0;
 function paintStartSlider(progress) {
   startSliderProgress = Math.max(0, Math.min(1, progress));
   startSlider.style.setProperty("--slide-progress", startSliderProgress);
-  startSlider.style.setProperty("--slide-x", `${Math.max(0, startSlider.clientWidth - 62) * startSliderProgress}px`);
+  startSlider.style.setProperty("--slide-x", `${Math.max(0, startSlider.clientWidth - 58) * startSliderProgress}px`);
   startSlider.setAttribute("aria-valuenow", String(Math.round(startSliderProgress * 100)));
 }
 
@@ -437,8 +482,7 @@ for (const option of document.querySelectorAll(".route-option")) {
   });
 }
 
-function initRouteShader() {
-  const canvas = $("route-shader");
+function initOnboardingShader(canvas) {
   const gl = canvas?.getContext("webgl", { alpha: false, antialias: false })
     || canvas?.getContext("experimental-webgl", { alpha: false, antialias: false });
   if (!gl) {
@@ -547,6 +591,10 @@ function initRouteShader() {
   }
 
   function render(now) {
+    if (canvas.closest(".screen")?.classList.contains("hidden")) {
+      requestAnimationFrame(render);
+      return;
+    }
     const bounds = canvas.getBoundingClientRect();
     const density = Math.min(window.devicePixelRatio || 1, 1.5);
     const width = Math.max(1, Math.round(bounds.width * density));
@@ -566,7 +614,7 @@ function initRouteShader() {
   requestAnimationFrame(render);
 }
 
-initRouteShader();
+document.querySelectorAll(".onboarding-shader").forEach(initOnboardingShader);
 $("route-next").addEventListener("click", () => {
   preferences.transport = chosenTransport;
   savePreferences();

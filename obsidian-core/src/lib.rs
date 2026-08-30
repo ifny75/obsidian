@@ -19,6 +19,7 @@ pub mod ffi;
 pub mod keys;
 pub mod migrate;
 pub mod mls;
+pub mod padding;
 pub mod passphrase;
 pub mod pins;
 pub mod privacy;

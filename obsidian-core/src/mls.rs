@@ -686,6 +686,41 @@ mod tests {
         }
     }
 
+    /// Ступени работают поверх MLS: разные по смыслу сообщения совпадают.
+    ///
+    /// Проверяется вся связка целиком — добивка ядра плюс добивка самого MLS, —
+    /// потому что порознь ни та ни другая не отвечают на вопрос «различит ли
+    /// сервер фотографию и голосовое по длине конверта».
+    #[test]
+    fn a_photo_and_a_voice_note_of_a_kind_look_alike() {
+        let (mut alice, _ad, mut bob, bob_device) = pair();
+        let bob_package = bob.key_packages(1).unwrap().remove(0);
+        let (group_id, welcome) = alice.start_conversation(&bob_package, &bob_device.public()).unwrap();
+        bob.process(&welcome).unwrap();
+
+        // Два разных по природе вложения, попавших в одну ступень.
+        let photo = vec![b'p'; 3_000];
+        let voice = vec![b'v'; 3_900];
+        let sizes: Vec<usize> = [photo, voice]
+            .iter()
+            .map(|body| {
+                let padded = crate::padding::pad(body);
+                alice.encrypt(&group_id, &padded, &bob_device.public()).unwrap().len()
+            })
+            .collect();
+        assert_eq!(sizes[0], sizes[1], "в одной ступени длины обязаны совпасть: {sizes:?}");
+
+        // И содержимое доезжает целым: добивка снимается на приёме.
+        let padded = crate::padding::pad(b"secret");
+        let ciphertext = alice.encrypt(&group_id, &padded, &bob_device.public()).unwrap();
+        match bob.process(&ciphertext).unwrap() {
+            Incoming::Message { plaintext, .. } => {
+                assert_eq!(crate::padding::strip(&plaintext), b"secret");
+            }
+            other => panic!("ожидали Message, получили {other:?}"),
+        }
+    }
+
     /// Длина растёт ступенями, а не байт в байт.
     #[test]
     fn length_grows_in_steps() {

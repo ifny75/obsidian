@@ -81,13 +81,14 @@
       Пропустить можно — но не молча: цена названа прямо, потому что расплата
       наступит не сегодня и не для нас.
     -->
-    <section id="screen-backup" class="screen centered-screen hidden">
+    <section id="screen-backup" class="screen onboarding-screen onboarding-grid backup-onboarding hidden">
+      <div class="onboarding-copy backup-copy">
       <div class="entry-card backup-card">
         <p class="eyebrow">Recovery phrase · сохраните её сейчас</p>
 
         <div id="backup-step-words">
-          <h1>Запишите фразу</h1>
-          <p class="lead">
+          <h1 id="backup-title">Запишите фразу</h1>
+          <p id="backup-lead" class="lead">
             Двадцать четыре слова — это и есть ваш аккаунт. По ним его вернут на любом
             устройстве. Перепишите на бумагу и держите там, где не держите компьютер.
             В переписку, скриншот и облако — нельзя.
@@ -150,6 +151,8 @@
           <span>Ни фраза, ни пароль не уходят с устройства открытыми.</span>
         </div>
       </div>
+      </div>
+      <div class="onboarding-art" aria-hidden="true"><canvas class="onboarding-shader"></canvas><img src="assets/svg/spy.svg" alt="" /></div>
     </section>
 
     <section id="screen-language" class="screen onboarding-screen language-screen hidden">
@@ -189,16 +192,16 @@
     <section id="screen-route" class="screen onboarding-screen onboarding-grid hidden">
       <div class="onboarding-copy route-copy">
         <div class="onboarding-brand"><img src="assets/obsidian_logo.svg" alt="" /><b>Obsidian</b><span>public beta</span></div>
-        <h1>Obsidian server</h1>
+        <h1 id="route-title">Obsidian server</h1>
         <p id="route-text">Выберите, как приложение будет соединяться с сетью. Настройку всегда можно изменить позже.</p>
         <div class="route-list">
-          <button class="route-option active" type="button" data-transport="auto"><img src="assets/onboarding/route-relay.png" alt="" /><span><b id="route-relay-title">Relay (automatic)</b><small id="route-relay-text">Быстрое прямое соединение</small></span><u>✓</u></button>
-          <button class="route-option" type="button" data-transport="multihop"><img src="assets/onboarding/route-multihop.png" alt="" /><span><b>Multihop</b><small id="route-multi-text">Дополнительный промежуточный узел</small></span><u>✓</u></button>
-          <button class="route-option" type="button" data-transport="onion"><img src="assets/onboarding/route-tor.png" alt="" /><span><b>Tor</b><small id="route-tor-text">Максимальная сетевая приватность</small></span><u>✓</u></button>
+          <button class="route-option active" type="button" data-transport="auto"><img src="assets/onboarding/route-relay.png" alt="" /><i class="route-flow"></i><span><b id="route-relay-title">Relay (automatic)</b><small id="route-relay-text">Быстрое прямое соединение</small></span><u>✓</u></button>
+          <button class="route-option" type="button" data-transport="multihop"><img src="assets/onboarding/route-multihop.png" alt="" /><i class="route-flow"></i><span><b>Multihop</b><small id="route-multi-text">Дополнительный промежуточный узел</small></span><u>✓</u></button>
+          <button class="route-option" type="button" data-transport="onion"><img src="assets/onboarding/route-tor.png" alt="" /><i class="route-flow"></i><span><b>Tor</b><small id="route-tor-text">Максимальная сетевая приватность</small></span><u>✓</u></button>
         </div>
       </div>
-      <div class="onboarding-art" aria-hidden="true"><canvas id="route-shader"></canvas><img src="assets/svg/spy.svg" alt="" /></div>
-      <button id="route-back" class="onboarding-prev" type="button">← <span>Назад</span></button>
+      <div class="onboarding-art" aria-hidden="true"><canvas id="route-shader" class="onboarding-shader"></canvas><img src="assets/svg/spy.svg" alt="" /></div>
+      <button id="route-back" class="onboarding-prev" type="button">← <span id="route-back-label">Назад</span></button>
       <button id="route-next" class="onboarding-next" type="button"><span id="route-next-label">Продолжить</span><b>→</b></button>
     </section>
 
@@ -218,8 +221,8 @@
         <button id="skip-registration" class="entry-skip" type="button">Skip — продолжить без логина и пароля</button>
         <p id="entry-error" class="form-error" role="alert"></p>
       </div>
-      <div class="onboarding-art" aria-hidden="true"><img src="assets/svg/spy.svg" alt="" /></div>
-      <button id="entry-back" class="onboarding-prev" type="button">← <span>Назад</span></button>
+      <div class="onboarding-art" aria-hidden="true"><canvas class="onboarding-shader"></canvas><img src="assets/svg/spy.svg" alt="" /></div>
+      <button id="entry-back" class="onboarding-prev" type="button">← <span id="entry-back-label">Назад</span></button>
     </section>
 
     <section id="screen-recover" class="screen onboarding-screen onboarding-grid hidden">
@@ -245,7 +248,7 @@
         <button id="recover-back" class="onboarding-back" type="button">← <span>Назад к регистрации</span></button>
         <p id="recover-error" class="form-error" role="alert"></p>
       </div>
-      <div class="onboarding-art" aria-hidden="true"><img src="assets/svg/spy.svg" alt="" /></div>
+      <div class="onboarding-art" aria-hidden="true"><canvas class="onboarding-shader"></canvas><img src="assets/svg/spy.svg" alt="" /></div>
     </section>
 
     <section id="screen-main" class="screen app-shell hidden">

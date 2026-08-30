@@ -2397,7 +2397,7 @@ async fn pump(
                                 continue;
                             }
                         }
-                        match mls.encrypt_group(&group_id, body.as_bytes()) {
+                        match mls.encrypt_group(&group_id, &crate::padding::pad(body.as_bytes())) {
                             Ok(ciphertext) => {
                                 persist(store, mls, sink);
                                 let mut id = [0u8; ID_LEN];
@@ -2758,6 +2758,10 @@ async fn on_envelope(
             });
         }
         Ok(Incoming::Message { group_id, sender_device, plaintext }) => {
+            // Снимаем добивку сразу: дальше по коду тело считается тем, что
+            // написал человек, и хвост из пробелов там был бы лишним — в том
+            // числе в базе и в поиске по переписке.
+            let plaintext = crate::padding::strip(&plaintext).to_vec();
             let device = hex::encode(&sender_device);
             if blocked(store, &device) {
                 // Заблокированный не попадает ни в базу, ни на экран. Проверка
@@ -2981,7 +2985,9 @@ async fn announce_group(
     meta: &GroupMeta,
 ) -> Result<()> {
     let body = crate::access::group_signal(&meta.title, &meta.kind, &meta.owner);
-    let ciphertext = mls.encrypt_group(group_id, body.as_bytes())?;
+    // Добивается только то, что уходит в шифр: в базе остаётся чистое тело,
+    // иначе ступени раздували бы хранилище на обоих устройствах.
+    let ciphertext = mls.encrypt_group(group_id, &crate::padding::pad(body.as_bytes()))?;
     fan_out(socket, mls, group_id, &ciphertext, None).await
 }
 
@@ -3172,7 +3178,7 @@ async fn encrypt_and_send(
 
     // Отказ здесь — не сбой отправки, а сигнал: состав беседы не тот, кому мы
     // собирались писать. Открытый текст в такую группу уходить не должен.
-    let ciphertext = match mls.encrypt(group_id, body.as_bytes(), device) {
+    let ciphertext = match mls.encrypt(group_id, &crate::padding::pad(body.as_bytes()), device) {
         Ok(ciphertext) => ciphertext,
         Err(CoreError::Anomaly(detail)) => {
             sink(Event::Anomaly { kind: "send_blocked".into(), detail });

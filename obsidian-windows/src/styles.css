@@ -1366,8 +1366,8 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
 
 /* Shader из prototype/silk_ribbons_shader.html занимает всю правую панель. */
 #screen-route .onboarding-art{position:relative;isolation:isolate;overflow:hidden;background:#050008}
-#route-shader{position:absolute;inset:0;z-index:0;width:100%;height:100%;display:block;background:radial-gradient(circle at 55% 65%,color-mix(in srgb,var(--accent) 78%,#08000f),#08000f 68%)}
-#route-shader.shader-unavailable{background:radial-gradient(circle at 55% 70%,var(--accent),color-mix(in srgb,var(--accent) 24%,#050008) 48%,#050008 78%)}
+#route-shader,.onboarding-shader{position:absolute;inset:0;z-index:0;width:100%;height:100%;display:block;background:radial-gradient(circle at 55% 65%,color-mix(in srgb,var(--accent) 78%,#08000f),#08000f 68%)}
+#route-shader.shader-unavailable,.onboarding-shader.shader-unavailable{background:radial-gradient(circle at 55% 70%,var(--accent),color-mix(in srgb,var(--accent) 24%,#050008) 48%,#050008 78%)}
 #screen-route .onboarding-art>img{position:relative;z-index:2;display:block!important;width:min(64%,650px);height:auto;margin:auto;align-self:center;object-fit:contain;filter:brightness(0);opacity:.95}
 
 /* Стабильная привязка обеих кнопок к левой панели. */
@@ -1386,6 +1386,65 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
   .intro-story p:first-child{font-size:22px}.intro-story p:nth-child(2){font-size:16px}.intro-story p:nth-child(3){font-size:13px}
 }
 @media(prefers-reduced-motion:reduce){.landing-hero .language-brand img{animation:none}.intro-story,.phone-mokker{transform:none;transition:none}.intro-story p{opacity:1;transform:none;transition:none}}
+
+/* Выверенная типографика routing и единая яркость выбора. */
+#screen-route .route-copy{padding-inline:clamp(34px,7.45vw,143px)}
+#screen-route .route-copy h1{width:min(620px,100%);margin:0 auto;font-size:clamp(45px,3.5vw,67px);line-height:.98;letter-spacing:-.07em;text-align:left}
+#screen-route .route-list{width:min(620px,calc((100vh - 190px)*.74),100%)}
+#screen-route .route-option img{opacity:.34;filter:saturate(.72) brightness(.72);transition:opacity .24s,filter .24s,transform .24s}
+#screen-route .route-option:hover img{opacity:.56;filter:saturate(.86) brightness(.86)}
+#screen-route .route-option.active img{opacity:1;filter:saturate(1) brightness(1) drop-shadow(0 16px 32px rgba(0,0,0,.42))}
+#screen-route .route-option>span:nth-child(3){position:absolute;top:clamp(-43px,-4.3vh,-34px);left:0;width:100%;font-family:"Unbounded",sans-serif;text-align:center;pointer-events:none}
+#screen-route .route-option>span:nth-child(3) b{font-size:clamp(19px,1.45vw,27px);line-height:1;letter-spacing:-.045em}
+#screen-route .route-option>span:nth-child(3) small{display:none}
+
+/* Световой импульс движется вдоль соединения внутри каждой схемы. */
+.route-flow{position:absolute;z-index:2;top:50%;left:14%;width:72%;height:5px;overflow:hidden;pointer-events:none;transform:translateY(-50%);filter:drop-shadow(0 0 7px var(--accent));opacity:.2;transition:opacity .22s}
+.route-flow::after{content:"";position:absolute;top:0;bottom:0;width:18%;border-radius:99px;background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--accent) 35%,#fff),#fff,color-mix(in srgb,var(--accent) 35%,#fff),transparent);animation:route-card-flow 2.15s linear infinite;transform:translateX(-120%)}
+.route-option.active .route-flow{opacity:.9}.route-option:nth-child(2) .route-flow::after{animation-delay:-.7s}.route-option:nth-child(3) .route-flow::after{animation-delay:-1.35s}
+@keyframes route-card-flow{to{transform:translateX(650%)}}
+
+/* Кнопки имеют одинаковую геометрию и симметричный отступ от краёв панели. */
+#screen-route .onboarding-prev,#screen-route .onboarding-next{bottom:14px;height:44px;padding:0 16px;border-radius:12px;font:600 11px/1 "Inter UI",sans-serif;transform:none!important}
+#screen-route .onboarding-prev{left:60px;width:100px}
+#screen-route .onboarding-next{right:calc(52.8% + 60px);left:auto;width:146px}
+#screen-route .onboarding-prev span,#screen-route .onboarding-next span{display:block;line-height:1}
+#screen-route .onboarding-next b{width:26px;height:26px;flex:none}
+
+/* Слайдер: цвет заканчивается точно под бегунком, без выступа справа. */
+.onboarding-slider{height:58px;border-radius:16px;padding:0 64px;cursor:default}
+.onboarding-slider-fill{inset:6px auto 6px 6px;width:calc(var(--slide-x) + 46px);border-radius:11px;opacity:.58}
+.onboarding-slider-thumb{top:6px;left:6px;width:46px;height:46px;border-radius:11px;cursor:grab}
+.onboarding-slider>span{width:100%;padding:0;text-align:center;line-height:1.25}
+.onboarding-slider:not(.dragging) .onboarding-slider-thumb{animation:slider-cue 2.4s ease-in-out infinite}
+@keyframes slider-cue{0%,72%,100%{box-shadow:0 6px 24px color-mix(in srgb,var(--accent) 38%,transparent);translate:0 0}82%{box-shadow:0 6px 30px color-mix(in srgb,var(--accent) 60%,transparent);translate:3px 0}}
+
+/* Один shader справа на routing, входе, регистрации и recovery. */
+#screen-entry .onboarding-art,#screen-recover .onboarding-art,#screen-backup .onboarding-art{position:relative;isolation:isolate;overflow:hidden;background:#050008!important}
+#screen-entry .onboarding-art::before,#screen-entry .onboarding-art::after,#screen-recover .onboarding-art::before,#screen-recover .onboarding-art::after,#screen-backup .onboarding-art::before,#screen-backup .onboarding-art::after{display:none!important}
+#screen-entry .onboarding-art>img,#screen-recover .onboarding-art>img,#screen-backup .onboarding-art>img{position:relative;z-index:2;display:block!important;width:min(64%,650px);height:auto;margin:auto;align-self:center;object-fit:contain;filter:brightness(0);opacity:.95}
+
+/* Экран фразы повторяет двухпанельную композицию входа. */
+#screen-backup{display:grid;grid-template-columns:minmax(560px,47.2%) minmax(0,52.8%);background:#020202}
+#screen-backup .backup-copy{position:relative;display:grid;place-items:center;min-width:0;padding:clamp(34px,5vh,58px) clamp(40px,7vw,110px)}
+#screen-backup .backup-card{position:relative;width:min(560px,100%);max-height:calc(100vh - 82px);overflow:auto;padding:clamp(24px,3vw,38px);border-radius:24px;text-align:left}
+#screen-backup .backup-card h1{margin:8px 0 12px;font-size:clamp(25px,2vw,36px)}
+#screen-backup .backup-card .lead{font-size:13px;line-height:1.62}
+#screen-backup #backup-secret:not(.hidden){position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;justify-content:center;padding:clamp(22px,3vw,40px);overflow:auto;border-radius:24px;background:color-mix(in srgb,var(--accent) 7%,rgba(5,5,5,.72));backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);animation:backup-reveal-in .28s ease both}
+#screen-backup .backup-words{grid-template-columns:repeat(3,minmax(0,1fr));margin:0 0 14px;border-color:color-mix(in srgb,var(--accent) 28%,var(--line));background:rgba(10,10,10,.7)}
+#screen-backup .backup-words li{background:color-mix(in srgb,var(--accent) 7%,rgba(255,255,255,.025))}
+@keyframes backup-reveal-in{from{opacity:0;transform:scale(.985);filter:blur(6px)}}
+
+@media(max-width:1000px){
+  #screen-route .onboarding-next{right:calc(38% + 32px)}#screen-route .onboarding-prev{left:32px}
+  #screen-backup{grid-template-columns:minmax(520px,62%) minmax(0,38%)}
+}
+@media(max-width:720px){
+  #screen-route .onboarding-prev{left:20px;width:98px}#screen-route .onboarding-next{right:20px;width:140px}
+  #screen-backup{display:block;overflow:auto}#screen-backup .backup-copy{min-height:100%;padding:28px 20px 70px}#screen-backup .onboarding-art{display:none}
+  #screen-backup .backup-card{max-height:none}.route-flow{height:4px}
+}
+@media(prefers-reduced-motion:reduce){.route-flow::after,.onboarding-slider:not(.dragging) .onboarding-slider-thumb{animation:none}}
 @media(max-width:420px){
   .landing-copy h1{font-size:40px}.landing-copy>p{font-size:18px}.landing-copy .intro-links{gap:5px;font-size:8.5px}
   #screen-route .route-copy h1{font-size:34px}#screen-route .route-option{padding:12px}#screen-route .route-diagram i{width:45px;height:45px;font-size:7px}
