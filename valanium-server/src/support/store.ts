@@ -30,7 +30,9 @@ CREATE TABLE IF NOT EXISTS threads (
 
 CREATE INDEX IF NOT EXISTS threads_updated ON threads(updated_at DESC);
 
--- Сообщения обеих сторон. direction: 'in' — от человека, 'out' — наш ответ.
+-- Письма от человека. Наших ответов здесь нет и колонки под них тоже: сервер
+-- почту только принимает, а отвечает владелец из своего ящика, куда приходит
+-- копия. Появится отправка — появится и столбец, гадать наперёд незачем.
 --
 -- seq, а не время: два письма в одну миллисекунду порядок бы потеряли, а
 -- переписку читают сверху вниз и путаница здесь дороже лишнего столбца.
@@ -38,7 +40,6 @@ CREATE TABLE IF NOT EXISTS messages (
   seq        INTEGER PRIMARY KEY AUTOINCREMENT,
   id         BLOB NOT NULL UNIQUE,
   thread     BLOB NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
-  direction  TEXT NOT NULL,
   subject    TEXT NOT NULL,
   body       TEXT NOT NULL,
   created_at INTEGER NOT NULL
@@ -61,7 +62,6 @@ export interface MessageRow {
   seq: number;
   id: Uint8Array;
   thread: Uint8Array;
-  direction: "in" | "out";
   subject: string;
   body: string;
   created_at: number;
@@ -103,17 +103,9 @@ export class SupportStore {
       ).run(id, address, subject, now, now);
     }
     this.#db.prepare(
-      "INSERT INTO messages (id, thread, direction, subject, body, created_at) VALUES (?, ?, 'in', ?, ?, ?)",
+      "INSERT INTO messages (id, thread, subject, body, created_at) VALUES (?, ?, ?, ?, ?)",
     ).run(random(16), id, subject, body, now);
     return this.#db.prepare("SELECT * FROM threads WHERE id = ?").get(id) as unknown as ThreadRow;
-  }
-
-  /** Наш ответ. Пишется только после того, как провайдер письмо принял. */
-  reply(thread: Uint8Array, subject: string, body: string, now: number): void {
-    this.#db.prepare(
-      "INSERT INTO messages (id, thread, direction, subject, body, created_at) VALUES (?, ?, 'out', ?, ?, ?)",
-    ).run(random(16), thread, subject, body, now);
-    this.#db.prepare("UPDATE threads SET updated_at = ?, unread = 0 WHERE id = ?").run(now, thread);
   }
 
   threads(limit: number, offset: number): ThreadRow[] {

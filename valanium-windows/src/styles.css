@@ -3068,14 +3068,6 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
   border-radius: 10px;
   background: var(--surface-2, rgba(255, 255, 255, 0.04));
 }
-.support-msg.out { box-shadow: inset 3px 0 0 var(--accent, #6ea8fe); }
 .support-msg small { display: block; opacity: 0.6; margin-bottom: 4px; }
 /* Письмо пишет посторонний: длинная строка без пробелов не должна разрывать окно. */
 .support-msg p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-
-.support-reply {
-  width: 100%;
-  resize: vertical;
-  padding: 9px 12px;
-  border-radius: 10px;
-}

@@ -267,11 +267,6 @@ pub enum Command {
         #[serde(default)]
         thread: Option<String>,
     },
-    /// Ответить письмом. Уходит человеку раньше, чем ложится в базу.
-    SupportReply {
-        thread: String,
-        body: String,
-    },
     /// Пометить прочитанной, а с `closed` — закрыть либо открыть заново.
     SupportMark {
         thread: String,

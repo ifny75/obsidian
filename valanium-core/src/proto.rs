@@ -70,7 +70,6 @@ pub mod op {
     pub const CHANNEL_ADMIN: u8 = 0x3d;
     pub const DEVICE_REVOKE_OTHERS: u8 = 0x3e;
     pub const SUPPORT_GET: u8 = 0x41;
-    pub const SUPPORT_REPLY: u8 = 0x42;
     pub const SUPPORT_MARK: u8 = 0x43;
 }
 
@@ -387,10 +386,6 @@ pub fn support_get_frame(offset: u64, thread: Option<&str>) -> Result<Vec<u8>> {
         Some(id) => json_frame(op::SUPPORT_GET, &serde_json::json!({ "thread": id })),
         None => json_frame(op::SUPPORT_GET, &serde_json::json!({ "offset": offset })),
     }
-}
-
-pub fn support_reply_frame(thread: &str, body: &str) -> Result<Vec<u8>> {
-    json_frame(op::SUPPORT_REPLY, &serde_json::json!({ "thread": thread, "body": body }))
 }
 
 pub fn support_mark_frame(thread: &str, closed: Option<bool>) -> Result<Vec<u8>> {

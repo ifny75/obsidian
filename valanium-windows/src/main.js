@@ -4195,13 +4195,9 @@ function renderSupport(report) {
   badge.textContent = unread > 0 ? String(unread) : "";
   badge.classList.toggle("hidden", unread === 0);
 
-  // Ответ показываем только когда сервер подтвердил, что провайдер настроен.
-  // Иначе поле ввода обещало бы то, чего не будет.
-  const canReply = report.canReply !== false;
-
   if (report.thread) {
     supportOpen = report.thread.id;
-    host.appendChild(renderSupportThread(report, canReply));
+    host.appendChild(renderSupportThread(report));
     return;
   }
 
@@ -4237,10 +4233,9 @@ function renderSupport(report) {
   supportOffset = report.offset ?? 0;
   $("support-prev").disabled = supportOffset === 0;
   $("support-next").disabled = !report.more;
-  if (report.sent) $("support-status").textContent = "Ответ отправлен.";
 }
 
-function renderSupportThread(report, canReply) {
+function renderSupportThread(report) {
   const wrap = document.createElement("div");
   wrap.className = "support-open";
 
@@ -4263,10 +4258,9 @@ function renderSupportThread(report, canReply) {
 
   for (const message of report.messages ?? []) {
     const item = document.createElement("div");
-    item.className = message.direction === "in" ? "support-msg in" : "support-msg out";
+    item.className = "support-msg in";
     const when = document.createElement("small");
-    when.textContent = (message.direction === "in" ? "От человека · " : "Наш ответ · ")
-      + new Date(message.createdAt).toLocaleString();
+    when.textContent = new Date(message.createdAt).toLocaleString();
     const body = document.createElement("p");
     // textContent, а не innerHTML: письмо пишет посторонний, и разметка из
     // него в нашем окне — это чужой текст, притворяющийся нашим.
@@ -4275,41 +4269,25 @@ function renderSupportThread(report, canReply) {
     wrap.appendChild(item);
   }
 
-  if (canReply) {
-    const reply = document.createElement("textarea");
-    reply.className = "support-reply";
-    reply.rows = 4;
-    reply.placeholder = "Ответ уйдёт письмом на этот адрес";
-    const send = document.createElement("button");
-    send.type = "button";
-    send.className = "ghost-button";
-    send.textContent = "Ответить";
-    send.addEventListener("click", () => {
-      const text = reply.value.trim();
-      if (!text) {
-        $("support-status").textContent = "Пустой ответ отправлять нечем.";
-        return;
-      }
-      $("support-status").textContent = "Отправляем…";
-      submit({ type: "support_reply", thread: report.thread.id, body: text });
-      reply.value = "";
-    });
-    const actions = document.createElement("div");
-    actions.className = "setting-actions";
-    const close = document.createElement("button");
-    close.type = "button";
-    close.className = "ghost-button";
-    close.textContent = report.thread.closed ? "Открыть заново" : "Закрыть";
-    close.addEventListener("click", () =>
-      submit({ type: "support_mark", thread: report.thread.id, closed: !report.thread.closed }));
-    actions.append(send, close);
-    wrap.append(reply, actions);
-  } else {
-    const note = document.createElement("p");
-    note.className = "admin-empty";
-    note.textContent = "Отправка ответов не настроена: на сервере нет ключа почтового провайдера.";
-    wrap.appendChild(note);
-  }
+  // Отвечать отсюда нельзя, и обещать этого не будем: сервер письма только
+  // принимает. Копия каждого лежит в почтовом ящике владельца — оттуда и
+  // отвечают обычным «ответить» в почтовом клиенте.
+  const note = document.createElement("p");
+  note.className = "admin-empty";
+  note.textContent = `Отвечать — из своего почтового ящика: копия письма от ${report.thread.address} лежит там.`;
+  wrap.appendChild(note);
+
+  const actions = document.createElement("div");
+  actions.className = "setting-actions";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "ghost-button";
+  close.textContent = report.thread.closed ? "Открыть заново" : "Пометить решённым";
+  close.addEventListener("click", () =>
+    submit({ type: "support_mark", thread: report.thread.id, closed: !report.thread.closed }));
+  actions.appendChild(close);
+  wrap.appendChild(actions);
+
   return wrap;
 }
 

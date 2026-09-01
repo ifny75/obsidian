@@ -73,7 +73,6 @@ export const OP = {
   DEVICE_REVOKE_OTHERS: 0x3e,
   /** Панель поддержки. Только для владельца: см. requireAdmin. */
   SUPPORT_GET: 0x41,
-  SUPPORT_REPLY: 0x42,
   SUPPORT_MARK: 0x43,
 } as const;
 

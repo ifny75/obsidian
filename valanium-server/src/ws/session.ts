@@ -3,7 +3,6 @@ import { config, PROTOCOL_VERSION } from "../config.ts";
 import { log } from "../log.ts";
 import type { Store } from "../db/index.ts";
 import type { SupportStore } from "../support/store.ts";
-import { MailError, sendReply } from "../support/mail.ts";
 import type { NonceStore } from "../auth/nonce.ts";
 import { authMessage, deviceCertMessage, revokeOtherDevicesMessage, verify } from "../auth/verify.ts";
 import type { RateLimiter } from "../util/ratelimit.ts";
@@ -284,10 +283,6 @@ export function handleMessage(deps: Deps, sock: Socket, conn: ConnData, msg: Uin
       case OP.SUPPORT_GET:
         requireAuth(conn);
         onSupportGet(deps, sock, conn, body);
-        return;
-      case OP.SUPPORT_REPLY:
-        requireAuth(conn);
-        void onSupportReply(deps, sock, conn, body);
         return;
       case OP.SUPPORT_MARK:
         requireAuth(conn);
@@ -1411,8 +1406,6 @@ function onAdminAction(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Arra
 const SUPPORT_PAGE = 40;
 /** Переписку читают целиком, но не бесконечно: очень длинная режется. */
 const SUPPORT_THREAD_LIMIT = 200;
-/** Ответ длиной в книгу — это не ответ, а способ уронить провайдера. */
-const MAX_REPLY = 16_384;
 
 /**
  * Список переписок либо одна переписка целиком.
@@ -1438,7 +1431,6 @@ function onSupportGet(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array
       thread: supportThreadView({ ...thread, unread: 0 }),
       messages: deps.support.messages(id, SUPPORT_THREAD_LIMIT).reverse().map((row) => ({
         id: toHex(row.id),
-        direction: row.direction,
         subject: row.subject,
         body: row.body,
         createdAt: row.created_at,
@@ -1475,46 +1467,8 @@ function supportList(deps: Deps, offset: number): Record<string, unknown> {
     offset,
     more: rows.length > SUPPORT_PAGE,
     unreadThreads: deps.support.unreadCount(),
-    canReply: config.support.apiKey.length > 0,
     threads: rows.slice(0, SUPPORT_PAGE).map(supportThreadView),
   };
-}
-
-/**
- * Ответ уходит человеку и только потом ложится в базу.
- *
- * Порядок именно такой: показать в панели отправленным то, что провайдер не
- * принял, — значит заставить ждать ответа, которого никогда не было.
- */
-async function onSupportReply(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): Promise<void> {
-  if (!requireAdmin(sock, conn)) return;
-  const payload = parseJsonBody(body) as { thread?: unknown; body?: unknown };
-  if (typeof payload?.thread !== "string" || typeof payload?.body !== "string") {
-    sock.send(errorFrame("bad_input", "thread and body required"), true);
-    return;
-  }
-  const text = payload.body.trim();
-  if (text.length === 0 || text.length > MAX_REPLY) {
-    sock.send(errorFrame("bad_input", "empty or oversized reply"), true);
-    return;
-  }
-  const id = fromHex(payload.thread, ID_LEN);
-  const thread = deps.support.thread(id);
-  if (!thread) {
-    sock.send(errorFrame("support_not_found", "no such thread"), true);
-    return;
-  }
-
-  const subject = thread.subject.startsWith("Re:") ? thread.subject : `Re: ${thread.subject}`;
-  try {
-    await sendReply(thread.address, subject, text);
-  } catch (error) {
-    const reason = error instanceof MailError ? error.message : "не удалось отправить";
-    sock.send(errorFrame("support_send_failed", reason), true);
-    return;
-  }
-  deps.support.reply(id, subject, text, deps.now());
-  sock.send(jsonFrame(OP.SUPPORT_OK, { ...supportList(deps, 0), sent: toHex(id) }), true);
 }
 
 function onSupportMark(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {

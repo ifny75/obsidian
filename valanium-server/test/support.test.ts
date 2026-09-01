@@ -2,7 +2,7 @@
  * Почта поддержки.
  *
  * Проверяется главное: письма живут отдельно от мессенджера, панель открыта
- * только владельцу, а ответ не попадает в базу, если провайдер его не принял.
+ * только владельцу, а отвечать сервер не умеет и не притворяется, что умеет.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -131,7 +131,6 @@ test("владелец видит переписку, чтение снимае�
   handleMessage(deps, o.sock, o.conn, jsonFrame(OP.SUPPORT_GET, { thread: toHex(thread.id) }));
   const one = o.sock.json(OP.SUPPORT_OK);
   assert.equal(one.messages.length, 1);
-  assert.equal(one.messages[0].direction, "in");
   assert.equal(support.unreadCount(), 0, "открытая переписка перестаёт быть непрочитанной");
 
   process.env.VALANIUM_ADMINS = "";
@@ -139,7 +138,7 @@ test("владелец видит переписку, чтение снимае�
   support.close();
 });
 
-test("непринятый провайдером ответ не попадает в переписку", async () => {
+test("сервер не принимает попытку ответить", () => {
   const store = new Store(":memory:");
   const support = new SupportStore(":memory:");
   const deps = makeDeps(store, support);
@@ -150,16 +149,16 @@ test("непринятый провайдером ответ не попадае
   const o = connect(deps, store, owner, "owner");
   o.sock.clear();
 
-  // Ключа провайдера в тестовой среде нет, значит отправка обязана упасть — и
-  // ровно поэтому ответ не должен появиться в базе.
-  handleMessage(deps, o.sock, o.conn, jsonFrame(OP.SUPPORT_REPLY, {
+  // Опкода отправки в протоколе нет: почта только принимается, отвечает
+  // владелец из своего ящика. Старый клиент, который попробует, должен
+  // получить отказ, а не молчание.
+  handleMessage(deps, o.sock, o.conn, jsonFrame(0x42, {
     thread: toHex(thread.id),
-    body: "ответ, который никуда не уедет",
+    body: "ответ, которого протокол не знает",
   }));
-  await new Promise((resolve) => setTimeout(resolve, 20));
 
-  assert.equal(o.sock.has(OP.SUPPORT_OK), false, "отправку нельзя объявлять удавшейся");
-  assert.equal(support.messages(thread.id, 10).length, 1, "в базе остаётся только входящее");
+  assert.equal(o.sock.has(OP.SUPPORT_OK), false, "отправки в протоколе быть не должно");
+  assert.equal(support.messages(thread.id, 10).length, 1, "в базе только входящее");
 
   process.env.VALANIUM_ADMINS = "";
   store.close();

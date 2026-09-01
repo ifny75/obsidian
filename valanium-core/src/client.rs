@@ -583,7 +583,6 @@ async fn run(mut commands: mpsc::UnboundedReceiver<Command>, store: Store, sink:
             | Command::ProfileDecor { .. }
             | Command::AdminGet { .. }
             | Command::SupportGet { .. }
-            | Command::SupportReply { .. }
             | Command::SupportMark { .. }
             | Command::ChannelCreate { .. }
             | Command::ChannelPublish { .. }
@@ -2532,9 +2531,6 @@ async fn pump(
                     }
                     Command::SupportGet { offset, thread } => {
                         send(&mut socket, proto::support_get_frame(offset, thread.as_deref())?).await?;
-                    }
-                    Command::SupportReply { thread, body } => {
-                        send(&mut socket, proto::support_reply_frame(&thread, &body)?).await?;
                     }
                     Command::SupportMark { thread, closed } => {
                         send(&mut socket, proto::support_mark_frame(&thread, closed)?).await?;
