@@ -17,13 +17,13 @@ deploy/dist/
 release/
 test-data/
 .claude/
-obsidian-site-release.tar.gz
+valanium-site-release.tar.gz
 
-# Нативная библиотека ядра: её собирает cargo-ndk из obsidian-core
-obsidian-android/app/src/main/jniLibs/
+# Нативная библиотека ядра: её собирает cargo-ndk из valanium-core
+valanium-android/app/src/main/jniLibs/
 
 # Сайт живёт в своём репозитории
-obsidian-site/
+valanium-site/
 
 # Сборочные каталоги фронтенда
 .next/

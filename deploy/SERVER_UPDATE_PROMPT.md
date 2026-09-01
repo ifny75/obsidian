@@ -1,6 +1,6 @@
 # Точный промт для агента на сервере
 
-Обнови production-сервер Obsidian из архива `obsidian-server-2026-08-25-2047.zip`.
+Обнови production-сервер Valanium из архива `valanium-server-2026-08-25-2047.zip`.
 
 Обновление добавляет три вещи: значок и цвет профиля, панель владельца сервера и
 блокировку доступа по личности. Ломающих изменений нет — старые клиенты продолжают
@@ -11,10 +11,10 @@
 
 ## Контекст и жёсткие ограничения
 
-- приложение установлено в `/opt/obsidian`;
-- systemd-сервис называется `obsidian`, tunnel-сервис — `obsidian-tunnel`;
+- приложение установлено в `/opt/valanium`;
+- systemd-сервис называется `valanium`, tunnel-сервис — `valanium-tunnel`;
 - Node.js 24 находится в `/opt/node-24/bin/node`, npm рядом с ним;
-- сохрани без изменений `/opt/obsidian/.env` и весь `/opt/obsidian/data/`;
+- сохрани без изменений `/opt/valanium/.env` и весь `/opt/valanium/data/`;
 - не изменяй `/var/www/astryx/`, Apache, основной сайт, Cloudflare Tunnel и другие сервисы;
 - сервер после обновления обязан слушать **только `127.0.0.1:8787`**;
 - не выводи в ответ содержимое `.env`, токены, инвайты, identity/device keys, аватары,
@@ -28,40 +28,40 @@
 ## Порядок действий
 
 1. Проверь архив и создай timestamped backup исходников, `.env` и SQLite через штатный
-   `src/tools/backup.ts` либо `VACUUM INTO`; не копируй живой `obsidian.db` обычным `cp`
+   `src/tools/backup.ts` либо `VACUUM INTO`; не копируй живой `valanium.db` обычным `cp`
    без WAL/SHM.
 2. Распакуй архив во временный каталог, проверь наличие `src/index.ts`, `package.json`,
    `package-lock.json`.
-3. Останови только `obsidian`.
-4. Замени в `/opt/obsidian` только исходники и package-файлы из архива. Верни сохранённые
+3. Останови только `valanium`.
+4. Замени в `/opt/valanium` только исходники и package-файлы из архива. Верни сохранённые
    `.env` и `data/` на прежние места.
-5. **Допиши в `/opt/obsidian/.env` одну строку**:
+5. **Допиши в `/opt/valanium/.env` одну строку**:
 
    ```
-   OBSIDIAN_ADMINS=<ключ личности владельца, 64 hex-символа>
+   VALANIUM_ADMINS=<ключ личности владельца, 64 hex-символа>
    ```
 
    Значение спроси у владельца — он берёт его в клиенте: **Мой профиль → Ключ личности**
    (нажатие копирует). Сам ничего не подставляй и в ответ значение не печатай. Если
    строки нет или она пуста, панель не открывается ни у кого — это безопасное поведение
    по умолчанию, а не поломка.
-6. В `/opt/obsidian` выполни `/opt/node-24/bin/npm ci --ignore-scripts --omit=optional --omit=dev`
-   и `chown -R obsidian:obsidian /opt/obsidian`. Для `.env` установи `chmod 600`.
-7. Запусти `obsidian`, проверь `systemctl is-active obsidian`, затем локально
+6. В `/opt/valanium` выполни `/opt/node-24/bin/npm ci --ignore-scripts --omit=optional --omit=dev`
+   и `chown -R valanium:valanium /opt/valanium`. Для `.env` установи `chmod 600`.
+7. Запусти `valanium`, проверь `systemctl is-active valanium`, затем локально
    `curl --fail http://127.0.0.1:8787/v1/health` и снаружи
-   `curl --fail https://getobsidian.xyz/v1/health`.
+   `curl --fail https://valanium.com/v1/health`.
 8. Убедись через `ss -ltnp`, что порт 8787 не слушает `0.0.0.0`/`::`, а только loopback.
-   Убедись, что `obsidian-tunnel` остался active.
+   Убедись, что `valanium-tunnel` остался active.
 9. Проверь, что миграция схемы прошла:
 
    ```
-   sqlite3 /opt/obsidian/data/obsidian.db "PRAGMA table_info(profiles);"
-   sqlite3 /opt/obsidian/data/obsidian.db "SELECT name FROM sqlite_master WHERE name='blocks';"
+   sqlite3 /opt/valanium/data/valanium.db "PRAGMA table_info(profiles);"
+   sqlite3 /opt/valanium/data/valanium.db "SELECT name FROM sqlite_master WHERE name='blocks';"
    ```
 
    В первом выводе обязаны быть столбцы `emblem` и `color`, во втором — `blocks`.
    Число строк в `profiles` обязано остаться прежним: сравни с backup.
-10. Проверь последние 100 строк `journalctl -u obsidian` на ошибки SQLite, TypeScript,
+10. Проверь последние 100 строк `journalctl -u valanium` на ошибки SQLite, TypeScript,
     WebSocket и permissions. Не публикуй чувствительные значения из логов.
 11. Если любая проверка провалилась, откати исходники и базу из backup, запусти прежнюю
     версию и сообщи точную ошибку.
@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS blocks (
 `AUTH_OK` дополнен полем `admin: true|false`. **Права выдаёт сервер**; клиент сам себе
 панель включить не может.
 
-Кто владелец — определяет `OBSIDIAN_ADMINS` из окружения, а не строка в базе: строку в
+Кто владелец — определяет `VALANIUM_ADMINS` из окружения, а не строка в базе: строку в
 базе можно дописать, получив доступ к диску, переменную окружения — нет. Привязка идёт
 к **ключу личности, а не к юзернейму**: имя можно освободить и занять заново, и привязка
 к имени означала бы, что права достаются тому, кто первым перехватит освободившееся имя.
@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS blocks (
 Покажи только:
 
 - версию установленного архива;
-- активность `obsidian` и `obsidian-tunnel`;
+- активность `valanium` и `valanium-tunnel`;
 - результаты обоих health-check;
 - адрес bind из `ss -ltnp`;
 - версию Node;
@@ -179,8 +179,8 @@ CREATE TABLE IF NOT EXISTS blocks (
 - есть ли в `profiles` столбцы `emblem` и `color` (да/нет);
 - есть ли таблица `blocks` и сколько в ней строк (только число);
 - число строк в `profiles` до и после обновления;
-- задан ли `OBSIDIAN_ADMINS` — **только «да/нет», без значения**;
-- есть ли в `journalctl -u obsidian` за 5 минут после старта ошибки или закрытия
+- задан ли `VALANIUM_ADMINS` — **только «да/нет», без значения**;
+- есть ли в `journalctl -u valanium` за 5 минут после старта ошибки или закрытия
   соединений с кодом 1002 (да/нет).
 
 Секреты, содержимое `passes`, `access`, `usernames`, `recoveries`, `blocks`, ключи и

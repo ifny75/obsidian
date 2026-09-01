@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Valanium secure messenger logo</title>
+  <desc id="desc">Faceted valanium crystal with a secure chat and lock symbol.</desc>
+
+  <defs>
+    <linearGradient id="facetTop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#15171c"/>
+      <stop offset="1" stop-color="#050607"/>
+    </linearGradient>
+    <linearGradient id="facetLight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6a6d75"/>
+      <stop offset="1" stop-color="#2b2e34"/>
+    </linearGradient>
+    <linearGradient id="facetMid" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#41444b"/>
+      <stop offset="1" stop-color="#16181c"/>
+    </linearGradient>
+    <linearGradient id="inner" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0e1013"/>
+      <stop offset="1" stop-color="#050607"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer crystal -->
+  <polygon points="512,44 770,290 783,602 512,960 244,598 250,300"
+           fill="#090a0c"/>
+
+  <!-- Facets -->
+  <polygon points="512,44 250,300 455,220" fill="url(#facetTop)"/>
+  <polygon points="512,44 455,220 555,180" fill="#2c2f35"/>
+  <polygon points="512,44 555,180 770,290" fill="url(#facetLight)"/>
+  <polygon points="250,300 455,220 350,410" fill="#3a3d44"/>
+  <polygon points="250,300 350,410 244,598" fill="#121419"/>
+  <polygon points="244,598 350,410 344,690" fill="url(#facetLight)"/>
+  <polygon points="770,290 555,180 665,360" fill="#15171b"/>
+  <polygon points="770,290 665,360 783,602" fill="#0e1013"/>
+  <polygon points="783,602 665,360 690,700" fill="url(#facetMid)"/>
+  <polygon points="244,598 344,690 512,960" fill="#1d2026"/>
+  <polygon points="344,690 512,960 555,760" fill="#0a0b0d"/>
+  <polygon points="783,602 690,700 512,960" fill="#32353b"/>
+  <polygon points="690,700 555,760 512,960" fill="#17191e"/>
+
+  <!-- Inner dark face -->
+  <polygon points="455,220 555,180 665,360 690,700 555,760 344,690 350,410"
+           fill="url(#inner)" opacity="0.98"/>
+
+  <!-- Chat bubble -->
+  <path d="M376 360
+           H648
+           C698 360 736 398 736 448
+           V590
+           C736 640 698 678 648 678
+           H493
+           L396 744
+           L418 678
+           H376
+           C326 678 288 640 288 590
+           V448
+           C288 398 326 360 376 360Z"
+        fill="#060708"
+        stroke="#23262b"
+        stroke-width="8"
+        stroke-linejoin="round"/>
+
+  <!-- Lock shackle -->
+  <path d="M448 496 V455
+           C448 420 476 392 512 392
+           C548 392 576 420 576 455
+           V496"
+        fill="none"
+        stroke="#41444b"
+        stroke-width="28"
+        stroke-linecap="round"/>
+
+  <!-- Lock body -->
+  <rect x="424" y="488" width="176" height="144" rx="28"
+        fill="#25282e" stroke="#4b4f57" stroke-width="4"/>
+
+  <!-- Keyhole -->
+  <circle cx="512" cy="548" r="20" fill="#050607"/>
+  <path d="M500 563 H524 L534 610 H490 Z" fill="#050607"/>
+</svg>

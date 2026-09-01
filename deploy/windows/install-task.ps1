@@ -1,14 +1,14 @@
 ﻿<#
     Автозапуск сервера на Windows через запланированную задачу.
 
-        .\install-task.ps1 -Root C:\obsidian
+        .\install-task.ps1 -Root C:\valanium
 
     Служба Windows тут не нужна: задача при старте системы делает то же самое
     и не требует стороннего обёртчика вроде NSSM.
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Root,
-    [string]$TaskName = "Obsidian"
+    [string]$TaskName = "Valanium"
 )
 
 $ErrorActionPreference = "Stop"

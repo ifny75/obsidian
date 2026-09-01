@@ -8,7 +8,7 @@ nginx, Multi-hop и Tor-схема описаны в [mesh/README.md](mesh/READM
 
 ## 1. Что грузить
 
-Ровно содержимое `obsidian-server/`, и **только** эти файлы:
+Ровно содержимое `valanium-server/`, и **только** эти файлы:
 
 ```
 src/                 исходники (TypeScript выполняется Node напрямую, сборки нет)
@@ -27,7 +27,7 @@ README.md
 | `node_modules/` | ставится на сервере через `npm ci` — иначе приедут бинари не под ту платформу |
 | `data/` | это ваша база и вложения; на сервере она своя |
 | `.env` | там админский токен, ему место только на сервере |
-| `obsidian-core/`, клиенты | серверу они не нужны и не должны там лежать |
+| `valanium-core/`, клиенты | серверу они не нужны и не должны там лежать |
 
 Готовый архив собирается скриптом:
 
@@ -35,7 +35,7 @@ README.md
 deploy\package.ps1
 ```
 
-Он кладёт `deploy/dist/obsidian-server-<дата>.zip` — этот файл и есть то, что уезжает на сервер.
+Он кладёт `deploy/dist/valanium-server-<дата>.zip` — этот файл и есть то, что уезжает на сервер.
 
 ## 2. Установка
 
@@ -53,16 +53,16 @@ node -v            # системный
 это лучше, чем невнятный `SyntaxError` в `.ts` при первом запуске.
 
 ```bash
-unzip obsidian-server-*.zip -d /opt/obsidian
-cd /opt/obsidian
+unzip valanium-server-*.zip -d /opt/valanium
+cd /opt/valanium
 
 sudo /opt/node-24/bin/npm ci --ignore-scripts --omit=optional --omit=dev
 cp .env.example .env
-sudo chown -R root:root /opt/obsidian
-sudo install -d -o obsidian -g obsidian -m 0750 /opt/obsidian/data
-sudo chown root:obsidian /opt/obsidian/.env
-sudo chmod 0640 /opt/obsidian/.env
-sudo chmod -R go-w /opt/obsidian
+sudo chown -R root:root /opt/valanium
+sudo install -d -o valanium -g valanium -m 0750 /opt/valanium/data
+sudo chown root:valanium /opt/valanium/.env
+sudo chmod 0640 /opt/valanium/.env
+sudo chmod -R go-w /opt/valanium
 ```
 
 `sudo` и `chown` здесь не формальность: каталог принадлежит пользователю
@@ -85,9 +85,9 @@ sudo chmod -R go-w /opt/obsidian
 В `.env` меняем как минимум:
 
 ```ini
-OBSIDIAN_HOST=127.0.0.1        # наружу торчит cloudflared, а не сервер
-OBSIDIAN_PORT=8787
-OBSIDIAN_SECRET_KEY=           # пусто = ключ заведётся сам в data/secret.key
+VALANIUM_HOST=127.0.0.1        # наружу торчит cloudflared, а не сервер
+VALANIUM_PORT=8787
+VALANIUM_SECRET_KEY=           # пусто = ключ заведётся сам в data/secret.key
 ```
 
 **Про `data/secret.key`.** Им закрыты секреты вторых факторов. Он заводится сам
@@ -96,14 +96,14 @@ OBSIDIAN_SECRET_KEY=           # пусто = ключ заведётся сам
 отдельно: база, восстановленная без этого файла, вернёт всё, кроме вторых
 факторов.
 
-**`OBSIDIAN_HOST` обязан остаться `127.0.0.1`.** Ограничение частоты попыток входа доверяет заголовку `cf-connecting-ip`, а его подделает кто угодно, если до сервера можно достучаться напрямую.
+**`VALANIUM_HOST` обязан остаться `127.0.0.1`.** Ограничение частоты попыток входа доверяет заголовку `cf-connecting-ip`, а его подделает кто угодно, если до сервера можно достучаться напрямую.
 
 Проверка:
 
 ```bash
 node src/index.ts
 # ожидаем: INFO ton entry disabled, invites only
-#          INFO obsidian-server up port=8787 heartbeatSec=30
+#          INFO valanium-server up port=8787 heartbeatSec=30
 ```
 
 ## 2a. Выпуск сборок
@@ -114,16 +114,16 @@ node src/index.ts
 ключом, которого на сервере нет.
 
 ```bash
-node deploy/sign-release.mjs windows 0.11.0 release/Obsidian-Portable-Windows-0.11.0.exe                              android 0.6.2 release/Obsidian-Android-arm64-0.6.2.apk
+node deploy/sign-release.mjs windows 0.11.0 release/Valanium-Portable-Windows-0.11.0.exe                              android 0.6.2 release/Valanium-Android-arm64-0.6.2.apk
 ```
 
 Получившийся `deploy/releases.json` кладётся на сервер в `data/releases.json`,
 рядом с базой. Сервер отдаёт его строкой байт в байт: пересобирать манифест ему
 нельзя — подпись перестанет сходиться.
 
-Приватный ключ лежит в `~/.obsidian-release/signing.key` и в репозиторий не
+Приватный ключ лежит в `~/.valanium-release/signing.key` и в репозиторий не
 попадает **никогда**. Открытая половина зашита в клиент (`RELEASE_PUBLIC_KEY` в
-`obsidian-windows/src-tauri/src/main.rs`). Потеряете ключ — придётся выпустить
+`valanium-windows/src-tauri/src/main.rs`). Потеряете ключ — придётся выпустить
 клиент с новым: до тех пор обновления не будут подтверждаться, и окно честно
 скажет об этом вместо того, чтобы вести человека за неподтверждённой сборкой.
 
@@ -132,12 +132,12 @@ node deploy/sign-release.mjs windows 0.11.0 release/Obsidian-Portable-Windows-0.
 **Linux (systemd):** в юнитах прописан `/usr/bin/node`. Если системный node старее 24 — а это обычное дело, — путь нужно подменить, иначе служба упадёт на разборе `.ts`:
 
 ```bash
-sudo cp systemd/obsidian*.service systemd/*.timer /etc/systemd/system/
-sudo sed -i 's|/usr/bin/node|/opt/node-24/bin/node|' /etc/systemd/system/obsidian*.service
+sudo cp systemd/valanium*.service systemd/*.timer /etc/systemd/system/
+sudo sed -i 's|/usr/bin/node|/opt/node-24/bin/node|' /etc/systemd/system/valanium*.service
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now obsidian
-sudo journalctl -u obsidian -f
+sudo systemctl enable --now valanium
+sudo journalctl -u valanium -f
 ```
 
 Юнит намеренно ужат: свой пользователь, `NoNewPrivileges`, только своя папка на запись. Мессенджер не должен иметь доступа ни к чему, кроме своей базы.
@@ -145,15 +145,15 @@ sudo journalctl -u obsidian -f
 **Windows:** запланированная задача при старте системы —
 
 ```powershell
-deploy\windows\install-task.ps1 -Root C:\obsidian
+deploy\windows\install-task.ps1 -Root C:\valanium
 ```
 
 ## 4. Cloudflare Tunnel
 
 ```bash
 cloudflared tunnel login
-cloudflared tunnel create obsidian
-cloudflared tunnel route dns obsidian obsidian.example.com
+cloudflared tunnel create valanium
+cloudflared tunnel route dns valanium valanium.example.com
 ```
 
 Конфиг — [cloudflared/config.example.yml](cloudflared/config.example.yml), положить в `~/.cloudflared/config.yml` и подставить свои id и домен. Затем:
@@ -162,26 +162,26 @@ cloudflared tunnel route dns obsidian obsidian.example.com
 sudo cloudflared service install
 ```
 
-Проверка снаружи: `https://obsidian.example.com/v1/health` отвечает `{"ok":true,"v":1}`.
+Проверка снаружи: `https://valanium.example.com/v1/health` отвечает `{"ok":true,"v":1}`.
 
 ### Обязательно про WebSocket
 
 В панели Cloudflare: **Network → WebSockets → On.** Без этого соединение не установится вообще, а симптом будет невнятный.
 
-Cloudflare рвёт WebSocket после ~100 секунд тишины — клиент шлёт PING каждые 30 секунд именно поэтому. Менять `OBSIDIAN_HEARTBEAT_SEC` выше 45 нельзя.
+Cloudflare рвёт WebSocket после ~100 секунд тишины — клиент шлёт PING каждые 30 секунд именно поэтому. Менять `VALANIUM_HEARTBEAT_SEC` выше 45 нельзя.
 
 ## 5. Cloudflare Access
 
 Третий слой закрытого доступа: незалогиненный запрос не доходит до домашнего сервера вообще — это
 защищает и от сканеров, и от возможной дыры в самом сервере.
 
-Ядро отправлять service token **умеет** (`obsidian-core/src/edge.rs`). Включение — ручное, и
+Ядро отправлять service token **умеет** (`valanium-core/src/edge.rs`). Включение — ручное, и
 порядок шагов здесь важнее самих шагов.
 
 ### 5.1. Что закрывать, а что нельзя
 
-Приложение Access должно накрывать **только** `getobsidian.xyz/ws` — и, если хотите,
-`getobsidian.xyz/v1/admin`.
+Приложение Access должно накрывать **только** `valanium.com/ws` — и, если хотите,
+`valanium.com/v1/admin`.
 
 Накрыть хост целиком нельзя. За тем же именем живут:
 
@@ -199,17 +199,17 @@ Cloudflare рвёт WebSocket после ~100 секунд тишины — кл
 
 Access отсекает **любой** клиент без токена, включая все уже разошедшиеся сборки. Поэтому:
 
-1. Zero Trust → Access → Applications → Self-hosted, путь `getobsidian.xyz/ws`,
+1. Zero Trust → Access → Applications → Self-hosted, путь `valanium.com/ws`,
    политика `Service Auth` → Service Token. Создать токен, забрать `Client ID` и `Client Secret`.
 2. Собрать клиент с токеном:
 
    ```powershell
-   $env:OBSIDIAN_ACCESS_CLIENT_ID = "....access"
-   $env:OBSIDIAN_ACCESS_CLIENT_SECRET = "...."
+   $env:VALANIUM_ACCESS_CLIENT_ID = "....access"
+   $env:VALANIUM_ACCESS_CLIENT_SECRET = "...."
    cargo build --release
    ```
 
-   Переменные читаются при компиляции. За их сменой следит `obsidian-core/build.rs`: без него
+   Переменные читаются при компиляции. За их сменой следит `valanium-core/build.rs`: без него
    cargo решил бы, что пересобирать нечего, и выдал бы бинарь со старым токеном.
 3. Выложить сборку, обновить `/v1/releases/latest` и **дождаться**, пока люди обновятся.
 4. Только теперь включать политику.
@@ -240,7 +240,7 @@ Cloudflare допускает несколько живых service token'ов �
 Открытой регистрации нет:
 
 ```bash
-cd /opt/obsidian
+cd /opt/valanium
 node src/tools/invite.ts
 # invite: 7f3a91c4e2b8d05a6f1e9c3d
 # expires: 2026-08-30T12:00:00.000Z
@@ -248,7 +248,7 @@ node src/tools/invite.ts
 
 Код печатается один раз, в базе лежит только его SHA-256. Потеряли — выпускайте новый.
 
-В клиенте: адрес `wss://obsidian.example.com/ws`, имя, этот код.
+В клиенте: адрес `wss://valanium.example.com/ws`, имя, этот код.
 
 **Инвайт — это пропуск, обращаться с ним как с паролем.** Не пересылайте его в переписке, чатах поддержки и скриншотах: до использования им может воспользоваться любой, кто увидел. Если код куда-то утёк:
 
@@ -268,29 +268,29 @@ node src/tools/revoke.ts <код>
 Обычным `cp` копировать нельзя: база в режиме WAL, и файл, снятый во время записи, окажется битым. Инструмент делает `VACUUM INTO` — консистентный снимок на работающем сервере:
 
 ```bash
-sudo mkdir -p /var/backups/obsidian && sudo chown obsidian: /var/backups/obsidian
-sudo systemctl enable --now obsidian-backup.timer
+sudo mkdir -p /var/backups/valanium && sudo chown valanium: /var/backups/valanium
+sudo systemctl enable --now valanium-backup.timer
 ```
 
-Раз в сутки, 14 снимков, старые чистятся сами (`OBSIDIAN_BACKUP_KEEP`). Разовый прогон: `node src/tools/backup.ts /var/backups/obsidian`.
+Раз в сутки, 14 снимков, старые чистятся сами (`VALANIUM_BACKUP_KEEP`). Разовый прогон: `node src/tools/backup.ts /var/backups/valanium`.
 
 ## 8. Обновление
 
 ```bash
-sudo systemctl stop obsidian
+sudo systemctl stop valanium
 
 # распаковать новый архив поверх, data/ не трогать
-cd /opt/obsidian
+cd /opt/valanium
 sudo /opt/node-24/bin/npm ci --ignore-scripts --omit=optional --omit=dev
-sudo chown -R root:root /opt/obsidian
-sudo chown -R obsidian:obsidian /opt/obsidian/data
-sudo chown root:obsidian /opt/obsidian/.env
-sudo chmod 0755 /opt/obsidian
-sudo chmod 0750 /opt/obsidian/data
-sudo chmod 0640 /opt/obsidian/.env
-sudo chmod -R go-w /opt/obsidian
+sudo chown -R root:root /opt/valanium
+sudo chown -R valanium:valanium /opt/valanium/data
+sudo chown root:valanium /opt/valanium/.env
+sudo chmod 0755 /opt/valanium
+sudo chmod 0750 /opt/valanium/data
+sudo chmod 0640 /opt/valanium/.env
+sudo chmod -R go-w /opt/valanium
 
-sudo systemctl start obsidian
+sudo systemctl start valanium
 ```
 
 `cd` здесь обязателен: без него `npm ci` не найдёт `package-lock.json` и
@@ -302,7 +302,7 @@ sudo systemctl start obsidian
 
 - [ ] `/v1/health` отвечает снаружи
 - [ ] в панели Cloudflare WebSockets включены
-- [ ] `OBSIDIAN_HOST=127.0.0.1`, порт снаружи напрямую не открыт
+- [ ] `VALANIUM_HOST=127.0.0.1`, порт снаружи напрямую не открыт
 - [ ] `.env` не читается посторонними (`chmod 600`)
-- [ ] `obsidian-backup.timer` включён (`systemctl list-timers obsidian-backup`)
+- [ ] `valanium-backup.timer` включён (`systemctl list-timers valanium-backup`)
 - [ ] в логах нет ни pubkey, ни handle, ни IP — если появились, это баг

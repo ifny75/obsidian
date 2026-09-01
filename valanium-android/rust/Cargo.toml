@@ -1,0 +1,29 @@
+[package]
+name = "valanium-android"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+publish = false
+
+[lib]
+# Имя библиотеки должно совпадать с System.loadLibrary("valanium") в Java.
+name = "valanium"
+crate-type = ["cdylib"]
+
+[dependencies]
+valanium-core = { path = "../../valanium-core" }
+jni = "0.21"
+hex = "0.4"
+
+[features]
+# Проброс фичи ядра: платный вход в TON по умолчанию выключен.
+ton = ["valanium-core/ton"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+# panic = "abort" здесь намеренно НЕ ставится: разворачивание стека через
+# границу JNI — неопределённое поведение, и ловит его catch_unwind в lib.rs.
+# С abort catch_unwind не сработал бы, и паника в ядре убивала бы приложение.

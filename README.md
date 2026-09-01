@@ -1,4 +1,4 @@
-# Obsidian
+# Valanium
 
 Приватный мессенджер: переписка шифруется на устройстве и хранится там же.
 Серверу достаётся запечатанный конверт — открыть его нечем, ключей у него нет.
@@ -9,10 +9,10 @@
 
 | Каталог | Что это |
 | --- | --- |
-| `obsidian-core` | Ядро на Rust: MLS (RFC 9420) через OpenMLS, запечатанное хранилище, протокол. Общее для обоих клиентов. |
-| `obsidian-windows` | Клиент для Windows: Tauri 2, ядро линкуется напрямую. |
-| `obsidian-android` | Клиент для Android: Java поверх того же ядра через JNI. |
-| `obsidian-server` | Релей: TypeScript на Node 24, `node:sqlite`, uWebSockets. |
+| `valanium-core` | Ядро на Rust: MLS (RFC 9420) через OpenMLS, запечатанное хранилище, протокол. Общее для обоих клиентов. |
+| `valanium-windows` | Клиент для Windows: Tauri 2, ядро линкуется напрямую. |
+| `valanium-android` | Клиент для Android: Java поверх того же ядра через JNI. |
+| `valanium-server` | Релей: TypeScript на Node 24, `node:sqlite`, uWebSockets. |
 | `deploy` | Systemd-юниты, конфиг nginx и инструкция для обновления сервера. |
 
 ## Как это защищено
@@ -40,16 +40,16 @@
 
 ```bash
 # ядро и тесты
-cd obsidian-core && cargo test
+cd valanium-core && cargo test
 
 # клиент для Windows
-cd obsidian-windows && npm install && npm run build
+cd valanium-windows && npm install && npm run build
 
 # клиент для Android (нужны Android SDK/NDK и cargo-ndk)
-cd obsidian-android && ./gradlew :app:assembleDebug
+cd valanium-android && ./gradlew :app:assembleDebug
 
 # сервер
-cd obsidian-server && npm ci && npm test
+cd valanium-server && npm ci && npm test
 ```
 
 ## Лицензия
@@ -57,6 +57,6 @@ cd obsidian-server && npm ci && npm test
 [GNU Affero General Public License v3.0](LICENSE).
 
 Условие AGPL про сетевое использование здесь по делу: если вы поднимаете свой
-сервер Obsidian и даёте им пользоваться другим, исходники вашей версии должны
+сервер Valanium и даёте им пользоваться другим, исходники вашей версии должны
 быть доступны этим людям. Мессенджер, который просят проверить на слово, —
 ровно то, чего этот проект старается избежать.

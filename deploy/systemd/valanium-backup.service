@@ -1,0 +1,28 @@
+# /etc/systemd/system/valanium-backup.service
+#
+# Снимок базы. Обычный cp здесь не годится: база в режиме WAL, и файл, снятый
+# во время записи, окажется битым. Инструмент делает VACUUM INTO — консистентный
+# снимок на работающем сервере, без остановки.
+#
+# Путь к node может отличаться: системный часто старее 24, а серверу нужен
+# именно 24+. Подставьте свой (например /opt/node-24/bin/node).
+
+[Unit]
+Description=Valanium backup snapshot
+After=valanium.service
+
+[Service]
+Type=oneshot
+User=valanium
+Group=valanium
+WorkingDirectory=/opt/valanium
+ExecStart=/usr/bin/node --env-file-if-exists=.env src/tools/backup.ts /var/backups/valanium
+
+# Сколько снимков держать. Старые чистятся сами.
+Environment=VALANIUM_BACKUP_KEEP=14
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/valanium/data /var/backups/valanium

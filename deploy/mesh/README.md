@@ -1,4 +1,4 @@
-# Obsidian mesh
+# Valanium mesh
 
 Узлы соединены WireGuard-сетью `10.77.0.0/24`:
 
@@ -18,9 +18,9 @@ Cloudflare Tunnel на `127.0.0.1:8080`, Tor onion service на
 
 Маршруты клиента:
 
-- Basic: `wss://getobsidian.xyz/ws` — выбранный Cloudflare connector → main;
-- Multi-hop: `wss://getobsidian.xyz/multihop/ws` — входной relay → второй relay → main;
-- Onion: `obsidian://onion` — ядро берёт адреса из HELLO, ходит через локальный
+- Basic: `wss://valanium.com/ws` — выбранный Cloudflare connector → main;
+- Multi-hop: `wss://valanium.com/multihop/ws` — входной relay → второй relay → main;
+- Onion: `valanium://onion` — ядро берёт адреса из HELLO, ходит через локальный
   SOCKS5 Tor/Orbot.
 
 ## Что какой маршрут прячет
@@ -33,7 +33,7 @@ Onion исключает Cloudflare и доставляет на main тольк
 
 ## Заголовок входа
 
-`obsidian-proxy.conf` выставляет `CF-Connecting-IP` и `X-Obsidian-Route`
+`valanium-proxy.conf` выставляет `CF-Connecting-IP` и `X-Valanium-Route`
 принудительно, по `$server_port`: `8082` — Tor, остальное — Cloudflare.
 Прислать их клиенту нельзя, что бы он ни отправил.
 
@@ -42,15 +42,15 @@ Onion исключает Cloudflare и доставляет на main тольк
 любой IP: обходил бы все лимиты и приписывал бы свой трафик чужому адресу.
 
 Соединения из Tor адреса не имеют вовсе и считаются одним общим ведром
-(`ONION_KEY`) со своими потолками — `OBSIDIAN_MAX_ONION_CONNECTIONS` и
-`OBSIDIAN_ONION_LIMIT_FACTOR`. Ведро общее, поэтому потолки заметно щедрее; от
+(`ONION_KEY`) со своими потолками — `VALANIUM_MAX_ONION_CONNECTIONS` и
+`VALANIUM_ONION_LIMIT_FACTOR`. Ведро общее, поэтому потолки заметно щедрее; от
 подбора пароля защищает не оно, а счётчик попыток на конкретный логин, который
 считается независимо от входа.
 
 ## Адрес клиента
 
 До main он больше не доезжает. На входном узле `CF-Connecting-IP` заменяется на
-жетон — HMAC от подсети клиента и текущей даты (`obsidian-blind.js`), — а сам
+жетон — HMAC от подсети клиента и текущей даты (`valanium-blind.js`), — а сам
 заголовок обнуляется. Второй узел и main видят только строку, из которой IP не
 восстановить; приложение считает по ней лимиты, как считало по адресу.
 
@@ -58,8 +58,8 @@ Onion исключает Cloudflare и доставляет на main тольк
 
 ```bash
 apt-get install libnginx-mod-http-js
-openssl rand -hex 32 > /etc/nginx/obsidian-blind.key
-chown root:www-data /etc/nginx/obsidian-blind.key && chmod 640 /etc/nginx/obsidian-blind.key
+openssl rand -hex 32 > /etc/nginx/valanium-blind.key
+chown root:www-data /etc/nginx/valanium-blind.key && chmod 640 /etc/nginx/valanium-blind.key
 ```
 
 Каждый ingress relay получает отдельный секрет. Downstream relay не должен
@@ -80,7 +80,7 @@ Cloudflare адрес по-прежнему видит — от него пря�
 ## Onion-адреса
 
 Все активные relay держат независимый скрытый сервис. Список отдаёт сервер в HELLO
-(`OBSIDIAN_ONION_HOSTS` в `.env` на main), клиент его запоминает и обновляет
+(`VALANIUM_ONION_HOSTS` в `.env` на main), клиент его запоминает и обновляет
 сам. В сборках остаются оба адреса как запасные — на случай первого запуска,
 когда HELLO ещё не получали. Смена узла больше не требует новой сборки.
 

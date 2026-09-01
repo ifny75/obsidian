@@ -3,7 +3,7 @@
 
         deploy\package.ps1
 
-    Кладёт deploy\dist\obsidian-server-<дата>.zip. Внутрь попадает только то,
+    Кладёт deploy\dist\valanium-server-<дата>.zip. Внутрь попадает только то,
     что серверу действительно нужно: исходники, манифесты и пример конфига.
     Ни node_modules (там бинари под платформу сборщика), ни data/ (это чужая
     база), ни .env (там админский токен).
@@ -15,16 +15,16 @@ param(
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path $PSScriptRoot -Parent
-$server = Join-Path $root "obsidian-server"
+$server = Join-Path $root "valanium-server"
 if (-not (Test-Path (Join-Path $server "src\index.ts"))) {
-    throw "Не найден obsidian-server рядом с deploy\"
+    throw "Не найден valanium-server рядом с deploy\"
 }
 
 # Со временем, а не только с датой: за день архив собирают не один раз, и
 # затирать предыдущий, который уже уехал на сервер, нельзя.
 $stamp = Get-Date -Format "yyyy-MM-dd-HHmm"
-$staging = Join-Path ([System.IO.Path]::GetTempPath()) "obsidian-package-$([guid]::NewGuid())"
-$archive = Join-Path $OutDir "obsidian-server-$stamp.zip"
+$staging = Join-Path ([System.IO.Path]::GetTempPath()) "valanium-package-$([guid]::NewGuid())"
+$archive = Join-Path $OutDir "valanium-server-$stamp.zip"
 
 New-Item -ItemType Directory -Path $staging -Force | Out-Null
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Размытие под диалогом. Android умеет его только для окна, а не для
+        произвольной панели внутри активности, — поэтому здесь оно настоящее, а
+        стеклянность пилюль внутри экрана приходится изображать заливкой.
+    -->
+    <style name="Valanium.Dialog" parent="android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_bg</item>
+        <item name="android:colorAccent">@color/valanium_white</item>
+        <item name="android:textColorPrimary">@color/valanium_white</item>
+        <item name="android:textColorSecondary">@color/valanium_muted</item>
+        <item name="android:textColorAlertDialogListItem">@color/valanium_white</item>
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:windowTitleStyle">@style/Valanium.Dialog.Title</item>
+        <item name="android:buttonBarButtonStyle">@style/Valanium.Dialog.Button</item>
+        <item name="android:windowBlurBehindEnabled">true</item>
+        <item name="android:windowBackgroundBlurRadius">48dp</item>
+        <item name="android:windowBlurBehindRadius">36dp</item>
+    </style>
+</resources>

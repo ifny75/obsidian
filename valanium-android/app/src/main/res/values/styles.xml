@@ -1,0 +1,425 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Valanium.Theme" parent="android:style/Theme.Material.NoActionBar">
+        <!--
+            Все диалоги приложения — свои, а не системные. Без этой строки
+            AlertDialog рисуется платформенной темой: серая плашка, острые углы
+            и кнопки капсом, — и выглядит как чужое окно поверх приложения.
+            Указано здесь, чтобы подхватили все одиннадцать вызовов сразу.
+        -->
+        <item name="android:alertDialogTheme">@style/Valanium.Dialog</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">@color/valanium_black</item>
+        <item name="android:colorAccent">@color/valanium_white</item>
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:navigationBarColor">@color/valanium_black</item>
+        <item name="android:statusBarColor">@color/valanium_black</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <style name="Valanium.Wordmark" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/unbounded_semibold</item>
+        <item name="android:textColor">@color/valanium_white</item>
+        <item name="android:textSize">30sp</item>
+        <item name="android:letterSpacing">-0.04</item>
+    </style>
+
+    <style name="Valanium.Brand" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/unbounded_semibold</item>
+        <item name="android:textColor">@color/valanium_white</item>
+        <item name="android:textSize">17sp</item>
+    </style>
+
+    <style name="Valanium.Brand.Small" parent="Valanium.Brand">
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="Valanium.Title" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/unbounded_medium</item>
+        <item name="android:textColor">@color/valanium_white</item>
+        <item name="android:textSize">24sp</item>
+        <item name="android:lineSpacingMultiplier">1.05</item>
+    </style>
+
+    <style name="Valanium.SectionTitle" parent="Valanium.Title">
+        <item name="android:textSize">20sp</item>
+    </style>
+
+    <style name="Valanium.HeaderTitle" parent="Valanium.Brand">
+        <item name="android:gravity">center</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="Valanium.SettingTitle" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:textColor">@color/valanium_white</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="Valanium.CardValue" parent="Valanium.Brand">
+        <item name="android:textSize">15sp</item>
+    </style>
+
+    <style name="Valanium.Eyebrow" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/unbounded_medium</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/valanium_muted</item>
+        <item name="android:textSize">10sp</item>
+        <item name="android:letterSpacing">0.12</item>
+    </style>
+
+    <style name="Valanium.Muted" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:textColor">@color/valanium_muted</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:lineSpacingExtra">3dp</item>
+    </style>
+
+    <style name="Valanium.Micro" parent="Valanium.Muted">
+        <item name="android:textColor">@color/valanium_dim</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+
+    <style name="Valanium.Panel" parent="">
+        <item name="android:background">@drawable/panel_glass</item>
+        <item name="android:padding">24dp</item>
+    </style>
+
+    <style name="Valanium.TopBar" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">58dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:background">@drawable/panel_glass</item>
+        <item name="android:paddingStart">8dp</item>
+        <item name="android:paddingEnd">8dp</item>
+    </style>
+
+    <style name="Valanium.Card" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/panel_glass</item>
+        <item name="android:padding">16dp</item>
+    </style>
+
+    <style name="Valanium.Preview" parent="Valanium.Card">
+        <item name="android:minHeight">190dp</item>
+    </style>
+
+    <style name="Valanium.Input" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">56dp</item>
+        <item name="android:background">@drawable/input_glass</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:textColor">@color/valanium_white</item>
+        <item name="android:textColorHint">@color/valanium_dim</item>
+        <item name="android:textCursorDrawable">@null</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:singleLine">true</item>
+    </style>
+
+    <style name="Valanium.Input.Compact" parent="Valanium.Input">
+        <item name="android:layout_height">50dp</item>
+        <item name="android:minHeight">50dp</item>
+    </style>
+
+    <style name="Valanium.Button.Primary" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">54dp</item>
+        <item name="android:background">@drawable/button_primary</item>
+        <item name="android:fontFamily">@font/unbounded_semibold</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">@color/valanium_black</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <style name="Valanium.Button.Square" parent="Valanium.Button.Primary">
+        <item name="android:layout_width">50dp</item>
+        <item name="android:layout_height">50dp</item>
+        <item name="android:minWidth">50dp</item>
+        <item name="android:minHeight">50dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:textSize">22sp</item>
+    </style>
+
+    <style name="Valanium.Button.Dark" parent="">
+        <item name="android:gravity">center</item>
+
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">50dp</item>
+        <item name="android:background">@drawable/input_glass</item>
+        <item name="android:fontFamily">@font/unbounded_medium</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">@color/valanium_white</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+
+    <style name="Valanium.Button.Dark.Small" parent="Valanium.Button.Dark">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">38dp</item>
+        <!--
+            Ширину задаёт текст и отступы, а не минимум.
+            Раньше здесь стояло 126dp, и любой ряд из трёх таких кнопок требовал
+            378dp — больше, чем есть у обычного телефона. Ряды разъезжались, а
+            подписи обрезались; таких рядов в раскладке пятнадцать.
+        -->
+        <item name="android:minWidth">0dp</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:textSize">9sp</item>
+    </style>
+
+    <style name="Valanium.Button.IconDark" parent="Valanium.Button.Dark">
+        <item name="android:layout_width">44dp</item>
+        <item name="android:layout_height">44dp</item>
+        <item name="android:minWidth">44dp</item>
+        <item name="android:minHeight">44dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:textSize">18sp</item>
+    </style>
+
+    <style name="Valanium.Button.Round" parent="Valanium.Button.Square">
+        <item name="android:background">@drawable/button_round</item>
+        <item name="android:layout_width">46dp</item><item name="android:layout_height">46dp</item>
+        <item name="android:minWidth">46dp</item><item name="android:minHeight">46dp</item>
+    </style>
+
+    <style name="Valanium.Button.Color" parent="">
+        <item name="android:layout_width">48dp</item><item name="android:layout_height">48dp</item>
+        <item name="android:background">@null</item><item name="android:stateListAnimator">@null</item>
+        <item name="android:textSize">30sp</item>
+    </style>
+
+    <style name="Valanium.Button.Danger" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">52dp</item>
+        <item name="android:background">@drawable/button_danger</item>
+        <item name="android:fontFamily">@font/unbounded_medium</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">#FFFF8796</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+
+    <style name="Valanium.Status" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/status_pill</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingTop">5dp</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="android:paddingBottom">5dp</item>
+        <item name="android:textColor">@color/valanium_green</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+
+    <style name="Valanium.Device" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textColor">@color/valanium_muted</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+
+    <!-- Текстовая кнопка-ссылка: второстепенное действие, которое не должно
+         конкурировать с основной кнопкой экрана. -->
+    <style name="Valanium.Button.Link" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">40dp</item>
+        <item name="android:background">@android:color/transparent</item>
+        <item name="android:textColor">@color/valanium_muted</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:gravity">center</item>
+        <item name="android:stateListAnimator">@null</item>
+    </style>
+
+    <!-- Код восстановления: моноширинно и с разрядкой, чтобы переписывать на
+         бумагу без ошибок. -->
+    <style name="Valanium.CodeBlock" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/input_glass</item>
+        <item name="android:padding">14dp</item>
+        <item name="android:textColor">@color/valanium_white</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:letterSpacing">0.09</item>
+        <item name="android:lineSpacingMultiplier">1.5</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textIsSelectable">true</item>
+    </style>
+    <!--
+        Сегмент и вкладка. Отдельно от Valanium.Button.Dark.Small намеренно: у
+        того minWidth 126dp, и три таких в ряд на телефоне не помещаются — от
+        этого ряды кнопок и разъезжались.
+    -->
+    <style name="Valanium.Segment" parent="">
+        <item name="android:gravity">center</item>
+
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">38dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:background">@drawable/chip_idle</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:paddingStart">6dp</item>
+        <item name="android:paddingEnd">6dp</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">@color/valanium_muted</item>
+        <item name="android:textSize">10sp</item>
+    </style>
+
+    <style name="Valanium.Tab" parent="Valanium.Segment">
+        <item name="android:gravity">center</item>
+
+        <item name="android:layout_height">34dp</item>
+        <item name="android:background">@drawable/chip_idle</item>
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:paddingStart">18dp</item>
+        <item name="android:paddingEnd">18dp</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+    <style name="Valanium.Dialog" parent="android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/dialog_bg</item>
+        <item name="android:colorAccent">@color/valanium_white</item>
+        <item name="android:textColorPrimary">@color/valanium_white</item>
+        <item name="android:textColorSecondary">@color/valanium_muted</item>
+        <item name="android:textColorAlertDialogListItem">@color/valanium_white</item>
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:windowTitleStyle">@style/Valanium.Dialog.Title</item>
+        <item name="android:buttonBarButtonStyle">@style/Valanium.Dialog.Button</item>
+        <item name="android:windowAnimationStyle">@style/Valanium.Dialog.Motion</item>
+    </style>
+
+    <style name="Valanium.Dialog.Motion" parent="">
+        <item name="android:windowEnterAnimation">@anim/dialog_in</item>
+        <item name="android:windowExitAnimation">@anim/dialog_out</item>
+    </style>
+
+    <style name="Valanium.Dialog.Title" parent="">
+        <item name="android:fontFamily">@font/unbounded_medium</item>
+        <item name="android:textColor">@color/valanium_white</item>
+        <item name="android:textSize">17sp</item>
+    </style>
+
+    <!-- Без капса: остальное приложение его нигде не использует. -->
+    <style name="Valanium.Dialog.Button" parent="android:style/Widget.Material.Button.Borderless">
+        <item name="android:fontFamily">@font/inter_medium</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">@color/valanium_white</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+    <!--
+        Строка настроек: иконка, название, значение справа.
+        Подписи-абзацы заменены на значение — так строка читается взглядом, а
+        не вычитывается, и раздел перестаёт быть сплошной простынёй текста.
+    -->
+    <style name="Valanium.Row" parent="">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">56dp</item>
+        <item name="android:background">?android:attr/selectableItemBackground</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">14dp</item>
+    </style>
+
+    <style name="Valanium.Row.Icon" parent="">
+        <item name="android:layout_width">22dp</item>
+        <item name="android:layout_height">22dp</item>
+        <item name="android:layout_marginEnd">14dp</item>
+    </style>
+
+    <style name="Valanium.Row.Title" parent="">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:textColor">@color/valanium_white</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="Valanium.Row.Value" parent="">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">@font/inter_regular</item>
+        <item name="android:textColor">@color/valanium_muted</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+
+    <!--
+        Поиск на главной: вдвое ниже прежнего поля ввода.
+        Главный экран — это список переписок, а не форма; поле в 50dp съедало
+        полосу, ради которой список и существует.
+    -->
+    <style name="Valanium.Input.Search" parent="Valanium.Input">
+        <item name="android:layout_height">36dp</item>
+        <item name="android:minHeight">36dp</item>
+        <item name="android:background">@drawable/pill_glass</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">14dp</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+
+    <!-- Круглая кнопка-иконка под высоту поиска. -->
+    <style name="Valanium.Icon.Round" parent="">
+        <item name="android:layout_width">36dp</item>
+        <item name="android:layout_height">36dp</item>
+        <item name="android:background">@drawable/circle_glass</item>
+        <item name="android:padding">9dp</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:stateListAnimator">@null</item>
+    </style>
+
+    <!-- Кнопка-иконка в верхней полосе: та же форма, что у Button.IconDark. -->
+    <style name="Valanium.Icon.Dark" parent="">
+        <item name="android:layout_width">44dp</item>
+        <item name="android:layout_height">44dp</item>
+        <item name="android:background">@drawable/input_glass</item>
+        <item name="android:padding">11dp</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:stateListAnimator">@null</item>
+    </style>
+
+    <!--
+        Кнопка-иконка внутри строки ввода сообщения.
+        Строка — вытянутая таблетка, и прямоугольник со скруглением 16dp внутри
+        неё читается как чужая деталь: на ПК те же кнопки круглые.
+    -->
+    <style name="Valanium.Button.IconCircle" parent="Valanium.Button.IconDark">
+        <item name="android:background">@drawable/circle_glass</item>
+        <item name="android:layout_width">46dp</item>
+        <item name="android:layout_height">46dp</item>
+        <item name="android:minWidth">46dp</item>
+        <item name="android:minHeight">46dp</item>
+    </style>
+
+    <!-- Кнопка-иконка в строке ввода: круг под размер строки. -->
+    <style name="Valanium.Icon.Composer" parent="">
+        <item name="android:layout_width">46dp</item>
+        <item name="android:layout_height">46dp</item>
+        <item name="android:background">@drawable/circle_glass</item>
+        <item name="android:padding">12dp</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:stateListAnimator">@null</item>
+    </style>
+</resources>

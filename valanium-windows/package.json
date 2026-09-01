@@ -1,0 +1,16 @@
+{
+  "name": "valanium-windows",
+  "private": true,
+  "description": "Windows-клиент Valanium: WebView2 поверх valanium-core",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build --no-bundle",
+    "icon": "tauri icon ../resource/valanium_logo.svg"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  },
+  "dependencies": {
+    "@google/model-viewer": "^4.3.1"
+  }
+}

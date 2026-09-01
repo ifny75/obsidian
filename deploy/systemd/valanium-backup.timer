@@ -1,0 +1,18 @@
+# /etc/systemd/system/valanium-backup.timer
+#
+#   sudo mkdir -p /var/backups/valanium && sudo chown valanium: /var/backups/valanium
+#   sudo systemctl enable --now valanium-backup.timer
+#   systemctl list-timers valanium-backup
+
+[Unit]
+Description=Valanium daily backup
+
+[Timer]
+OnCalendar=daily
+# Разброс, чтобы снимок не приходился на ту же секунду, что и другие задачи.
+RandomizedDelaySec=30m
+# Пропущенный из-за выключенной машины запуск наверстывается.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

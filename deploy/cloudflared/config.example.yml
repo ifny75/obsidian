@@ -8,7 +8,7 @@ credentials-file: /root/.cloudflared/ЗАМЕНИТЬ-НА-ID-ТУННЕЛЯ.jso
 
 # Идём на localhost: наружу торчит cloudflared, а не сам сервер.
 ingress:
-  - hostname: obsidian.example.com
+  - hostname: valanium.example.com
     service: http://127.0.0.1:8787
     originRequest:
       # WebSocket живёт долго, и рвать его по таймауту происхождения нельзя.

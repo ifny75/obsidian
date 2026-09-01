@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
-<title>Obsidian — Private Messenger</title>
+<title>Valanium — Private Messenger</title>
 <style>
 @font-face{font-family:"Unbounded";src:local("Unbounded Light"),url("assets/fonts/Unbounded-Light.ttf") format("truetype");font-style:normal;font-weight:300;font-display:swap}
 @font-face{font-family:"Unbounded";src:local("Unbounded Regular"),url("assets/fonts/Unbounded-Regular.ttf") format("truetype");font-style:normal;font-weight:400;font-display:swap}
@@ -261,8 +261,8 @@ body,button,input,textarea{font-family:var(--font);letter-spacing:0}
 <!-- Welcome -->
 <section class="screen onboarding" id="welcomeScreen">
   <div class="on-card">
-    <div class="logo-box has-logo"><img src="obsidian_logo.svg" alt="Obsidian"></div>
-    <h1>Obsidian</h1>
+    <div class="logo-box has-logo"><img src="valanium_logo.svg" alt="Valanium"></div>
+    <h1>Valanium</h1>
     <p>Приватный мессенджер для закрытого круга. Вход только по приглашению, минимум публичных данных и простой интерфейс без лишнего шума.</p>
     <div class="on-actions"><button class="btn primary full" id="welcomeNext">Далее</button></div>
     <p class="on-note">Прототип интерфейса. Криптография и серверная часть в этой версии не реализованы.</p>
@@ -272,13 +272,13 @@ body,button,input,textarea{font-family:var(--font);letter-spacing:0}
 <!-- Invite -->
 <section class="screen onboarding hidden" id="inviteScreen">
   <div class="on-card">
-    <div class="logo-box has-logo"><img src="obsidian_logo.svg" alt="Obsidian"></div>
+    <div class="logo-box has-logo"><img src="valanium_logo.svg" alt="Valanium"></div>
     <h1>Приглашение</h1>
     <p>Для доступа нужен код участника закрытого круга.</p>
     <div class="field"><label>Инвайт-код</label><input class="input" id="inviteInput" autocomplete="off" placeholder="Введите код"></div>
     <div class="error" id="inviteError"></div>
     <button class="btn primary full" id="verifyInvite">Продолжить</button>
-    <div class="demo-codes">Тестовые коды:<br>обычный — <code>OBSIDIAN-0420</code><br>owner — <code>OWNER-0420</code><br>dev-пропуск — <code>DEV-0420</code></div>
+    <div class="demo-codes">Тестовые коды:<br>обычный — <code>VALANIUM-0420</code><br>owner — <code>OWNER-0420</code><br>dev-пропуск — <code>DEV-0420</code></div>
     <button class="back-link" data-back="welcomeScreen">Назад</button>
   </div>
 </section>
@@ -303,7 +303,7 @@ body,button,input,textarea{font-family:var(--font);letter-spacing:0}
   <aside class="sidebar" id="sidebar">
     <div class="side-top">
       <div class="brand-row">
-        <div class="brand"><div class="brand-logo has-logo"><img src="obsidian_logo.svg" alt="Obsidian"></div><div class="brand-copy"><strong>Obsidian</strong><span>private circle</span></div></div>
+        <div class="brand"><div class="brand-logo has-logo"><img src="valanium_logo.svg" alt="Valanium"></div><div class="brand-copy"><strong>Valanium</strong><span>private circle</span></div></div>
         <button class="icon-btn" id="newInviteBtn" title="Создать приглашение" aria-label="Создать приглашение"><span class="ui-icon" style="--icon:url('svg/pencil.svg')"></span></button>
       </div>
       <label class="search"><span class="ui-icon" style="--icon:url('svg/password-magnifying-glass.svg')"></span><input id="searchInput" placeholder="Поиск"></label>
@@ -345,7 +345,7 @@ body,button,input,textarea{font-family:var(--font);letter-spacing:0}
 <section class="page" id="ownerPage"><header class="page-header"><button class="icon-btn page-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m15 18-6-6 6-6"/></svg></button><h2>Управление</h2><span></span></header><div class="page-content"><div class="owner-banner"><b>Owner access</b><p>Тестовая панель владельца закрытого круга. Здесь можно локально выдавать и снимать демонстрационные значки участников.</p></div><div class="section-card" id="memberList"></div></div></section>
 
 <!-- Generic invite modal -->
-<div class="modal" id="newInviteModal"><div class="modal-card"><h3>Новое приглашение</h3><p>Одноразовый тестовый код. В настоящем приложении он должен выпускаться сервером и иметь срок жизни.</p><div class="code" id="generatedInvite">OBSIDIAN-X7K2-PQ9M</div><div class="modal-actions"><button class="btn modal-close">Закрыть</button><button class="btn primary" id="copyInvite">Копировать</button></div></div></div>
+<div class="modal" id="newInviteModal"><div class="modal-card"><h3>Новое приглашение</h3><p>Одноразовый тестовый код. В настоящем приложении он должен выпускаться сервером и иметь срок жизни.</p><div class="code" id="generatedInvite">VALANIUM-X7K2-PQ9M</div><div class="modal-actions"><button class="btn modal-close">Закрыть</button><button class="btn primary" id="copyInvite">Копировать</button></div></div></div>
 
 <div class="modal" id="avatarModal"><div class="modal-card"><h3>Загрузка аватара</h3><p>В этом прототипе загрузка файла намеренно не подключена. Элемент оставлен для демонстрации будущего интерфейса.</p><div class="modal-actions"><button class="btn primary modal-close">Понятно</button></div></div></div>
 
@@ -354,7 +354,7 @@ body,button,input,textarea{font-family:var(--font);letter-spacing:0}
 
 <script>
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
-const sessionKey='obsidian-session-v3', prefsKey='obsidian-prefs-v6', badgeKey='obsidian-badges-v3';
+const sessionKey='valanium-session-v3', prefsKey='valanium-prefs-v6', badgeKey='valanium-badges-v3';
 let pendingRole='member';
 let session=JSON.parse(localStorage.getItem(sessionKey)||'null');
 let prefs=Object.assign({theme:'dark',accent:'#f4f4f4',accentText:'#080808',fontSize:15,radius:12,bubbleRadius:12,msgWidth:72,blur:18,panelOpacity:88,uiScale:100,chatBg:'plain',square:false,compact:false,hidePreview:false,ttl:'24 часа'},JSON.parse(localStorage.getItem(prefsKey)||'{}'));
@@ -370,7 +370,7 @@ function showPage(id){$('#'+id).classList.add('open')}function closePages(){$$('
 // onboarding
 $('#welcomeNext').onclick=()=>showOnly('inviteScreen');
 $$('[data-back]').forEach(b=>b.onclick=()=>showOnly(b.dataset.back));
-$('#verifyInvite').onclick=()=>{const v=$('#inviteInput').value.trim().toUpperCase();if(v==='DEV-0420'){session={name:'Developer',handle:'@dev',role:'dev',initials:'DV'};localStorage.setItem(sessionKey,JSON.stringify(session));$('#inviteError').textContent='';bootApp();toast('DEV-режим активирован');return}if(v==='OBSIDIAN-0420'||v==='OWNER-0420'){pendingRole=v.startsWith('OWNER')?'owner':'member';$('#inviteError').textContent='';showOnly('registerScreen')}else $('#inviteError').textContent='Код не найден или уже недействителен.'};
+$('#verifyInvite').onclick=()=>{const v=$('#inviteInput').value.trim().toUpperCase();if(v==='DEV-0420'){session={name:'Developer',handle:'@dev',role:'dev',initials:'DV'};localStorage.setItem(sessionKey,JSON.stringify(session));$('#inviteError').textContent='';bootApp();toast('DEV-режим активирован');return}if(v==='VALANIUM-0420'||v==='OWNER-0420'){pendingRole=v.startsWith('OWNER')?'owner':'member';$('#inviteError').textContent='';showOnly('registerScreen')}else $('#inviteError').textContent='Код не найден или уже недействителен.'};
 $('#nameInput').addEventListener('input',e=>$('#registerAvatar').textContent=(e.target.value.trim()[0]||'U').toUpperCase());
 $('#registerAvatarBtn').onclick=()=>$('#avatarModal').classList.add('open');
 $('#finishRegister').onclick=()=>{const name=$('#nameInput').value.trim(),raw=$('#handleInput').value.trim();if(name.length<2){$('#registerError').textContent='Введите имя минимум из 2 символов.';return}let handle=raw||'@'+name.toLowerCase().replace(/\s+/g,'');if(!handle.startsWith('@'))handle='@'+handle;session={name,handle,role:pendingRole,initials:name.slice(0,2).toUpperCase()};localStorage.setItem(sessionKey,JSON.stringify(session));bootApp()};
@@ -389,7 +389,7 @@ $('#searchInput').oninput=e=>{const q=e.target.value.toLowerCase().trim();$$('.c
 const composer=$('#composer');composer.oninput=()=>{composer.style.height='auto';composer.style.height=Math.min(composer.scrollHeight,130)+'px'};function send(){const t=composer.value.trim();if(!t)return;const row=document.createElement('div');row.className='msg-row me';const bubble=document.createElement('div');bubble.className='bubble';bubble.textContent=t;const meta=document.createElement('div');meta.className='msg-meta';meta.innerHTML='<span>сейчас</span><span>✓</span>';bubble.append(meta);row.append(bubble);$('#messages').append(row);composer.value='';composer.style.height='auto';$('#messages').scrollTop=$('#messages').scrollHeight}$('#sendBtn').onclick=send;composer.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}};$('#attachBtn').onclick=()=>toast('Вложения в прототипе не подключены');
 
 // invite modal
-$('#newInviteBtn').onclick=()=>{const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let code='OBSIDIAN-';for(let i=0;i<8;i++)code+=chars[Math.floor(Math.random()*chars.length)];$('#generatedInvite').textContent=code;$('#newInviteModal').classList.add('open')};$('#copyInvite').onclick=async()=>{try{await navigator.clipboard.writeText($('#generatedInvite').textContent);toast('Код скопирован')}catch{toast('Не удалось скопировать')}};
+$('#newInviteBtn').onclick=()=>{const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let code='VALANIUM-';for(let i=0;i<8;i++)code+=chars[Math.floor(Math.random()*chars.length)];$('#generatedInvite').textContent=code;$('#newInviteModal').classList.add('open')};$('#copyInvite').onclick=async()=>{try{await navigator.clipboard.writeText($('#generatedInvite').textContent);toast('Код скопирован')}catch{toast('Не удалось скопировать')}};
 $$('.modal-close').forEach(b=>b.onclick=()=>b.closest('.modal').classList.remove('open'));$$('.modal').forEach(m=>m.onclick=e=>{if(e.target===m)m.classList.remove('open')});
 
 // prefs

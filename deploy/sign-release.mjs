@@ -1,8 +1,8 @@
 /**
  * Подписывает манифест релизов.
  *
- *   node deploy/sign-release.mjs windows 0.11.0 release/Obsidian-Portable-Windows-0.11.0.exe \
- *                                android 0.6.2 release/Obsidian-Android-arm64-0.6.2.apk
+ *   node deploy/sign-release.mjs windows 0.11.0 release/Valanium-Portable-Windows-0.11.0.exe \
+ *                                android 0.6.2 release/Valanium-Android-arm64-0.6.2.apk
  *
  * Зачем это существует. Клиент скачивает сборку по ссылке с нашего же сервера,
  * и до сих пор ничто не мешало подменить файл тому, кто получил доступ к
@@ -14,7 +14,7 @@
  * никогда не будет. Открытая половина зашита в клиент; сервер отдаёт манифест
  * и подпись как есть, и подменить их незаметно не может.
  *
- * Приватный ключ лежит в ~/.obsidian-release/signing.key и в репозиторий не
+ * Приватный ключ лежит в ~/.valanium-release/signing.key и в репозиторий не
  * попадает. Потеряете — заведёте новый и выпустите клиент с новым открытым
  * ключом; до тех пор обновления перестанут подтверждаться.
  */
@@ -22,10 +22,10 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { ed25519 } from "../obsidian-server/node_modules/@noble/curves/ed25519.js";
+import { ed25519 } from "../valanium-server/node_modules/@noble/curves/ed25519.js";
 
-const KEY_PATH = process.env.OBSIDIAN_SIGNING_KEY
-  ?? join(homedir(), ".obsidian-release", "signing.key");
+const KEY_PATH = process.env.VALANIUM_SIGNING_KEY
+  ?? join(homedir(), ".valanium-release", "signing.key");
 
 const args = process.argv.slice(2);
 if (args.length === 0 || args.length % 3 !== 0) {
@@ -49,11 +49,11 @@ for (let i = 0; i < args.length; i += 3) {
     process.exit(2);
   }
   const name = platform === "windows"
-    ? `Obsidian-${version}.exe`
-    : `Obsidian-${version}.apk`;
+    ? `Valanium-${version}.exe`
+    : `Valanium-${version}.apk`;
   platforms[platform] = {
     version,
-    url: `https://getobsidian.xyz/downloads/${name}`,
+    url: `https://valanium.com/downloads/${name}`,
     sha256: sha256(file),
     bytes: readFileSync(file).length,
   };
