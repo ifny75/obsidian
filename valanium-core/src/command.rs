@@ -260,6 +260,24 @@ pub enum Command {
         action: String,
         reference: String,
     },
+    /// Почта поддержки: список переписок, либо одна целиком, если задан `thread`.
+    SupportGet {
+        #[serde(default)]
+        offset: u64,
+        #[serde(default)]
+        thread: Option<String>,
+    },
+    /// Ответить письмом. Уходит человеку раньше, чем ложится в базу.
+    SupportReply {
+        thread: String,
+        body: String,
+    },
+    /// Пометить прочитанной, а с `closed` — закрыть либо открыть заново.
+    SupportMark {
+        thread: String,
+        #[serde(default)]
+        closed: Option<bool>,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -342,6 +360,8 @@ pub enum Event {
     /// Новый пост в канале, на который подписаны.
     ChannelPost { report: serde_json::Value },
     DevicesRevoked { count: u64 },
+    /// Ответ панели поддержки. Как и Admin, пересылается сервером как есть.
+    Support { report: serde_json::Value },
     /// Ответ панели владельца: только счётчики.
     ///
     /// Ни переписок, ни списка людей здесь нет — сервер их не хранит, и панель

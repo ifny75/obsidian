@@ -1892,6 +1892,10 @@ const handlers = {
     setConnection("connecting", "проверяем ключи…");
   },
 
+  support(event) {
+    renderSupport(event.report ?? {});
+  },
+
   admin(event) {
     renderAdmin(event.report ?? {});
   },
@@ -4172,6 +4176,156 @@ function renderAdmin(report) {
   }
 }
 
+let supportOffset = 0;
+let supportOpen = null;
+
+/*
+  Список писем и одна переписка в одном месте.
+
+  Открытая переписка разворачивается прямо в строке, а не отдельным окном:
+  писем тут единицы, и гонять человека по модальным окнам ради двух абзацев —
+  это работа, которой можно не быть.
+*/
+function renderSupport(report) {
+  const host = $("support-threads");
+  host.replaceChildren();
+
+  const badge = $("support-badge");
+  const unread = Number(report.unreadThreads ?? 0);
+  badge.textContent = unread > 0 ? String(unread) : "";
+  badge.classList.toggle("hidden", unread === 0);
+
+  // Ответ показываем только когда сервер подтвердил, что провайдер настроен.
+  // Иначе поле ввода обещало бы то, чего не будет.
+  const canReply = report.canReply !== false;
+
+  if (report.thread) {
+    supportOpen = report.thread.id;
+    host.appendChild(renderSupportThread(report, canReply));
+    return;
+  }
+
+  const threads = report.threads ?? [];
+  if (threads.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "admin-empty";
+    empty.textContent = "Писем пока нет.";
+    host.appendChild(empty);
+  }
+  for (const thread of threads) {
+    const row = document.createElement("div");
+    row.className = "support-thread" + (thread.unread > 0 ? " unread" : "") + (thread.closed ? " closed" : "");
+
+    const copy = document.createElement("div");
+    const title = document.createElement("b");
+    title.textContent = thread.subject;
+    const who = document.createElement("small");
+    who.textContent = `${thread.address} · ${new Date(thread.updatedAt).toLocaleString()}`
+      + (thread.closed ? " · закрыта" : "");
+    copy.append(title, who);
+
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "ghost-button";
+    open.textContent = "Открыть";
+    open.addEventListener("click", () => submit({ type: "support_get", thread: thread.id }));
+
+    row.append(copy, open);
+    host.appendChild(row);
+  }
+
+  supportOffset = report.offset ?? 0;
+  $("support-prev").disabled = supportOffset === 0;
+  $("support-next").disabled = !report.more;
+  if (report.sent) $("support-status").textContent = "Ответ отправлен.";
+}
+
+function renderSupportThread(report, canReply) {
+  const wrap = document.createElement("div");
+  wrap.className = "support-open";
+
+  const head = document.createElement("div");
+  head.className = "support-open-head";
+  const title = document.createElement("b");
+  title.textContent = report.thread.subject;
+  const who = document.createElement("small");
+  who.textContent = report.thread.address;
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "ghost-button";
+  back.textContent = "К списку";
+  back.addEventListener("click", () => {
+    supportOpen = null;
+    submit({ type: "support_get", offset: supportOffset });
+  });
+  head.append(title, who, back);
+  wrap.appendChild(head);
+
+  for (const message of report.messages ?? []) {
+    const item = document.createElement("div");
+    item.className = message.direction === "in" ? "support-msg in" : "support-msg out";
+    const when = document.createElement("small");
+    when.textContent = (message.direction === "in" ? "От человека · " : "Наш ответ · ")
+      + new Date(message.createdAt).toLocaleString();
+    const body = document.createElement("p");
+    // textContent, а не innerHTML: письмо пишет посторонний, и разметка из
+    // него в нашем окне — это чужой текст, притворяющийся нашим.
+    body.textContent = message.body;
+    item.append(when, body);
+    wrap.appendChild(item);
+  }
+
+  if (canReply) {
+    const reply = document.createElement("textarea");
+    reply.className = "support-reply";
+    reply.rows = 4;
+    reply.placeholder = "Ответ уйдёт письмом на этот адрес";
+    const send = document.createElement("button");
+    send.type = "button";
+    send.className = "ghost-button";
+    send.textContent = "Ответить";
+    send.addEventListener("click", () => {
+      const text = reply.value.trim();
+      if (!text) {
+        $("support-status").textContent = "Пустой ответ отправлять нечем.";
+        return;
+      }
+      $("support-status").textContent = "Отправляем…";
+      submit({ type: "support_reply", thread: report.thread.id, body: text });
+      reply.value = "";
+    });
+    const actions = document.createElement("div");
+    actions.className = "setting-actions";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "ghost-button";
+    close.textContent = report.thread.closed ? "Открыть заново" : "Закрыть";
+    close.addEventListener("click", () =>
+      submit({ type: "support_mark", thread: report.thread.id, closed: !report.thread.closed }));
+    actions.append(send, close);
+    wrap.append(reply, actions);
+  } else {
+    const note = document.createElement("p");
+    note.className = "admin-empty";
+    note.textContent = "Отправка ответов не настроена: на сервере нет ключа почтового провайдера.";
+    wrap.appendChild(note);
+  }
+  return wrap;
+}
+
+$("support-refresh").addEventListener("click", () => {
+  $("support-status").textContent = "";
+  submit(supportOpen ? { type: "support_get", thread: supportOpen } : { type: "support_get", offset: supportOffset });
+});
+$("support-prev").addEventListener("click", () => {
+  supportOffset = Math.max(0, supportOffset - 40);
+  submit({ type: "support_get", offset: supportOffset });
+});
+$("support-next").addEventListener("click", () => {
+  supportOffset += 40;
+  submit({ type: "support_get", offset: supportOffset });
+});
+
 $("admin-users-prev").addEventListener("click", () => {
   submit({ type: "admin_get", offset: Math.max(0, adminOffset - 40) });
 });
@@ -4422,7 +4576,10 @@ $("leave-group").addEventListener("click", () => {
   );
 });
 
-$("admin-refresh").addEventListener("click", () => submit({ type: "admin_get", offset: adminOffset }));
+$("admin-refresh").addEventListener("click", () => {
+  submit({ type: "admin_get", offset: adminOffset });
+  submit({ type: "support_get", offset: 0 });
+});
 for (const [id, action] of [["admin-block", "block"], ["admin-unblock", "unblock"]]) {
   $(id).addEventListener("click", () => {
     const reference = $("admin-reference").value.trim();

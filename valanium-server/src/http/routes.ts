@@ -3,6 +3,9 @@ import { join } from "node:path";
 import type { HttpResponse, TemplatedApp } from "uWebSockets.js";
 import { config, PROTOCOL_VERSION } from "../config.ts";
 import { toHex } from "../util/bytes.ts";
+import { log } from "../log.ts";
+import type { SupportStore } from "../support/store.ts";
+import { timingSafeEqual } from "node:crypto";
 
 const ABORTED = new WeakSet<HttpResponse>();
 
@@ -25,10 +28,14 @@ const STATUS: Record<number, string> = {
  * пользовалось ни разу, а поверхность удваивали. Blob-эндпоинты убраны следом:
  * ядро их тоже не звало, а 16 МиБ на запрос копились в памяти целиком.
  *
- * Осталось два пути, и каждый — по необходимости:
+ * Осталось три пути, и каждый — по необходимости:
  *   /v1/health           — туннель и мониторинг должны видеть живость без сессии;
  *   /v1/releases/latest   — обновление проверяет клиент, который может быть
- *                           старым и до сокета вообще не дойти.
+ *                           старым и до сокета вообще не дойти;
+ *   /v1/support/inbound   — письмо в поддержку приносит Cloudflare Email Worker,
+ *                           а он умеет только HTTPS: сокета у него нет и не
+ *                           будет. Путь закрыт общим секретом и ничего не
+ *                           отдаёт наружу — только принимает.
  *
  * Админского пути здесь больше нет. Выписывать инвайты снаружи было незачем:
  * то же самое делает `npm run invite` на самой машине, а открытый в интернет
@@ -42,8 +49,53 @@ const STATUS: Record<number, string> = {
  * в цепочке не участвует. Появится `Access-Control-Allow-Origin: *` — это
  * значит, кто-то ходит на сервер не из ядра.
  */
-export function registerRoutes(app: TemplatedApp): void {
+export function registerRoutes(app: TemplatedApp, support: SupportStore): void {
   mkdirSync(config.blobDir, { recursive: true });
+
+  /*
+    Входящее письмо от Cloudflare Email Worker.
+    
+    Отвечает одинаково коротко и на успех, и на отказ: подробности здесь — это
+    подсказка тому, кто подбирает секрет. По той же причине сравнение токена
+    постоянное по времени.
+  */
+  app.post("/v1/support/inbound", (res, req) => {
+    const authorization = req.getHeader("authorization");
+    res.onAborted(() => ABORTED.add(res));
+
+    const expected = config.support.inboundToken;
+    const received = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+    if (expected.length === 0 || !constantEquals(received, expected)) {
+      json(res, 401, { ok: false });
+      return;
+    }
+
+    readBody(res, config.support.maxBytes, (body) => {
+      if (body === null) {
+        json(res, 413, { ok: false });
+        return;
+      }
+      let payload: { from?: unknown; subject?: unknown; text?: unknown };
+      try {
+        payload = JSON.parse(Buffer.from(body).toString("utf8")) as typeof payload;
+      } catch {
+        json(res, 400, { ok: false });
+        return;
+      }
+      const from = typeof payload.from === "string" ? payload.from.trim().toLowerCase().slice(0, 320) : "";
+      const subject = typeof payload.subject === "string" ? payload.subject.trim().slice(0, 200) : "";
+      const text = typeof payload.text === "string" ? payload.text.slice(0, config.support.maxBytes) : "";
+      if (from.length === 0 || text.length === 0) {
+        json(res, 400, { ok: false });
+        return;
+      }
+      support.receive(from, subject || "(без темы)", text, Date.now());
+      // Ни адреса, ни темы в журнале: это ровно те данные, ради которых почта
+      // и живёт в отдельной базе.
+      log.info("support message received");
+      json(res, 200, { ok: true });
+    });
+  });
 
   app.get("/v1/health", (res) => {
     json(res, 200, { ok: true, v: PROTOCOL_VERSION });
@@ -104,6 +156,33 @@ export function blobPath(id: Uint8Array): string {
 
 export function removeBlobFile(id: Uint8Array): void {
   rmSync(blobPath(id), { force: true });
+}
+
+function constantEquals(received: string, expected: string): boolean {
+  const left = Buffer.from(received);
+  const right = Buffer.from(expected);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+/**
+ * Собирает тело запроса, отдавая null, если оно переросло предел.
+ *
+ * uWebSockets отдаёт тело кусками и переиспользует буфер, поэтому каждый кусок
+ * копируется: сохранить ссылку значило бы получить мусор к моменту сборки.
+ */
+function readBody(res: HttpResponse, limit: number, done: (body: Uint8Array | null) => void): void {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  res.onData((chunk, isLast) => {
+    total += chunk.byteLength;
+    if (total > limit) {
+      if (!ABORTED.has(res)) done(null);
+      ABORTED.add(res);
+      return;
+    }
+    chunks.push(Buffer.from(new Uint8Array(chunk)));
+    if (isLast && !ABORTED.has(res)) done(new Uint8Array(Buffer.concat(chunks)));
+  });
 }
 
 function json(res: HttpResponse, status: number, value: unknown, publicCors = false): void {

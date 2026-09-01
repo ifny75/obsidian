@@ -205,6 +205,28 @@ export const config = {
     androidUrl: str("VALANIUM_ANDROID_URL", "https://valanium.com/downloads/Valanium.apk"),
   },
 
+  /**
+   * Почта поддержки. Своя база и свой срок хранения — см. support/store.ts.
+   *
+   * Приём и отправка идут разными каналами: Cloudflare Email Routing письма
+   * принимает, но отправлять не умеет вовсе, поэтому ответ уходит через
+   * HTTPS-API стороннего провайдера.
+   */
+  support: {
+    dbPath: resolve(root, str("VALANIUM_SUPPORT_DB", "data/support.db")),
+    /** Общий секрет с Cloudflare Email Worker: без него входящее не примем. */
+    inboundToken: str("VALANIUM_SUPPORT_INBOUND_TOKEN", ""),
+    /** Ключ почтового провайдера. Пусто => панель показывает, но не отвечает. */
+    apiKey: str("VALANIUM_SUPPORT_API_KEY", ""),
+    apiUrl: str("VALANIUM_SUPPORT_API_URL", "https://api.resend.com/emails"),
+    address: str("VALANIUM_SUPPORT_ADDRESS", "support@valanium.com"),
+    fromName: str("VALANIUM_SUPPORT_FROM_NAME", "Valanium"),
+    /** Больше 512 КиБ — это не письмо в поддержку, а способ занять диск. */
+    maxBytes: num("VALANIUM_SUPPORT_MAX_BYTES", 512 * 1024),
+    /** Переписка полугодовой давности никому не нужна, а адрес всё лежит. */
+    ttlSec: num("VALANIUM_SUPPORT_TTL_SEC", 180 * 24 * 3600),
+  },
+
   ton: {
     /** Пустой адрес => платный вход выключен, остаются только инвайты. */
     address: str("VALANIUM_TON_ADDRESS", ""),

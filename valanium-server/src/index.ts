@@ -19,8 +19,10 @@ import {
   type Deps,
 } from "./ws/session.ts";
 import { registerRoutes, removeBlobFile } from "./http/routes.ts";
+import { SupportStore } from "./support/store.ts";
 
 const store = new Store(config.dbPath);
+const support = new SupportStore(config.support.dbPath);
 const nonces = new NonceStore(config.nonceTtlSec, config.maxOutstandingNonces);
 const registry = new Registry();
 const authLimiter = new RateLimiter(config.maxAuthPerMinutePerIp, 60_000, config.maxRateLimitKeys);
@@ -33,7 +35,7 @@ const connections = new ConnectionCounter();
 const now = () => Date.now();
 
 const deps: Deps = {
-  store, nonces, registry,
+  store, support, nonces, registry,
   authLimiter, recoveryLimiter, searchLimiter, sendLimiter, postLimiter, claimLimiter,
   connections, now,
 };
@@ -106,7 +108,7 @@ app.ws<ConnData>("/ws", {
   },
 });
 
-registerRoutes(app);
+registerRoutes(app, support);
 
 // --- наблюдатель за оплатами -------------------------------------------------
 
@@ -167,6 +169,7 @@ const cleanup = setInterval(() => {
   const ts = now();
   for (const id of store.expiredBlobs(ts)) removeBlobFile(id);
   const swept = store.sweep(ts, ts - config.channelPostTtlSec * 1000);
+  support.sweep(ts - config.support.ttlSec * 1000);
   nonces.sweep(ts);
   authLimiter.sweep(ts);
   recoveryLimiter.sweep(ts);

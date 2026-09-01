@@ -3023,3 +3023,59 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
   .profile-avatar-large { width: 70px; height: 70px; }
   .profile-detail { grid-template-columns: 1fr; }
 }
+
+
+/* --- поддержка в панели владельца ------------------------------------------ */
+
+.support-badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: var(--danger, #c0392b);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.support-threads { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+
+.support-thread {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.04));
+}
+.support-thread > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.support-thread b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.support-thread small { opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Непрочитанное отмечаем полосой, а не цветом текста: цвет уже занят статусом. */
+.support-thread.unread { box-shadow: inset 3px 0 0 var(--accent, #6ea8fe); }
+.support-thread.closed { opacity: 0.55; }
+
+.support-open { display: flex; flex-direction: column; gap: 10px; }
+.support-open-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.support-open-head small { opacity: 0.7; }
+.support-open-head button { margin-left: auto; }
+
+.support-msg {
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--surface-2, rgba(255, 255, 255, 0.04));
+}
+.support-msg.out { box-shadow: inset 3px 0 0 var(--accent, #6ea8fe); }
+.support-msg small { display: block; opacity: 0.6; margin-bottom: 4px; }
+/* Письмо пишет посторонний: длинная строка без пробелов не должна разрывать окно. */
+.support-msg p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.support-reply {
+  width: 100%;
+  resize: vertical;
+  padding: 9px 12px;
+  border-radius: 10px;
+}

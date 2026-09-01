@@ -34,6 +34,8 @@ export const OP = {
   /** Новый пост в канале, на который человек подписан. */
   CHANNEL_POST: 0x33,
   DEVICE_OK: 0x3f,
+  /** Ответ панели поддержки: список переписок либо одна переписка. */
+  SUPPORT_OK: 0x40,
   // клиент → сервер
   AUTH: 0x02,
   PAY_REQUEST: 0x05,
@@ -69,6 +71,10 @@ export const OP = {
   CHANNEL_ADMIN: 0x3d,
   /** Отозвать все прочие устройства; тело подписывает identity-ключ. */
   DEVICE_REVOKE_OTHERS: 0x3e,
+  /** Панель поддержки. Только для владельца: см. requireAdmin. */
+  SUPPORT_GET: 0x41,
+  SUPPORT_REPLY: 0x42,
+  SUPPORT_MARK: 0x43,
 } as const;
 
 export const ID_LEN = 16;

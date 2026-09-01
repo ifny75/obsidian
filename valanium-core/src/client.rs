@@ -582,6 +582,9 @@ async fn run(mut commands: mpsc::UnboundedReceiver<Command>, store: Store, sink:
             | Command::ProfileSet { .. }
             | Command::ProfileDecor { .. }
             | Command::AdminGet { .. }
+            | Command::SupportGet { .. }
+            | Command::SupportReply { .. }
+            | Command::SupportMark { .. }
             | Command::ChannelCreate { .. }
             | Command::ChannelPublish { .. }
             | Command::ChannelList
@@ -2527,6 +2530,15 @@ async fn pump(
                     Command::AdminAction { action, reference } => {
                         send(&mut socket, proto::admin_action_frame(&action, &reference)?).await?;
                     }
+                    Command::SupportGet { offset, thread } => {
+                        send(&mut socket, proto::support_get_frame(offset, thread.as_deref())?).await?;
+                    }
+                    Command::SupportReply { thread, body } => {
+                        send(&mut socket, proto::support_reply_frame(&thread, &body)?).await?;
+                    }
+                    Command::SupportMark { thread, closed } => {
+                        send(&mut socket, proto::support_mark_frame(&thread, closed)?).await?;
+                    }
                     Command::ProfileSet { avatar_mime, avatar_base64 } => {
                         if greeting.profiles {
                             // Прячем аватар от сервера ровно тогда, когда
@@ -2724,6 +2736,11 @@ async fn on_frame(
             sink(Event::DevicesRevoked {
                 count: report.get("revoked").and_then(|v| v.as_u64()).unwrap_or(0),
             });
+        }
+        op::SUPPORT_OK => {
+            // Как и ADMIN_OK: набор полей задаёт сервер, разбирать их здесь
+            // значило бы ломать клиент при каждом новом поле.
+            sink(Event::Support { report: proto::parse_json(body)? });
         }
         op::ADMIN_OK => {
             // Отчёт пересылается как есть: набор счётчиков задаёт сервер, и
