@@ -9,7 +9,7 @@ import { NonceStore } from "../src/auth/nonce.ts";
 import { Registry, type Socket } from "../src/ws/registry.ts";
 import { RateLimiter } from "../src/util/ratelimit.ts";
 import { ConnectionCounter } from "../src/util/connections.ts";
-import { authMessage, deviceCertMessage, verify } from "../src/auth/verify.ts";
+import { authMessage, deviceCertMessage, revokeOtherDevicesMessage, verify } from "../src/auth/verify.ts";
 import { handleClose, handleMessage, handleOpen, newConnData, type ConnData, type Deps } from "../src/ws/session.ts";
 import { ID_LEN, KEY_LEN, OP, frame, jsonFrame } from "../src/proto/frames.ts";
 import { ascii, concat, fromHex, random, toHex } from "../src/util/bytes.ts";
@@ -68,6 +68,12 @@ function makeIdentity(): Identity {
   const devPriv = ed25519.utils.randomPrivateKey();
   const devPub = ed25519.getPublicKey(devPriv);
   return { idPriv, idPub, devPriv, devPub, cert: ed25519.sign(deviceCertMessage(idPub, devPub), idPriv) };
+}
+
+function anotherDevice(id: Identity): Identity {
+  const devPriv = ed25519.utils.randomPrivateKey();
+  const devPub = ed25519.getPublicKey(devPriv);
+  return { ...id, devPriv, devPub, cert: ed25519.sign(deviceCertMessage(id.idPub, devPub), id.idPriv) };
 }
 
 function makeDeps(store: Store): Deps {
@@ -129,6 +135,30 @@ test("регистрация требует пропуск: инвайт или 
 
   assert.equal(sock.json(OP.AUTH_ERR).code, "entry_required");
   assert.equal(sock.has(OP.AUTH_OK), false);
+  store.close();
+});
+
+test("identity-подпись отзывает другие устройства и tombstone не даёт вернуться", () => {
+  const store = new Store(":memory:");
+  const deps = makeDeps(store);
+  const first = makeIdentity();
+  const firstConn = register(deps, store, first, "alice");
+  const second = anotherDevice(first);
+  const joining = connect(deps);
+  handleMessage(deps, joining.sock, joining.conn, authFrame(second, joining.nonce));
+  assert.ok(joining.sock.has(OP.AUTH_OK));
+
+  const message = revokeOtherDevicesMessage(first.idPub, first.devPub);
+  handleMessage(deps, firstConn.sock, firstConn.conn, jsonFrame(OP.DEVICE_REVOKE_OTHERS, {
+    signature: toHex(ed25519.sign(message, first.idPriv)),
+  }));
+  assert.equal(firstConn.sock.latestJson(OP.DEVICE_OK).revoked, 1);
+  assert.equal(joining.sock.closed?.reason, "device revoked");
+
+  const replay = connect(deps);
+  handleMessage(deps, replay.sock, replay.conn, authFrame(second, replay.nonce));
+  assert.equal(replay.sock.json(OP.AUTH_ERR).code, "device_revoked");
+  assert.ok(store.getDevice(first.devPub));
   store.close();
 });
 

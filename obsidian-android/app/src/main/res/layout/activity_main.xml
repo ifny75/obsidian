@@ -88,6 +88,11 @@
             </LinearLayout>
             <TextView android:id="@+id/recovery_status" style="@style/Obsidian.Micro" android:layout_marginTop="9dp" />
         </LinearLayout>
+        <LinearLayout style="@style/Obsidian.Card" android:layout_marginTop="10dp" android:orientation="vertical">
+            <TextView style="@style/Obsidian.SettingTitle" android:text="@string/revoke_devices_title" />
+            <TextView style="@style/Obsidian.Micro" android:layout_marginTop="4dp" android:text="@string/revoke_devices_hint" />
+            <Button android:id="@+id/revoke_other_devices" style="@style/Obsidian.Button.Dark.Small" android:layout_marginTop="10dp" android:text="@string/revoke_devices_action" />
+        </LinearLayout>
     </LinearLayout></ScrollView>
 
 

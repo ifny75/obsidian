@@ -256,6 +256,11 @@
     <string name="wallpaper_rays">Лучи</string>
     <string name="username_free">Юзернейм не занят</string>
     <string name="security_section">Безопасность и вход</string>
+    <string name="revoke_devices_title">Другие устройства</string>
+    <string name="revoke_devices_hint">Отключает все остальные устройства и навсегда блокирует их старые ключи. Это устройство останется подключено.</string>
+    <string name="revoke_devices_action">Отключить другие</string>
+    <string name="revoke_devices_confirm">Отключить все остальные устройства? Вернуть их можно будет только как новые.</string>
+    <string name="revoke_devices_done">Другие устройства отключены: %1$d</string>
     <string name="admin_section">Панель администратора</string>
     <string name="emblem_label">Значок</string>
     <string name="profile_color_label">Цвет профиля</string>

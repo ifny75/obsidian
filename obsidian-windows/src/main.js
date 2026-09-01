@@ -1900,6 +1900,10 @@ const handlers = {
     renderStorage(event);
   },
 
+  devices_revoked(event) {
+    toast(`Другие устройства отключены: ${Number(event.count || 0)}`);
+  },
+
   account_exported(event) {
     $("export-password").value = "";
     // Напрямую invoke, а не windowCommand: путь к файлу нужен нам самим, а
@@ -4390,11 +4394,12 @@ $("invite-to-group").addEventListener("click", () => {
   if (!group) return;
   const modal = document.createElement("div");
   modal.className = "modal";
-  modal.innerHTML = `<div class="modal-card"><div class="modal-header"><h2>Позвать в «${group.title}»</h2></div>`
+  modal.innerHTML = `<div class="modal-card"><div class="modal-header"><h2 data-group-title></h2></div>`
     + `<div class="group-form"><input data-query type="text" placeholder="@имя, OBS-код или адрес устройства" /></div>`
     + `<p class="modal-copy">Приглашённый получит ключи группы и сможет читать то, что будет написано дальше. Прежние сообщения ему не откроются.</p>`
     + `<div class="setting-actions peer-actions"><button class="ghost-button" data-no>Отмена</button>`
     + `<button class="ghost-button" data-yes>Позвать</button></div></div>`;
+  modal.querySelector("[data-group-title]").textContent = `Позвать в «${group.title}»`;
   const close = () => modal.remove();
   modal.querySelector("[data-no]").addEventListener("click", close);
   modal.querySelector("[data-yes]").addEventListener("click", () => {
@@ -5740,6 +5745,19 @@ $("open-search").addEventListener("click", () => {
   const hidden = panel.classList.toggle("hidden");
   if (hidden) return closeSearch();
   $("chat-search-input").focus();
+});
+
+$("revoke-other-devices").addEventListener("click", () => {
+  confirmAction(
+    "Отключить другие устройства?",
+    "Их старые ключи будут заблокированы навсегда. Подключённым останется только этот компьютер.",
+    () => submit({ type: "revoke_other_devices" }),
+  );
+});
+
+$("call-button")?.addEventListener("click", (e) => {
+  e.preventDefault();
+  toast("Функция звонков ещё не реализована и появится скоро");
 });
 
 $("chat-search-input").addEventListener("input", runSearch);

@@ -33,6 +33,7 @@ export const OP = {
   CHANNEL_OK: 0x32,
   /** Новый пост в канале, на который человек подписан. */
   CHANNEL_POST: 0x33,
+  DEVICE_OK: 0x3f,
   // клиент → сервер
   AUTH: 0x02,
   PAY_REQUEST: 0x05,
@@ -66,6 +67,8 @@ export const OP = {
   CHANNEL_DELETE: 0x3b,
   CHANNEL_UPDATE: 0x3c,
   CHANNEL_ADMIN: 0x3d,
+  /** Отозвать все прочие устройства; тело подписывает identity-ключ. */
+  DEVICE_REVOKE_OTHERS: 0x3e,
 } as const;
 
 export const ID_LEN = 16;

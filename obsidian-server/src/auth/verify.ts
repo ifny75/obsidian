@@ -7,6 +7,7 @@ import { ascii, concat } from "../util/bytes.ts";
  */
 const DOMAIN_AUTH = ascii("obsidian-auth-v1");
 const DOMAIN_DEVICE = ascii("obsidian-device-v1");
+const DOMAIN_REVOKE_OTHERS = ascii("obsidian-device-revoke-others-v1");
 
 /** `sign(identity_priv, "obsidian-device-v1" || identity_pub || device_pub)` */
 export function deviceCertMessage(identityPub: Uint8Array, devicePub: Uint8Array): Uint8Array {
@@ -20,6 +21,14 @@ export function authMessage(
   devicePub: Uint8Array,
 ): Uint8Array {
   return concat(DOMAIN_AUTH, nonce, identityPub, devicePub);
+}
+
+/** Доказательство identity-ключом: обычного ключа устройства для отзыва мало. */
+export function revokeOtherDevicesMessage(
+  identityPub: Uint8Array,
+  keepDevicePub: Uint8Array,
+): Uint8Array {
+  return concat(DOMAIN_REVOKE_OTHERS, identityPub, keepDevicePub);
 }
 
 /**

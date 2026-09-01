@@ -57,12 +57,16 @@ unzip obsidian-server-*.zip -d /opt/obsidian
 cd /opt/obsidian
 
 sudo /opt/node-24/bin/npm ci --ignore-scripts --omit=optional --omit=dev
-sudo chown -R obsidian:obsidian /opt/obsidian
 cp .env.example .env
+sudo chown -R root:root /opt/obsidian
+sudo install -d -o obsidian -g obsidian -m 0750 /opt/obsidian/data
+sudo chown root:obsidian /opt/obsidian/.env
+sudo chmod 0640 /opt/obsidian/.env
+sudo chmod -R go-w /opt/obsidian
 ```
 
 `sudo` и `chown` здесь не формальность: каталог принадлежит пользователю
-`obsidian`, от которого работает служба, а `npm ci` первым делом сносит
+`root`, который выкладывает релиз, а `npm ci` первым делом сносит
 `node_modules` целиком. Из-под своей учётки вы получите `EACCES` на
 `node_modules/.bin`.
 
@@ -278,7 +282,13 @@ sudo systemctl stop obsidian
 # распаковать новый архив поверх, data/ не трогать
 cd /opt/obsidian
 sudo /opt/node-24/bin/npm ci --ignore-scripts --omit=optional --omit=dev
-sudo chown -R obsidian:obsidian /opt/obsidian
+sudo chown -R root:root /opt/obsidian
+sudo chown -R obsidian:obsidian /opt/obsidian/data
+sudo chown root:obsidian /opt/obsidian/.env
+sudo chmod 0755 /opt/obsidian
+sudo chmod 0750 /opt/obsidian/data
+sudo chmod 0640 /opt/obsidian/.env
+sudo chmod -R go-w /opt/obsidian
 
 sudo systemctl start obsidian
 ```

@@ -15,6 +15,7 @@ export interface DeviceRow {
   cert: Bytes;
   created_at: number;
   last_seen: number;
+  revoked_at: number | null;
 }
 
 export interface PaymentRow {
@@ -92,6 +93,7 @@ export class Store {
     this.#db.exec("PRAGMA foreign_keys = ON");
     this.#dropLegacyEnvelopes();
     this.#db.exec(SCHEMA);
+    this.#addDeviceRevocation();
     this.#addProfileDecoration();
     this.#addChannelIcon();
     this.#addRecoveryTotp();
@@ -101,6 +103,15 @@ export class Store {
     this.#addPostAuthor();
     this.#secrets = SecretBox.load(path);
     this.#sealStoredTotpSecrets();
+  }
+
+  #addDeviceRevocation(): void {
+    const columns = this.#db.prepare("PRAGMA table_info(devices)").all() as unknown as {
+      name: string;
+    }[];
+    if (columns.length > 0 && !columns.some((column) => column.name === "revoked_at")) {
+      this.#db.exec("ALTER TABLE devices ADD COLUMN revoked_at INTEGER");
+    }
   }
 
   close(): void {
@@ -260,9 +271,22 @@ export class Store {
   }
 
   getDevice(devicePub: Bytes): DeviceRow | undefined {
+    return this.#db.prepare("SELECT * FROM devices WHERE device_pub = ? AND revoked_at IS NULL").get(devicePub) as
+      | DeviceRow
+      | undefined;
+  }
+
+  getDeviceRecord(devicePub: Bytes): DeviceRow | undefined {
     return this.#db.prepare("SELECT * FROM devices WHERE device_pub = ?").get(devicePub) as
       | DeviceRow
       | undefined;
+  }
+
+  countActiveDevices(identity: Bytes): number {
+    const row = this.#db
+      .prepare("SELECT COUNT(*) AS n FROM devices WHERE identity = ? AND revoked_at IS NULL")
+      .get(identity) as { n: number };
+    return row.n;
   }
 
   createDevice(identity: Bytes, devicePub: Bytes, cert: Bytes, now: number): Bytes {
@@ -279,7 +303,7 @@ export class Store {
   /**
    * Отмечает, что устройство было на связи. Время огрубляется до часа.
    *
-   * Точность здесь не нужна никому: единственный читатель — выбор活ного
+   * Точность здесь не нужна никому: единственный читатель — выбор активного
    * устройства получателя, и он смотрит «какое свежее». Зато с точностью до
    * миллисекунды это распорядок дня человека, лежащий на диске.
    */
@@ -292,8 +316,24 @@ export class Store {
   /** Каталог: отправитель обязан сам проверить cert, сервер здесь только кэш. */
   listDevices(identity: Bytes): DeviceRow[] {
     return this.#db
-      .prepare("SELECT * FROM devices WHERE identity = ? ORDER BY created_at")
+      .prepare("SELECT * FROM devices WHERE identity = ? AND revoked_at IS NULL ORDER BY created_at")
       .all(identity) as unknown as DeviceRow[];
+  }
+
+  revokeOtherDevices(identity: Bytes, keepDevice: Bytes, now: number): Bytes[] {
+    return this.#tx(() => {
+      const rows = this.#db
+        .prepare("SELECT device_pub FROM devices WHERE identity = ? AND device_pub <> ? AND revoked_at IS NULL")
+        .all(identity, keepDevice) as unknown as { device_pub: Bytes }[];
+      for (const row of rows) {
+        this.#db.prepare("DELETE FROM envelopes WHERE recipient_device = ?").run(row.device_pub);
+        this.#db.prepare("DELETE FROM key_packages WHERE device_pub = ?").run(row.device_pub);
+      }
+      this.#db
+        .prepare("UPDATE devices SET revoked_at = ? WHERE identity = ? AND device_pub <> ? AND revoked_at IS NULL")
+        .run(now, identity, keepDevice);
+      return rows.map((row) => row.device_pub);
+    });
   }
 
   resolveHandle(handle: string): Bytes | undefined {
@@ -340,7 +380,7 @@ export class Store {
       .prepare(
         `SELECT p.* FROM profiles p
          JOIN devices d ON d.identity = p.identity
-         WHERE d.device_pub = ?`,
+         WHERE d.device_pub = ? AND d.revoked_at IS NULL`,
       )
       .get(devicePub) as ProfileRow | undefined;
   }
@@ -348,7 +388,7 @@ export class Store {
   activeDevice(identity: Bytes): Bytes | undefined {
     const row = this.#db
       .prepare(
-        `SELECT device_pub FROM devices WHERE identity = ?
+        `SELECT device_pub FROM devices WHERE identity = ? AND revoked_at IS NULL
          ORDER BY last_seen DESC, created_at DESC LIMIT 1`,
       )
       .get(identity) as { device_pub: Bytes } | undefined;
@@ -536,7 +576,7 @@ export class Store {
       .prepare(
         `SELECT d.device_pub FROM channel_subs s
          JOIN devices d ON d.identity = s.identity
-         WHERE s.channel = ? AND (?2 IS NULL OR s.identity != ?2)`,
+         WHERE s.channel = ? AND d.revoked_at IS NULL AND (?2 IS NULL OR s.identity != ?2)`,
       )
       .all(channel, except ?? null) as { device_pub: Bytes }[]).map((row) => row.device_pub);
   }
@@ -567,14 +607,31 @@ export class Store {
   }
 
   /** Лента страницами: `before` — seq, с которого идти вглубь. */
-  posts(channel: Bytes, limit: number, before: number | null): PostRow[] {
+  posts(channel: Bytes, limit: number, before: number | null, cutoff = 0): PostRow[] {
     return this.#db
       .prepare(
         `SELECT * FROM channel_posts
-         WHERE channel = ? AND (? IS NULL OR seq < ?)
+         WHERE channel = ? AND created_at > ? AND (? IS NULL OR seq < ?)
          ORDER BY seq DESC LIMIT ?`,
       )
-      .all(channel, before, before, limit) as never as PostRow[];
+      .all(channel, cutoff, before, before, limit) as never as PostRow[];
+  }
+
+  channelReaders(channel: Bytes, except?: Bytes): { device_pub: Bytes; identity: Bytes }[] {
+    return this.#db.prepare(
+      `SELECT d.device_pub, s.identity FROM channel_subs s
+       JOIN devices d ON d.identity = s.identity
+       WHERE s.channel = ? AND d.revoked_at IS NULL AND (?2 IS NULL OR s.identity != ?2)`,
+    ).all(channel, except ?? null) as unknown as { device_pub: Bytes; identity: Bytes }[];
+  }
+
+  channelPostUsage(channel: Bytes, cutoff: number): { count: number; bytes: number } {
+    const row = this.#db.prepare(
+      `SELECT COUNT(*) AS count,
+              COALESCE(SUM(length(CAST(body AS BLOB))), 0) AS bytes
+       FROM channel_posts WHERE channel = ? AND created_at > ?`,
+    ).get(channel, cutoff) as { count: number; bytes: number };
+    return { count: Number(row.count), bytes: Number(row.bytes) };
   }
 
   // --- владелец сервера ------------------------------------------------------
@@ -605,13 +662,13 @@ export class Store {
       Number((this.#db.prepare(sql).get(...args as never[]) as { n: number }).n);
     return {
       users: one("SELECT COUNT(*) AS n FROM users"),
-      devices: one("SELECT COUNT(*) AS n FROM devices"),
+      devices: one("SELECT COUNT(*) AS n FROM devices WHERE revoked_at IS NULL"),
       profiles: one("SELECT COUNT(*) AS n FROM profiles"),
       usernames: one("SELECT COUNT(*) AS n FROM usernames"),
       recoveries: one("SELECT COUNT(*) AS n FROM recoveries"),
       blocked: one("SELECT COUNT(*) AS n FROM blocks"),
       queued: one("SELECT COUNT(*) AS n FROM envelopes WHERE expires_at > ?", now),
-      seenDay: one("SELECT COUNT(*) AS n FROM devices WHERE last_seen > ?", now - 86_400_000),
+      seenDay: one("SELECT COUNT(*) AS n FROM devices WHERE revoked_at IS NULL AND last_seen > ?", now - 86_400_000),
       channels: one("SELECT COUNT(*) AS n FROM channels"),
       posts: one("SELECT COUNT(*) AS n FROM channel_posts"),
     };
@@ -636,8 +693,8 @@ export class Store {
       .prepare(
         `SELECT u.identity,
                 p.chat_code                              AS chat_code,
-                (SELECT COUNT(*) FROM devices d WHERE d.identity = u.identity)   AS devices,
-                (SELECT MAX(d.last_seen) FROM devices d WHERE d.identity = u.identity) AS last_seen,
+                (SELECT COUNT(*) FROM devices d WHERE d.identity = u.identity AND d.revoked_at IS NULL) AS devices,
+                (SELECT MAX(d.last_seen) FROM devices d WHERE d.identity = u.identity AND d.revoked_at IS NULL) AS last_seen,
                 u.created_at                             AS created_at,
                 (SELECT COUNT(*) FROM blocks b WHERE b.identity = u.identity)    AS blocked,
                 (SELECT COUNT(*) FROM usernames n WHERE n.identity = u.identity) AS has_username
@@ -672,7 +729,7 @@ export class Store {
       .get(raw) as { identity: Bytes } | undefined;
     if (byIdentity) return byIdentity.identity;
     const byDevice = this.#db
-      .prepare("SELECT identity FROM devices WHERE device_pub = ?")
+      .prepare("SELECT identity FROM devices WHERE device_pub = ? AND revoked_at IS NULL")
       .get(raw) as { identity: Bytes } | undefined;
     return byDevice?.identity;
   }
@@ -948,6 +1005,22 @@ export class Store {
     return row.n;
   }
 
+  queuedBytes(recipientDevice: Bytes, now: number): number {
+    const row = this.#db.prepare(
+      "SELECT COALESCE(SUM(length(payload)), 0) AS n FROM envelopes WHERE recipient_device = ? AND expires_at > ?",
+    ).get(recipientDevice, now) as { n: number };
+    return Number(row.n);
+  }
+
+  queuedBytesForIdentity(identity: Bytes, now: number): number {
+    const row = this.#db.prepare(
+      `SELECT COALESCE(SUM(length(e.payload)), 0) AS n
+       FROM envelopes e JOIN devices d ON d.device_pub = e.recipient_device
+       WHERE d.identity = ? AND d.revoked_at IS NULL AND e.expires_at > ?`,
+    ).get(identity, now) as { n: number };
+    return Number(row.n);
+  }
+
   /** Строго в порядке постановки: seq монотонен, created_at — нет. */
   pending(recipientDevice: Bytes, now: number, limit: number): EnvelopeRow[] {
     return this.#db
@@ -1099,13 +1172,14 @@ export class Store {
 
   // --- уборка ---------------------------------------------------------------
 
-  sweep(now: number): { envelopes: number; invites: number; blobs: number; payments: number } {
+  sweep(now: number, channelCutoff = 0): { envelopes: number; invites: number; blobs: number; payments: number; posts: number } {
     return this.#tx(() => ({
       payments: Number(this.#db.prepare("DELETE FROM payments WHERE expires_at <= ?").run(now).changes),
       envelopes: Number(this.#db.prepare("DELETE FROM envelopes WHERE expires_at <= ?").run(now).changes),
       invites: Number(this.#db.prepare("DELETE FROM invites WHERE expires_at <= ?").run(now).changes),
       passes: Number(this.#db.prepare("DELETE FROM passes WHERE expires_at <= ?").run(now).changes),
       blobs: Number(this.#db.prepare("DELETE FROM blobs WHERE expires_at <= ?").run(now).changes),
+      posts: Number(this.#db.prepare("DELETE FROM channel_posts WHERE created_at <= ?").run(channelCutoff).changes),
     }));
   }
 

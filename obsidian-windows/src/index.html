@@ -16,7 +16,7 @@
       рамки их тоже нет.
     -->
     <div class="titlebar" data-tauri-drag-region>
-      <img class="titlebar-logo" src="assets/obsidian_logo.svg" alt="" data-tauri-drag-region />
+      <img class="titlebar-logo" src="assets/obsidian_lock_logo.svg" alt="" data-tauri-drag-region />
       <span id="window-title" class="titlebar-title" data-tauri-drag-region>Obsidian</span>
       <div class="titlebar-actions">
         <button id="window-minimize" class="window-button" type="button" aria-label="Свернуть">
@@ -32,7 +32,7 @@
     </div>
     <section id="screen-boot" class="screen centered-screen">
       <div class="boot-card">
-        <div class="large-logo"><img src="assets/obsidian_logo.svg" alt="" /></div>
+        <div class="large-logo"><img src="assets/obsidian_lock_logo.svg" alt="" /></div>
         <h1>Obsidian</h1>
         <p id="boot-status">Защищаем локальное хранилище…</p>
         <span class="loader" aria-hidden="true"></span>
@@ -41,7 +41,7 @@
 
     <section id="screen-locked" class="screen centered-screen hidden">
       <div class="entry-card">
-        <div class="large-logo"><img src="assets/obsidian_logo.svg" alt="" /></div>
+        <div class="large-logo"><img src="assets/obsidian_lock_logo.svg" alt="" /></div>
         <p class="eyebrow">Пароль при запуске</p>
         <h1>Переписка закрыта</h1>
         <p class="lead">Ключ базы зашифрован этим паролем. Он нигде не хранится, поэтому подобрать его не у кого — и восстановить тоже: забыли пароль, останется только завести базу заново.</p>
@@ -56,7 +56,7 @@
 
     <section id="screen-migrate" class="screen centered-screen hidden">
       <div class="entry-card">
-        <div class="large-logo"><img src="assets/obsidian_logo.svg" alt="" /></div>
+        <div class="large-logo"><img src="assets/obsidian_lock_logo.svg" alt="" /></div>
         <p class="eyebrow">Однократное обновление</p>
         <h1>Защитить существующую базу</h1>
         <p class="lead">Введите прежний пароль один раз. Windows зашифрует его через DPAPI, и следующие входы станут автоматическими.</p>
@@ -159,7 +159,7 @@
       <div id="onboarding-landing" class="landing-scroll">
         <section class="landing-hero" aria-label="Obsidian public beta">
           <div class="language-brand">
-            <img src="assets/obsidian_logo.svg" alt="" />
+            <img src="assets/obsidian_lock_logo.svg" alt="" />
             <strong>Obsidian</strong>
             <span>public beta</span>
           </div>
@@ -191,7 +191,7 @@
 
     <section id="screen-route" class="screen onboarding-screen onboarding-grid hidden">
       <div class="onboarding-copy route-copy">
-        <div class="onboarding-brand"><img src="assets/obsidian_logo.svg" alt="" /><b>Obsidian</b><span>public beta</span></div>
+        <div class="onboarding-brand"><img src="assets/obsidian_lock_logo.svg" alt="" /><b>Obsidian</b><span>public beta</span></div>
         <h1 id="route-title">Obsidian server</h1>
         <p id="route-text">Выберите, как приложение будет соединяться с сетью. Настройку всегда можно изменить позже.</p>
         <div class="route-list">
@@ -207,7 +207,7 @@
 
     <section id="screen-entry" class="screen onboarding-screen onboarding-grid hidden">
       <div class="onboarding-copy account-copy">
-        <div class="onboarding-brand"><img src="assets/obsidian_logo.svg" alt="" /><b>Obsidian</b><span>public beta</span></div>
+        <div class="onboarding-brand"><img src="assets/obsidian_lock_logo.svg" alt="" /><b>Obsidian</b><span>public beta</span></div>
         <h1 id="entry-title">Начните с Obsidian</h1>
         <p id="entry-lead">Имя увидят собеседники. Пароль нужен для запасного входа с другого устройства.</p>
         <form id="form-entry" class="onboarding-form" autocomplete="off">
@@ -227,7 +227,7 @@
 
     <section id="screen-recover" class="screen onboarding-screen onboarding-grid hidden">
       <div class="onboarding-copy recovery-copy">
-        <div class="onboarding-brand"><img src="assets/obsidian_logo.svg" alt="" /><b>Obsidian</b><span>public beta</span></div>
+        <div class="onboarding-brand"><img src="assets/obsidian_lock_logo.svg" alt="" /><b>Obsidian</b><span>public beta</span></div>
         <h1 id="recover-title">Recovery phrase</h1>
         <p id="recover-lead">Введите 24 слова в том же порядке. За один шаг показываются восемь слов.</p>
         <div class="setting-segment recovery-segment" id="recover-segment">
@@ -256,7 +256,7 @@
         <div class="sidebar-top">
           <div class="brand-row">
             <div class="brand">
-              <div class="brand-logo"><img src="assets/obsidian_logo.svg" alt="" /></div>
+              <div class="brand-logo"><img src="assets/obsidian_lock_logo.svg" alt="" /></div>
               <div class="brand-copy"><strong>Obsidian</strong><span>public beta</span></div>
             </div>
             <div class="brand-actions">
@@ -308,7 +308,7 @@
             <button id="leave-group" class="ghost-button hidden" type="button">Забыть</button>
             <button id="open-search" class="ghost-button" type="button" title="Искать в переписке"><span class="ui-icon icon-search"></span></button>
             <button id="verify" class="ghost-button" type="button" disabled><span class="ui-icon icon-fingerprint"></span><span>Сверить</span></button>
-            <button class="ghost-button call-button" type="button" disabled title="Звонки появятся позже" aria-label="Позвонить"><span class="ui-icon icon-phone"></span></button>
+            <button id="call-button" class="ghost-button call-button" type="button" title="Звонки появятся позже" aria-label="Позвонить"><span class="ui-icon icon-phone"></span></button>
           </div>
         </header>
 
@@ -400,6 +400,10 @@
 
       <div class="settings-body">
         <nav class="settings-nav" id="settings-nav" aria-label="Разделы настроек">
+          <div class="settings-nav-head" aria-hidden="true">
+            <span class="settings-nav-logo"><img src="assets/obsidian_lock_logo.svg" alt="" /></span>
+            <span><small>Obsidian</small><b>Настройки</b></span>
+          </div>
           <button type="button" data-section="profile" class="active">Мой профиль</button>
           <button type="button" data-section="privacy">Приватность</button>
           <button type="button" data-section="transport">Подключение</button>
@@ -477,6 +481,13 @@
               <button id="forget-recovery-password" class="ghost-button" type="button">Убрать с сервера</button>
             </div>
             <p id="recovery-status" class="recovery-status"></p>
+          </div>
+          <div class="setting-block">
+            <b>Другие устройства</b>
+            <small>Отключает все остальные устройства и навсегда блокирует их старые ключи. Этот компьютер останется подключён.</small>
+            <div class="setting-actions">
+              <button id="revoke-other-devices" class="ghost-button" type="button">Отключить другие</button>
+            </div>
           </div>
 </section>
           <section class="settings-card logout-card">

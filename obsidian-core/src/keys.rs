@@ -17,6 +17,7 @@ pub const SIG_LEN: usize = 64;
 const DOMAIN_DEVICE: &[u8] = b"obsidian-device-v1";
 /// `sign(device_priv, "obsidian-auth-v1" || nonce || identity_pub || device_pub)`
 const DOMAIN_AUTH: &[u8] = b"obsidian-auth-v1";
+const DOMAIN_REVOKE_OTHERS: &[u8] = b"obsidian-device-revoke-others-v1";
 
 /// Приватный ключ. Зануляется при уничтожении и никогда не сериализуется.
 #[derive(ZeroizeOnDrop)]
@@ -64,6 +65,14 @@ pub fn auth_message(nonce: &[u8], identity_pub: &[u8], device_pub: &[u8]) -> Vec
     out.extend_from_slice(nonce);
     out.extend_from_slice(identity_pub);
     out.extend_from_slice(device_pub);
+    out
+}
+
+pub fn revoke_other_devices_message(identity_pub: &[u8], keep_device_pub: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(DOMAIN_REVOKE_OTHERS.len() + KEY_LEN * 2);
+    out.extend_from_slice(DOMAIN_REVOKE_OTHERS);
+    out.extend_from_slice(identity_pub);
+    out.extend_from_slice(keep_device_pub);
     out
 }
 

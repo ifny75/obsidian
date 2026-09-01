@@ -32,6 +32,7 @@ pub mod op {
     pub const ADMIN_OK: u8 = 0x2c;
     pub const CHANNEL_OK: u8 = 0x32;
     pub const CHANNEL_POST: u8 = 0x33;
+    pub const DEVICE_OK: u8 = 0x3f;
     // клиент → сервер
     pub const AUTH: u8 = 0x02;
     pub const PAY_REQUEST: u8 = 0x05;
@@ -66,6 +67,7 @@ pub mod op {
     pub const CHANNEL_DELETE: u8 = 0x3b;
     pub const CHANNEL_UPDATE: u8 = 0x3c;
     pub const CHANNEL_ADMIN: u8 = 0x3d;
+    pub const DEVICE_REVOKE_OTHERS: u8 = 0x3e;
 }
 
 #[derive(Debug, Deserialize)]

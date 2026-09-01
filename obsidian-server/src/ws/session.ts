@@ -3,7 +3,7 @@ import { config, PROTOCOL_VERSION } from "../config.ts";
 import { log } from "../log.ts";
 import type { Store } from "../db/index.ts";
 import type { NonceStore } from "../auth/nonce.ts";
-import { authMessage, deviceCertMessage, verify } from "../auth/verify.ts";
+import { authMessage, deviceCertMessage, revokeOtherDevicesMessage, verify } from "../auth/verify.ts";
 import type { RateLimiter } from "../util/ratelimit.ts";
 import { decodeBase32, verify as verifyTotp } from "../auth/totp.ts";
 import type { ConnectionCounter } from "../util/connections.ts";
@@ -274,6 +274,10 @@ export function handleMessage(deps: Deps, sock: Socket, conn: ConnData, msg: Uin
         requireAuth(conn);
         onChannelAdmin(deps, sock, conn, body);
         return;
+      case OP.DEVICE_REVOKE_OTHERS:
+        requireAuth(conn);
+        onDeviceRevokeOthers(deps, sock, conn, body);
+        return;
       case OP.CHANNEL_DELETE_POST:
         requireAuth(conn);
         onChannelDeletePost(deps, sock, conn, body);
@@ -508,10 +512,14 @@ function onAuth(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): voi
   const now = deps.now();
   const { identity, devicePub, cert } = creds;
 
-  const existing = deps.store.getDevice(devicePub);
+  const existing = deps.store.getDeviceRecord(devicePub);
   if (existing && !constantTimeEqual(existing.identity, identity)) {
     // Один device key не может кочевать между личностями.
     authFail(deps, sock, conn, "device_conflict", "device bound to another identity");
+    return;
+  }
+  if (existing?.revoked_at !== null && existing?.revoked_at !== undefined) {
+    authFail(deps, sock, conn, "device_revoked", "device has been revoked");
     return;
   }
 
@@ -524,6 +532,10 @@ function onAuth(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): voi
 
   if (!deps.store.userExists(identity) && !admit(deps, sock, conn, payload, identity, now)) return;
 
+  if (!existing && deps.store.countActiveDevices(identity) >= config.maxDevicesPerIdentity) {
+    authFail(deps, sock, conn, "device_limit", "too many devices; revoke an old device first");
+    return;
+  }
   const deviceId = existing ? existing.id : deps.store.createDevice(identity, devicePub, cert, now);
   deps.store.touchDevice(devicePub, now);
 
@@ -889,6 +901,20 @@ function onUsernameLookup(deps: Deps, sock: Socket, conn: ConnData, body: Uint8A
   }), true);
 }
 
+// --- устройства ---------------------------------------------------------------
+
+function onDeviceRevokeOthers(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): void {
+  const payload = parseJsonBody(body) as { signature?: unknown };
+  const signature = fromHex(payload?.signature, SIG_LEN);
+  if (!verify(signature, revokeOtherDevicesMessage(conn.identity!, conn.devicePub!), conn.identity!)) {
+    sock.send(errorFrame("bad_signature", "identity signature rejected"), true);
+    return;
+  }
+  const revoked = deps.store.revokeOtherDevices(conn.identity!, conn.devicePub!, deps.now());
+  for (const device of revoked) deps.registry.disconnect(toHex(device));
+  sock.send(jsonFrame(OP.DEVICE_OK, { revoked: revoked.length }), true);
+}
+
 // --- каналы -------------------------------------------------------------------
 
 /**
@@ -1029,8 +1055,6 @@ function onChannelPublish(deps: Deps, sock: Socket, conn: ConnData, body: Uint8A
   const text = String(payload.body ?? "").trim();
   if (text.length === 0 || text.length > MAX_POST) throw new BadInput("bad post body");
 
-  // Пост живёт вечно: TTL, как у конвертов, у него нет. Значит частота —
-  // единственное, что стоит между лентой и бесконечным ростом диска.
   if (!deps.postLimiter.allow(toHex(conn.identity!), deps.now())) {
     sock.send(errorFrame("post_rate_limited", "slow down"), true);
     return;
@@ -1045,6 +1069,13 @@ function onChannelPublish(deps: Deps, sock: Socket, conn: ConnData, body: Uint8A
     нашего. Порядок ленты всё равно задаёт seq, а не это поле.
   */
   const now = deps.now();
+  const cutoff = now - config.channelPostTtlSec * 1000;
+  const usage = deps.store.channelPostUsage(channel.id, cutoff);
+  const postBytes = Buffer.byteLength(text, "utf8");
+  if (usage.count >= config.maxPostsPerChannel || usage.bytes + postBytes > config.maxChannelBytes) {
+    sock.send(errorFrame("channel_storage_full", "channel retention quota reached"), true);
+    return;
+  }
   const postId = payload.id === undefined ? random(ID_LEN) : fromHex(payload.id, ID_LEN);
   const createdAt = typeof payload.createdAt === "number" ? payload.createdAt : now;
   if (Math.abs(createdAt - now) > POST_TIME_WINDOW_MS) {
@@ -1084,7 +1115,9 @@ function onChannelFeed(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Arra
   if (!channel) return;
   const before = typeof payload.before === "number" && Number.isFinite(payload.before)
     ? Math.floor(payload.before) : null;
-  const posts = deps.store.posts(channel.id, FEED_PAGE + 1, before);
+  const posts = deps.store.posts(
+    channel.id, FEED_PAGE + 1, before, deps.now() - config.channelPostTtlSec * 1000,
+  );
 
   sock.send(jsonFrame(OP.CHANNEL_OK, {
     channel: channelView(deps, channel, conn.identity!),
@@ -1226,9 +1259,9 @@ function onChannelUpdate(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Ar
   deps.store.updateChannel(channel.id, patch, deps.now());
   const updated = deps.store.channelById(channel.id)!;
   // Читателям — новое состояние: у них в списке висит прежнее название.
-  const view = jsonFrame(OP.CHANNEL_OK, { updated: channelView(deps, updated, updated.owner) });
-  for (const device of deps.store.channelReaderDevices(channel.id, conn.identity!)) {
-    deps.registry.deliver(toHex(device), view);
+  for (const reader of deps.store.channelReaders(channel.id, conn.identity!)) {
+    const view = jsonFrame(OP.CHANNEL_OK, { updated: channelView(deps, updated, reader.identity) });
+    deps.registry.deliver(toHex(reader.device_pub), view);
   }
   sock.send(jsonFrame(OP.CHANNEL_OK, {
     updated: channelView(deps, updated, conn.identity!),
@@ -1571,6 +1604,14 @@ function onSend(deps: Deps, sock: Socket, conn: ConnData, body: Uint8Array): voi
   // человека, а разгребать очередь ему.
   if (deps.store.countQueued(parsed.recipientDevice, now) >= config.maxQueuedPerDevice) {
     sock.send(errorFrame("recipient_queue_full", "recipient has too much undelivered mail"), true);
+    return;
+  }
+  const payloadBytes = parsed.ciphertext.byteLength;
+  if (deps.store.queuedBytes(parsed.recipientDevice, now) + payloadBytes
+      > config.maxQueuedBytesPerDevice
+      || deps.store.queuedBytesForIdentity(recipient.identity, now) + payloadBytes
+      > config.maxQueuedBytesPerIdentity) {
+    sock.send(errorFrame("recipient_queue_full", "recipient storage quota reached"), true);
     return;
   }
 

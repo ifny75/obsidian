@@ -430,7 +430,11 @@ test("владелец меняет название и значок, читат
   assert.equal(updated.iconBase64, icon);
   // Имя канала не менялось: на нём держится ссылка.
   assert.equal(updated.handle, "notes");
-  assert.equal(reader.sock.json(OP.CHANNEL_OK).updated.title, "Тетрадь");
+  const readerUpdate = reader.sock.json(OP.CHANNEL_OK).updated;
+  assert.equal(readerUpdate.title, "Тетрадь");
+  assert.equal(readerUpdate.owner, false);
+  assert.equal(readerUpdate.role, "reader");
+  assert.equal(readerUpdate.admins, undefined);
 
   // Значок снимается явным null, а не отсутствием поля.
   owner.sock.clear();

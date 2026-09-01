@@ -146,8 +146,17 @@ export const config = {
    * которое как раз получателя и защищает.
    */
   maxQueuedPerDevice: num("OBSIDIAN_MAX_QUEUED_PER_DEVICE", 5000),
-  /** Посты в каналах. У них, в отличие от конвертов, нет TTL — лежат всегда. */
+  /** Активных устройств на одну identity. Отозванные tombstone сюда не входят. */
+  maxDevicesPerIdentity: num("OBSIDIAN_MAX_DEVICES_PER_IDENTITY", 8),
+  /** Байтов недоставленной очереди: отдельно на устройство и на identity. */
+  maxQueuedBytesPerDevice: num("OBSIDIAN_MAX_QUEUED_BYTES_PER_DEVICE", 256 * 1024 * 1024),
+  maxQueuedBytesPerIdentity: num("OBSIDIAN_MAX_QUEUED_BYTES_PER_IDENTITY", 512 * 1024 * 1024),
+  /** Посты в каналах: rate-limit не заменяет дисковую квоту. */
   maxPostsPerMinute: num("OBSIDIAN_MAX_POSTS_PER_MIN", 20),
+  maxPostsPerChannel: num("OBSIDIAN_MAX_POSTS_PER_CHANNEL", 50_000),
+  maxChannelBytes: num("OBSIDIAN_MAX_CHANNEL_BYTES", 64 * 1024 * 1024),
+  /** Открытая лента — не бессрочный архив. */
+  channelPostTtlSec: num("OBSIDIAN_CHANNEL_POST_TTL_SEC", 90 * 24 * 3600),
   /** Каналов на личность. Их заведение ничего не стоит, а место занимает. */
   maxChannelsPerIdentity: num("OBSIDIAN_MAX_CHANNELS", 20),
   /**

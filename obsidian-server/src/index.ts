@@ -166,7 +166,7 @@ app.listen(config.host, config.port, (token) => {
 const cleanup = setInterval(() => {
   const ts = now();
   for (const id of store.expiredBlobs(ts)) removeBlobFile(id);
-  const swept = store.sweep(ts);
+  const swept = store.sweep(ts, ts - config.channelPostTtlSec * 1000);
   nonces.sweep(ts);
   authLimiter.sweep(ts);
   recoveryLimiter.sweep(ts);

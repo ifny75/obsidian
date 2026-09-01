@@ -13,6 +13,7 @@ crate-type = ["cdylib"]
 [dependencies]
 obsidian-core = { path = "../../obsidian-core" }
 jni = "0.21"
+hex = "0.4"
 
 [features]
 # Проброс фичи ядра: платный вход в TON по умолчанию выключен.

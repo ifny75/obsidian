@@ -55,6 +55,15 @@ export class Registry {
     }
   }
 
+  disconnect(devicePubHex: string, reason = "device revoked"): void {
+    const set = this.#byDevice.get(devicePubHex);
+    if (!set) return;
+    this.#byDevice.delete(devicePubHex);
+    for (const sock of set) {
+      try { sock.end(1008, reason); } catch { /* close handler finishes cleanup */ }
+    }
+  }
+
   // --- ожидание оплаты ------------------------------------------------------
   // Плательщик ещё не зарегистрирован, устройства в БД нет — поэтому отдельная
   // карта по номеру счёта, живущая только пока висит соединение.

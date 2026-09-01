@@ -343,6 +343,10 @@ public final class Commands {
         return out.append('}').toString();
     }
 
+    public static String revokeOtherDevices() {
+        return "{\"type\":\"revoke_other_devices\"}";
+    }
+
     private static void quoteOrNull(StringBuilder out, String value) {
         if (value == null || value.isEmpty()) {
             out.append("null");

@@ -25,6 +25,8 @@ public final class Core {
 
     private static native boolean nativeVerifyDatabaseKey(String dbPath, String password);
 
+    private static native boolean nativeVerifyRelease(String manifest, String signature);
+
     private static native int nativeSubmit(long handle, String json);
 
     private static native String nativePoll(long handle, int timeoutMs);
@@ -58,6 +60,11 @@ public final class Core {
     /** Проверяет старый пароль по зашифрованному keyring до сохранения в Keystore. */
     public boolean verifyDatabaseKey(String dbPath, String password) {
         return nativeVerifyDatabaseKey(dbPath, password);
+    }
+
+    /** Проверяет точные байты манифеста закреплённым offline release-ключом. */
+    public boolean verifyRelease(String manifest, String signature) {
+        return nativeVerifyRelease(manifest, signature);
     }
 
     public boolean isOpen() {

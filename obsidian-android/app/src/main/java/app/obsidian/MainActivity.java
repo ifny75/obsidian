@@ -20,6 +20,7 @@ import android.media.MediaPlayer;
 import android.media.MediaRecorder;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Base64;
@@ -67,6 +68,9 @@ import app.obsidian.core.Commands;
 
 /** Нативный мобильный интерфейс поверх общего Rust-ядра Obsidian. */
 public final class MainActivity extends Activity implements Events.Listener {
+    private static long backgroundedAt = -1L;
+    private boolean foregroundAuthorized;
+    private boolean warmCoreUnlock;
 
     private static final String SERVER_BASIC_URL = "wss://getobsidian.xyz/ws";
     private static final String SERVER_MULTIHOP_URL = "wss://getobsidian.xyz/multihop/ws";
@@ -447,6 +451,14 @@ public final class MainActivity extends Activity implements Events.Listener {
         findViewById(R.id.attach_photo).setOnClickListener(v -> choosePhoto());
         findViewById(R.id.verify_peer).setOnClickListener(v -> { if (currentPeer != null) submit(Commands.verify(currentPeer)); });
         configureRecovery();
+        findViewById(R.id.revoke_other_devices).setOnClickListener(v ->
+                new AlertDialog.Builder(this)
+                        .setTitle(R.string.revoke_devices_title)
+                        .setMessage(R.string.revoke_devices_confirm)
+                        .setPositiveButton(R.string.revoke_devices_action,
+                                (dialog, which) -> submit(Commands.revokeOtherDevices()))
+                        .setNegativeButton(R.string.cancel, null)
+                        .show());
         configureVoice();
         configurePreferences();
         configureTransport();
@@ -456,12 +468,7 @@ public final class MainActivity extends Activity implements Events.Listener {
         show(screenBoot);
         requestNotificationPermission();
         try {
-            if (ObsidianService.core().isOpen()) {
-                getWindow().getDecorView().post(() -> {
-                    startEventDelivery();
-                    submit(Commands.status());
-                });
-            } else {
+            if (!ObsidianService.core().isOpen()) {
                 autoOpenDatabase();
             }
         } catch (Throwable error) {
@@ -473,11 +480,18 @@ public final class MainActivity extends Activity implements Events.Listener {
     @Override
     protected void onStart() {
         super.onStart();
-        Events.subscribe(this);
         try {
-            if (ObsidianService.core().isOpen() && !canUseForegroundService()) {
-                startLocalPolling();
+            if (!ObsidianService.core().isOpen()) return;
+            LocalSecretStore secrets = new LocalSecretStore(this);
+            long elapsed = backgroundedAt < 0 ? Long.MAX_VALUE
+                    : Math.max(0L, SystemClock.elapsedRealtime() - backgroundedAt);
+            if (secrets.locked() && elapsed >= secrets.lockSeconds() * 1000L) {
+                foregroundAuthorized = false;
+                warmCoreUnlock = true;
+                askForUnlock();
+                return;
             }
+            authorizeForeground();
         } catch (Throwable error) {
             showStartupError(error);
         }
@@ -485,6 +499,8 @@ public final class MainActivity extends Activity implements Events.Listener {
 
     @Override
     protected void onStop() {
+        backgroundedAt = SystemClock.elapsedRealtime();
+        foregroundAuthorized = false;
         stopRecording(false);
         stopVoicePlayback();
         stopLocalPolling();
@@ -1231,6 +1247,12 @@ public final class MainActivity extends Activity implements Events.Listener {
             }
             findViewById(R.id.boot_unlock).setVisibility(View.GONE);
             ((TextView) findViewById(R.id.boot_status)).setText(R.string.boot_status);
+            if (warmCoreUnlock && ObsidianService.core().isOpen()) {
+                warmCoreUnlock = false;
+                authorizeForeground();
+                return;
+            }
+            warmCoreUnlock = false;
             autoOpenDatabase();
             return;
         }
@@ -1535,6 +1557,13 @@ public final class MainActivity extends Activity implements Events.Listener {
             return;
         }
         migrationPassword.setText("");
+        authorizeForeground();
+    }
+
+    private void authorizeForeground() {
+        foregroundAuthorized = true;
+        backgroundedAt = -1L;
+        Events.subscribe(this);
         startEventDelivery();
         submit(Commands.status());
     }
@@ -1626,15 +1655,30 @@ public final class MainActivity extends Activity implements Events.Listener {
                     byte[] chunk = new byte[4096];
                     int count;
                     while ((count = stream.read(chunk)) != -1) bytes.write(chunk, 0, count);
-                    JSONObject release = new JSONObject(bytes.toString("UTF-8")).getJSONObject("android");
+                    JSONObject outer = new JSONObject(bytes.toString("UTF-8"));
+                    String manifestText = outer.getString("manifest");
+                    String signature = outer.getString("signature");
+                    if (!ObsidianService.core().verifyRelease(manifestText, signature)) return;
+                    JSONObject manifest = new JSONObject(manifestText);
+                    if (manifest.getInt("v") != 1) return;
+                    JSONObject release = manifest.getJSONObject("android");
                     String latest = release.getString("version");
                     String url = release.getString("url");
+                    String sha256 = release.getString("sha256");
+                    long expectedBytes = release.getLong("bytes");
+                    Uri download = Uri.parse(url);
+                    if (!"https".equals(download.getScheme())
+                            || !"getobsidian.xyz".equals(download.getHost())
+                            || download.getPath() == null
+                            || !download.getPath().startsWith("/downloads/")
+                            || !sha256.matches("^[0-9a-f]{64}$")
+                            || expectedBytes <= 0) return;
                     if (compareVersions(latest, appVersion()) > 0) {
                         runOnUiThread(() -> new AlertDialog.Builder(this)
                                 .setTitle("Доступно обновление " + latest)
                                 .setMessage("Скачать новую Public Beta? Установка начнётся только после подтверждения Android.")
                                 .setPositiveButton("Скачать", (dialog, which) ->
-                                        startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))))
+                                        startActivity(new Intent(Intent.ACTION_VIEW, download)))
                                 .setNegativeButton("Позже", null)
                                 .show());
                     }
@@ -1877,6 +1921,7 @@ public final class MainActivity extends Activity implements Events.Listener {
     }
 
     private void submit(String command) {
+        if (!foregroundAuthorized) return;
         if (!ObsidianService.core().submit(command)) {
             toast(getString(R.string.core_busy));
         }
@@ -1886,7 +1931,11 @@ public final class MainActivity extends Activity implements Events.Listener {
 
     @Override
     public void onEvent(JSONObject event) {
+        if (!foregroundAuthorized) return;
         switch (event.optString("type")) {
+            case "devices_revoked":
+                toast(getString(R.string.revoke_devices_done, event.optInt("count")));
+                break;
             case "status":
                 onStatus(event);
                 break;

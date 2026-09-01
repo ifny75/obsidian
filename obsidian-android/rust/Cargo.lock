@@ -1104,6 +1104,7 @@ dependencies = [
 name = "obsidian-android"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "jni",
  "obsidian-core",
 ]
