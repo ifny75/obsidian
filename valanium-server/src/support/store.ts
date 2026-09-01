@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { random } from "../util/bytes.ts";
 
@@ -77,6 +77,27 @@ export class SupportStore {
     this.#db.exec("PRAGMA synchronous = NORMAL");
     this.#db.exec("PRAGMA foreign_keys = ON");
     this.#db.exec(SCHEMA);
+    this.#restrict(path);
+  }
+
+  /**
+   * Файл базы не должен читаться всеми на машине.
+   *
+   * SQLite создаёт его по umask, а это обычно 0644 — то есть адреса и тексты
+   * писем открыты любой локальной учётке, включая www-data. Каталог `data`
+   * закрыт правами, но полагаться на один рубеж там, где рубежей может быть
+   * два, незачем: umask меняется, каталог однажды переедет.
+   */
+  #restrict(path: string): void {
+    if (path === ":memory:") return;
+    for (const suffix of ["", "-wal", "-shm"]) {
+      try {
+        chmodSync(path + suffix, 0o600);
+      } catch {
+        // Файла может ещё не быть (-wal и -shm появляются при первой записи)
+        // либо владелец другой. Не повод не стартовать.
+      }
+    }
   }
 
   close(): void {

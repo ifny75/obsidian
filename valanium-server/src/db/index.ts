@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { SCHEMA } from "./schema.ts";
 import { SecretBox, isSealed } from "./secretbox.ts";
@@ -103,6 +103,27 @@ export class Store {
     this.#addPostAuthor();
     this.#secrets = SecretBox.load(path);
     this.#sealStoredTotpSecrets();
+    this.#restrict(path);
+  }
+
+  /**
+   * Файл базы не должен читаться всеми на машине.
+   *
+   * SQLite создаёт его по umask, а это обычно 0644: ключи устройств,
+   * запечатанные посылки восстановления и очередь конвертов оказались бы
+   * открыты любой локальной учётке. Каталог `data` закрыт правами, но
+   * полагаться на один рубеж там, где их может быть два, незачем.
+   */
+  #restrict(path: string): void {
+    if (path === ":memory:") return;
+    for (const suffix of ["", "-wal", "-shm"]) {
+      try {
+        chmodSync(path + suffix, 0o600);
+      } catch {
+        // -wal и -shm появляются только при первой записи; отсутствие файла
+        // или чужое владение — не повод не стартовать.
+      }
+    }
   }
 
   #addDeviceRevocation(): void {
