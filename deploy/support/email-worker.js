@@ -19,16 +19,31 @@
   Развернуть:
     1. Cloudflare → Email → Email Routing, включить для valanium.com
        (добавятся MX и TXT-записи).
-    2. Workers & Pages → Create → Worker, вставить этот файл.
-    3. Settings → Variables:
-         VALANIUM_INBOUND_URL   = https://valanium.com/v1/support/inbound
+    2. Вписать свой ящик в FORWARD_TO ниже.
+    3. Workers & Pages → Create → Worker, вставить этот файл.
+    4. Settings → Variables → одна переменная:
          VALANIUM_INBOUND_TOKEN = <тот же секрет, что VALANIUM_SUPPORT_INBOUND_TOKEN в .env>
-         VALANIUM_FORWARD_TO    = <ваш обычный ящик>
-       Токен заводить как Secret, а не как обычную переменную.
-    4. Email Routing → Routes → support@valanium.com → Send to Worker → этот воркер.
-    5. Адрес из VALANIUM_FORWARD_TO подтвердить в Email Routing → Destination
-       addresses, иначе пересылка молча не поедет.
+       Завести как Secret. Больше переменных не нужно.
+    5. Email Routing → Routes → support@valanium.com → Send to Worker → этот воркер.
+    6. Адрес из FORWARD_TO подтвердить в Email Routing → Destination addresses,
+       иначе пересылка молча не поедет.
+
+  Адрес сервера и ящик пересылки лежат здесь константами, а не переменными:
+  секрета в них нет, а код воркера виден только владельцу аккаунта. В
+  переменной остаётся ровно то, что обязано быть скрытым, — общий с сервером
+  секрет.
 */
+
+/** Куда сервер принимает письма. Публичный адрес, прятать нечего. */
+const INBOUND_URL = "https://valanium.com/v1/support/inbound";
+
+/**
+ * Ящик, куда уходит копия каждого письма. ВПИСАТЬ СВОЙ.
+ *
+ * Это единственный путь, которым можно ответить: сервер почту только
+ * принимает. Пустое значение = обращения видно в панели, но ответить нечем.
+ */
+const FORWARD_TO = "";
 
 /** Письмо больше этого — почти наверняка вложения, а их панель не показывает. */
 const MAX_BYTES = 512 * 1024;
@@ -67,17 +82,17 @@ export default {
 
     // Сначала пересылка: это единственный путь, которым владелец сможет
     // ответить, и он не должен зависеть от живости нашего сервера.
-    if (env.VALANIUM_FORWARD_TO) {
+    if (FORWARD_TO) {
       try {
-        await message.forward(env.VALANIUM_FORWARD_TO);
+        await message.forward(FORWARD_TO);
       } catch (error) {
         console.log(`forward failed: ${error}`);
       }
     }
 
-    if (!env.VALANIUM_INBOUND_URL || !env.VALANIUM_INBOUND_TOKEN) return;
+    if (!env.VALANIUM_INBOUND_TOKEN) return;
     try {
-      const response = await fetch(env.VALANIUM_INBOUND_URL, {
+      const response = await fetch(INBOUND_URL, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${env.VALANIUM_INBOUND_TOKEN}`,
