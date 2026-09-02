@@ -10,13 +10,16 @@ const TOKEN_FILE = '/etc/valanium-status-token';
   строку сюда и положить ему файл с этим же именем: чужой узел записаться сам
   не сможет, даже зная секрет.
 
-  hop3 в списке нет намеренно: он числится в плане, но не развёрнут, а узел,
-  всегда горящий красным, обесценивает страницу состояния.
+  Узел, который перестал отчитываться, показывается недоступным — и это
+  правильно: страница состояния для того и нужна. А вот узла, которого нет в
+  строю вовсе, здесь быть не должно: постоянно красная строка приучает не
+  смотреть на страницу.
 */
 const HEARTBEAT_FILES: Record<string, string> = {
   'relay-alpha': '/tmp/valanium-status-relay-alpha.json',
   'relay-beta': '/tmp/valanium-status-relay-beta.json',
   'relay-gamma': '/tmp/valanium-status-relay-gamma.json',
+  'relay-delta': '/tmp/valanium-status-relay-delta.json',
 };
 
 /** Как узлы называются на странице. Порядок здесь — порядок в списке. */
@@ -24,6 +27,7 @@ const RELAYS = [
   { id: 'alpha', node: 'relay-alpha', name: 'Relay Alpha' },
   { id: 'beta', node: 'relay-beta', name: 'Relay Beta' },
   { id: 'gamma', node: 'relay-gamma', name: 'Relay Gamma' },
+  { id: 'delta', node: 'relay-delta', name: 'Relay Delta' },
 ] as const;
 
 type Heartbeat = { checkedAt: string; latency: number };
