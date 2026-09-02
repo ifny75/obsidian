@@ -105,7 +105,7 @@ export default function Home() {
         </div>
         <div className="phone-stage" aria-hidden="true">
           <span className="phone-glow" />
-          <img src="/media/laptop.png" alt="" />
+          <img src="/media/valanium-laptop.png" alt="" />
         </div>
       </section>
 
@@ -210,7 +210,7 @@ export default function Home() {
         </div>
         <section className="closing">
           <div className="closing-copy">
-            <div className="closing-mark"><img src="/valanium.svg" alt="" /></div>
+            <div className="closing-mark"><img src="/logos/brand.svg" alt="" /></div>
             <div><span>Без номера телефона</span><h2>Один профиль.<br />Ваши разговоры.</h2><p>Создание профиля занимает около минуты.</p></div>
           </div>
           <div className="closing-actions"><DownloadButtons centered /><small>Бесплатно · Открытый код · AGPL-3.0</small></div>

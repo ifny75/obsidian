@@ -25,65 +25,45 @@ export const metadata: Metadata = {
 };
 
 /*
-  Главная собрана из тех же блоков, что страница мессенджера: тот же hero,
-  те же карточки `.feature-card`, тот же закрывающий блок.
+  Главная — витрина, а не рассказ.
 
-  Это не экономия усилий, а требование: раньше выбор сервисов был написан
-  своей вёрсткой и читался как соседний сайт. Общие классы означают, что
-  разъехаться им негде — правка стиля в одном месте меняет всё разом.
+  Человек приходит сюда с одним вопросом: «что тут есть». Значит заголовок по
+  центру, три плитки сразу под ним, и никакого текста, который надо читать,
+  чтобы понять, куда нажать. Подробности живут на страницах сервисов — здесь
+  они только мешали бы выбору.
+
+  Плитки нарочно похожи на значки приложений: это привычная человеку форма
+  выбора, и её не нужно объяснять.
 */
 export default function Home() {
   return (
     <main id="top">
       <DynamicHeader page="hub" />
 
-      <section className="hero shell">
-        <div className="hero-copy">
-          <h1>Одна инфраструктура<span>три способа ей пользоваться</span></h1>
-          <p>Мессенджер, почта и VPN на общих узлах</p>
-          <div className="actions">
-            <a className="download-button download-button-light" href="/messenger">
-              <img className="platform-svg" src="/logos/messenger.svg" alt="" />
-              <span><small>Работает сейчас</small><b>Мессенджер</b></span>
+      <section className="hub-hero shell">
+        <h1>Одна инфраструктура<span>три способа ей пользоваться</span></h1>
+        <p>Мессенджер, почта и VPN на общих узлах. Открытый код, свои серверы.</p>
+
+        <div className="hub-tiles">
+          {SERVICES.map((service) => (
+            <a
+              key={service.id}
+              className={`hub-tile hub-tile-${service.id}${service.ready ? '' : ' is-soon'}`}
+              href={service.href}
+            >
+              <span className="hub-tile-icon">
+                <img src={service.logo} alt="" />
+              </span>
+              <b>{service.short}</b>
+              <small>{service.ready ? service.badge : 'Скоро'}</small>
             </a>
-            <a className="download-button" href="/status">
-              <span><small>Публичный</small><b>Статус сети</b></span>
-            </a>
-          </div>
-          <small>Открытый код · AGPL-3.0 · собственные relay-узлы</small>
-        </div>
-        <div className="phone-stage" aria-hidden="true">
-          <span className="phone-glow" />
-          <img src="/media/laptop.png" alt="" />
+          ))}
         </div>
       </section>
 
-      <section className="feature-section shell" id="services">
-        <h2>Три сервиса.<br />Один подход к данным.</h2>
-        <div className="feature-grid">
-          {SERVICES.map((service, index) => (
-            <article
-              key={service.id}
-              className={`feature-card feature-card-${service.id}${service.ready ? '' : ' is-soon'}`}
-            >
-              <div className="feature-title">
-                <span className="feature-icon"><img className="service-logo" src={service.logo} alt="" /></span>
-                <div><small>{service.badge}</small><h3>{service.short}</h3></div>
-                <span className="feature-number">{String(index + 1).padStart(2, '0')}</span>
-              </div>
-              <p className="feature-copy">
-                <strong>{service.tagline}</strong>
-                <span>{service.about}</span>
-              </p>
-              <div className="feature-tags">
-                {service.points.map((point) => <span key={point}>{point}</span>)}
-              </div>
-              <a className="feature-link" href={service.href}>
-                {service.ready ? 'Открыть' : 'Подробнее'}<i aria-hidden="true">→</i>
-              </a>
-            </article>
-          ))}
-        </div>
+      <section className="hub-stage" aria-hidden="true">
+        <span className="phone-glow" />
+        <img src="/media/valanium-laptop.png" alt="" />
       </section>
 
       <section className="server-section shell" id="shared">
@@ -105,7 +85,7 @@ export default function Home() {
 
         <section className="closing">
           <div className="closing-copy">
-            <div className="closing-mark"><img src="/logos/valanium.svg" alt="" /></div>
+            <div className="closing-mark"><img src="/logos/brand.svg" alt="" /></div>
             <div>
               <span>Без номера телефона</span>
               <h2>Начните с того,<br />что уже работает.</h2>
@@ -115,7 +95,7 @@ export default function Home() {
           <div className="closing-actions">
             <div className="actions actions-centered">
               <a className="download-button download-button-light" href="/messenger">
-                <img className="platform-svg" src="/logos/messenger.svg" alt="" />
+                <img className="platform-svg service-logo" src="/logos/messenger.svg" alt="" />
                 <span><small>Открыть</small><b>Мессенджер</b></span>
               </a>
             </div>

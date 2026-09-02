@@ -45,7 +45,7 @@ export function SupportDialog({ variant = 'footer' }: { variant?: 'footer' | 'he
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11m0-11-11 11" /></svg>
           </button>
           <div className="support-dialog-hero">
-            <div className="support-emblem"><img src="/valanium.svg" alt="" /></div>
+            <div className="support-emblem"><img src="/logos/brand.svg" alt="" /></div>
             <div><span>Поддержать разработку</span><h2>Помочь Valanium</h2><p>Поддержите независимую инфраструктуру проекта.</p></div>
             <small><i /> On-chain</small>
           </div>

@@ -72,7 +72,7 @@ export function DynamicHeader({ page = 'hub' }: { page?: HeaderPage }) {
         }}
       >
         <a className="brand" href={brandHref} aria-label="Valanium">
-          <img src="/valanium.svg" alt="" />
+          <img src="/logos/brand.svg" alt="" />
           <b>Valanium</b>
           {page === 'messenger' ? <span>Public Beta</span> : null}
         </a>

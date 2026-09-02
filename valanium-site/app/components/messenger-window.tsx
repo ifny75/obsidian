@@ -7,7 +7,7 @@ export function MessengerWindow() {
   return (
     <div className="messenger-window" aria-label="Окно Valanium с защищённой перепиской">
       <div className="window-bar">
-        <img src="/valanium.svg" alt="" />
+        <img src="/logos/brand.svg" alt="" />
         <b>Valanium</b>
         <span className="window-dots" aria-hidden="true">
           <i>—</i>

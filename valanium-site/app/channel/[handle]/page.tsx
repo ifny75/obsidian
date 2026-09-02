@@ -74,7 +74,7 @@ export default async function ChannelPage({ params }: Props) {
         <nav className="nav shell">
           <a className="brand" href="/">
             <span className="brand-mark">
-              <img src="/valanium.svg" alt="" />
+              <img src="/logos/brand.svg" alt="" />
             </span>
             <span>
               <b>Valanium</b>

@@ -24,8 +24,8 @@ h1, h2, h3 { text-wrap: balance; }
 .nav { position: relative; width: min(1180px, calc(100% - 48px)); height: 56px; margin: 12px auto 0; padding-inline: 11px; display: flex; align-items: center; justify-content: space-between; border: 1px solid rgba(255,255,255,.11); border-radius: 18px; background: rgba(8,8,10,.28); box-shadow: inset 0 1px 0 rgba(255,255,255,.04); backdrop-filter: blur(14px) saturate(135%); -webkit-backdrop-filter: blur(14px) saturate(135%); pointer-events: auto; transition: width .42s cubic-bezier(.22,1,.36,1), height .42s cubic-bezier(.22,1,.36,1), margin .42s cubic-bezier(.22,1,.36,1), border-radius .42s cubic-bezier(.22,1,.36,1), background-color .32s ease, box-shadow .32s ease, backdrop-filter .32s ease; }
 .site-header.is-compact .nav { width: min(760px, calc(100% - 32px)); height: 48px; margin-top: 10px; border-color: rgba(255,255,255,.15); border-radius: 999px; background: rgba(12,12,15,.7); box-shadow: 0 14px 46px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06); backdrop-filter: blur(28px) saturate(165%); -webkit-backdrop-filter: blur(28px) saturate(165%); }
 .brand { display: flex; align-items: center; gap: 9px; min-width: 0; font-size: 15px; }
-.brand img { width: 30px; height: 36px; object-fit: contain; transition: width .35s ease, height .35s ease; }
-.site-header.is-compact .brand img { width: 26px; height: 31px; }
+.brand img { width: auto; height: 30px; object-fit: contain; transition: height .35s ease; }
+.site-header.is-compact .brand img { height: 26px; }
 .brand span { color: #77777c; padding-left: 11px; border-left: 1px solid #3b3b3f; font: 500 10px var(--font-unbounded), sans-serif; letter-spacing: -.025em; white-space: nowrap; }
 .nav-menu { position: absolute; left: 50%; display: flex; align-items: center; gap: 4px; transform: translateX(-50%); }
 .nav-menu a { padding: 8px 10px; border-radius: 999px; color: #99999f; font-size: 11px; font-weight: 700; transition: color .18s ease, background-color .18s ease; }
@@ -518,9 +518,9 @@ h1, h2, h3 { text-wrap: balance; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; animation: none !important; } .reveal-item { opacity: 1; filter: none; transform: none; } }
 
 /* --- главная и страницы сервисов -------------------------------------------
-   Своего здесь минимум: раскладку дают общие классы страницы мессенджера
-   (.hero, .feature-card, .closing). Ниже — только то, чего у них нет:
-   логотипы сервисов и метка «в разработке». */
+   Своего здесь минимум: раскладку страниц сервисов дают общие классы
+   мессенджера (.hero, .feature-card, .closing). Отдельно живёт только
+   витрина главной — у неё другая задача. */
 
 .nav-menu a.is-active { color: #fff; background: rgba(255,255,255,.08); }
 
@@ -530,23 +530,42 @@ h1, h2, h3 { text-wrap: balance; }
 .closing-mark img { filter: none; }
 .feature-icon .service-logo { width: 30px; height: 30px; object-fit: contain; }
 
-.feature-card-messenger { --feature-accent: 174,72,255; }
-.feature-card-mail { --feature-accent: 134,0,251; }
-.feature-card-vpn { --feature-accent: 120,60,255; }
-/* Невыпущенное приглушено: разница должна быть видна до чтения подписи. */
-.feature-card.is-soon { opacity: .78; }
-.feature-card.is-soon:hover { opacity: 1; }
+/* --- витрина главной ------------------------------------------------------ */
 
-.feature-link { margin-top: 18px; min-height: 46px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border: 1px solid rgba(var(--feature-accent),.32); border-radius: 13px; background: rgba(var(--feature-accent),.1); color: #e4d6ff; font: 600 12px var(--font-unbounded), sans-serif; transition: transform .18s ease, border-color .18s ease, background-color .18s ease; }
-.feature-link:hover { transform: translateY(-2px); border-color: rgba(var(--feature-accent),.7); background: rgba(var(--feature-accent),.2); }
-.feature-link i { font-style: normal; opacity: .6; }
+.hub-hero { padding-block: 130px 40px; text-align: center; }
+.hub-hero h1 { max-width: 900px; margin-inline: auto; font-size: clamp(40px, 4.2vw, 72px); line-height: .98; }
+.hub-hero h1 span { display: block; color: #57575a; }
+.hub-hero > p { max-width: 560px; margin: 18px auto 0; color: #77777c; font-size: clamp(14px, 1.1vw, 17px); line-height: 1.55; }
+
+.hub-tiles { margin-top: 52px; display: flex; flex-wrap: wrap; justify-content: center; gap: 26px; }
+.hub-tile { width: 176px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+/* Форма значка приложения: человеку не нужно объяснять, что на неё нажимают. */
+.hub-tile-icon { width: 116px; height: 116px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.12); border-radius: 30px; background: linear-gradient(155deg, #17171a 0%, #0c0c0e 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 18px 44px rgba(0,0,0,.42); transition: transform .3s cubic-bezier(.22,1,.36,1), border-color .25s ease, box-shadow .25s ease; }
+.hub-tile-icon img { width: 58px; height: 58px; object-fit: contain; }
+.hub-tile:hover .hub-tile-icon { transform: translateY(-6px) scale(1.04); border-color: rgba(186,110,255,.55); box-shadow: inset 0 1px 0 rgba(255,255,255,.09), 0 26px 60px rgba(0,0,0,.5), 0 0 44px rgba(126,0,255,.22); }
+.hub-tile b { margin-top: 16px; font-size: 15px; letter-spacing: -.04em; }
+.hub-tile small { color: #6e6e75; font-size: 11px; }
+/* Невыпущенное приглушено: разница должна читаться до подписи. */
+.hub-tile.is-soon .hub-tile-icon { opacity: .58; }
+.hub-tile.is-soon:hover .hub-tile-icon { opacity: 1; }
+
+/* Высоту задаёт сама картинка: фиксированная высота при квадратном исходнике
+   давала переполнение — снимок наезжал на следующую секцию. */
+.hub-stage { position: relative; display: grid; place-items: center; margin-bottom: 24px; }
+.hub-stage img { position: relative; z-index: 1; width: min(72%, 640px); height: auto; filter: drop-shadow(0 42px 74px #000); animation: laptop-float 6s ease-in-out infinite; }
 
 .hub-shared-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .hub-shared-grid article { padding: 24px; border: 1px solid rgba(255,255,255,.1); border-radius: 20px; background: linear-gradient(155deg,#151517 0%,#0c0c0e 72%); }
 .hub-shared-grid h3 { font-size: 17px; }
 .hub-shared-grid p { margin-top: 10px; color: #85858b; font-size: 13px; line-height: 1.55; }
 
-/* Логотип сервиса вместо снимка приложения: показывать нечего, пока нечего. */
+/* --- страницы сервисов ---------------------------------------------------- */
+
+.feature-card-messenger { --feature-accent: 174,72,255; }
+.feature-card-mail { --feature-accent: 134,0,251; }
+.feature-card-vpn { --feature-accent: 120,60,255; }
+
+/* Логотип сервиса вместо снимка приложения: показывать пока нечего. */
 .service-stage img.service-logo-big { width: min(58%, 300px); height: auto; animation: none; filter: drop-shadow(0 30px 60px rgba(126,0,255,.35)); transform: none; }
 
 .service-note { display: inline-flex; align-items: center; gap: 9px; margin-top: 4px; padding: 9px 15px; border: 1px solid rgba(255,196,84,.24); border-radius: 12px; background: rgba(255,176,32,.08); color: #f0c274; font-size: 12px; }
@@ -554,4 +573,5 @@ h1, h2, h3 { text-wrap: balance; }
 
 @media (max-width: 1080px) {
   .hub-shared-grid { grid-template-columns: 1fr; }
+  .hub-stage img { width: min(92%, 480px); }
 }

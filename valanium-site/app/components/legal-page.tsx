@@ -6,7 +6,7 @@ export function LegalPage({ eyebrow, title, intro, sections }: { eyebrow: string
   return (
     <main className="legal-shell">
       <header className="legal-nav">
-        <a className="brand" href="/"><img src="/valanium.svg" alt="" /><b>Valanium</b></a>
+        <a className="brand" href="/"><img src="/logos/brand.svg" alt="" /><b>Valanium</b></a>
         <a href="/">На главную</a>
       </header>
       <article className="legal-document">
