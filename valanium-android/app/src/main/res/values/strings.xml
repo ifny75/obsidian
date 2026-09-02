@@ -351,4 +351,10 @@
     <string name="channel_close">Закрыть канал</string>
     <string name="channel_close_hint">Канал исчезнет вместе со всеми постами и подписками. Отменить это нечем.</string>
     <string name="channel_closed">Канал закрыт</string>
+    <string name="hop_title">Второй узел Multi-hop</string>
+    <string name="hop_hint">Какой узел говорит с main. Первый выбирает Cloudflare — он ближайший, и заменить его нечем. Имена те же, что на странице состояния сети.</string>
+    <string name="hop_note">Выбранный узел постоянен, а «Авто» меняет его сам. Постоянный путь заметнее: первый узел видит, что вы всегда уходите через один и тот же второй. Это выбор в пользу предсказуемости, а не анонимности.</string>
+    <string name="hop_auto">Авто</string>
+    <string name="hop_switched">Второй узел: %1$s</string>
+    <string name="hop_switched_auto">Второй узел выбирается сам</string>
 </resources>

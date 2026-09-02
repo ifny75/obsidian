@@ -82,6 +82,10 @@ public final class MainActivity extends Activity implements Events.Listener {
     private static final String SERVER_ONION_URL = "valanium://onion";
     private static final String SERVER_AUTO_URL = "valanium://auto";
     private static final String TRANSPORT_KEY = "transport";
+    /** Какой узел выбран вторым плечом. Пусто — выбирает сеть. */
+    private static final String HOP_KEY = "multihop_node";
+    /** Имена те же, что на странице состояния сети: человек выбирает из них же. */
+    private static final String[] HOP_NODES = { "alpha", "beta", "gamma" };
     private static final String RELEASES_URL = "https://valanium.com/v1/releases/latest";
     /** Сколько сообщений поднимать за раз. Остальное — по прокрутке вверх. */
     private static final int HISTORY_PAGE = 40;
@@ -720,7 +724,23 @@ public final class MainActivity extends Activity implements Events.Listener {
         SharedPreferences preferences = appearancePreferences == null
                 ? getSharedPreferences("appearance", MODE_PRIVATE) : appearancePreferences;
         String mode = preferences.getString(TRANSPORT_KEY, "auto");
-        if ("multihop".equals(mode)) return SERVER_MULTIHOP_URL;
+        if ("multihop".equals(mode)) {
+            /*
+              Первый узел выбирает Cloudflare, и повлиять на это нечем: у всех
+              relay один общий адрес. А кому он передаст дальше — выбирает
+              человек.
+
+              Если Cloudflare привёл на тот самый узел, что выбран вторым, узел
+              отвечает 421: двух разных плеч из одного не сделать. Ядро сочтёт
+              это отказом соединения и попробует снова — следующая попытка
+              почти наверняка придёт на другой вход.
+            */
+            String hop = preferences.getString(HOP_KEY, "");
+            for (String node : HOP_NODES) {
+                if (node.equals(hop)) return "wss://valanium.com/multihop/" + node + "/ws";
+            }
+            return SERVER_MULTIHOP_URL;
+        }
         if ("onion".equals(mode)) return SERVER_ONION_URL;
         if ("basic".equals(mode)) return SERVER_BASIC_URL;
         return SERVER_AUTO_URL;
@@ -732,12 +752,59 @@ public final class MainActivity extends Activity implements Events.Listener {
         routes.setOnModeChangedListener(mode -> {
             if (mode.equals(appearancePreferences.getString(TRANSPORT_KEY, "auto"))) return;
             appearancePreferences.edit().putString(TRANSPORT_KEY, mode).apply();
+            showHopCard();
             if (!myDeviceHex.isEmpty()) {
                 submit(Commands.disconnect());
                 setStatus(getString(R.string.transport_switching));
                 ui.postDelayed(() -> submit(Commands.connect(serverUrl())), 250);
             }
         });
+        configureHopPicker();
+    }
+
+    private void configureHopPicker() {
+        int[] ids = { R.id.hop_auto, R.id.hop_alpha, R.id.hop_beta, R.id.hop_gamma };
+        String[] values = { "", HOP_NODES[0], HOP_NODES[1], HOP_NODES[2] };
+        for (int i = 0; i < ids.length; i++) {
+            final String value = values[i];
+            findViewById(ids[i]).setOnClickListener(v -> chooseHop(value));
+        }
+        showHopCard();
+    }
+
+    /**
+     * Выбор второго узла виден только в Multi-hop.
+     *
+     * В остальных режимах второго узла нет вовсе, и показывать переключатель
+     * значило бы обещать настройку, которая ни на что не влияет.
+     */
+    private void showHopCard() {
+        View card = findViewById(R.id.hop_card);
+        if (card == null) return;
+        boolean multihop = "multihop".equals(appearancePreferences.getString(TRANSPORT_KEY, "auto"));
+        card.setVisibility(multihop ? View.VISIBLE : View.GONE);
+        if (multihop) markChosenHop();
+    }
+
+    private void markChosenHop() {
+        String hop = appearancePreferences.getString(HOP_KEY, "");
+        int[] ids = { R.id.hop_auto, R.id.hop_alpha, R.id.hop_beta, R.id.hop_gamma };
+        String[] values = { "", HOP_NODES[0], HOP_NODES[1], HOP_NODES[2] };
+        for (int i = 0; i < ids.length; i++) {
+            findViewById(ids[i]).setAlpha(values[i].equals(hop) ? 1f : 0.55f);
+        }
+    }
+
+    private void chooseHop(String node) {
+        if (node.equals(appearancePreferences.getString(HOP_KEY, ""))) return;
+        appearancePreferences.edit().putString(HOP_KEY, node).apply();
+        markChosenHop();
+        toast(node.isEmpty() ? getString(R.string.hop_switched_auto)
+                : getString(R.string.hop_switched, node));
+        if (myDeviceHex.isEmpty()) return;
+        submit(Commands.disconnect());
+        setStatus(getString(R.string.transport_switching));
+        ui.postDelayed(() -> submit(Commands.connect(serverUrl())), 250);
     }
 
     // --- тема ------------------------------------------------------------------
