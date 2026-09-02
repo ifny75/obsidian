@@ -42,7 +42,7 @@ export default function Home() {
 
       <section className="hub-hero shell">
         <h1>Одна инфраструктура<span>три способа ей пользоваться</span></h1>
-        <p>Мессенджер, почта и VPN на общих узлах. Открытый код, свои серверы.</p>
+        <p>Мессенджер, почта и VPN на общих узлах</p>
 
         <div className="hub-tiles">
           {SERVICES.map((service) => (
@@ -61,29 +61,46 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="hub-stage" aria-hidden="true">
-        <span className="phone-glow" />
-        <img src="/media/valanium-laptop.png" alt="" />
+      {/*
+        Светлая полоса — та же, что на странице мессенджера.
+
+        Она не украшение: тёмная страница без единого разрыва читается как
+        одно бесконечное полотно, и человек перестаёт различать, где кончился
+        один разговор и начался другой. Смена фона делает эту границу
+        очевидной, не добавляя ни слова текста.
+      */}
+      <section className="routes" id="shared">
+        <div className="routes-inner shell">
+          <div className="routes-copy">
+            <div className="routes-heading">
+              <span>Общая основа</span>
+              <h2>Три сервиса.<br />Одни правила.</h2>
+              <p>Что верно для одного — верно для всех: инфраструктура, отношение к данным и открытый код общие.</p>
+            </div>
+            <ul className="hub-points">
+              <li>
+                <b>Свои узлы</b>
+                <span>Инфраструктура своя, не арендованная у платформы. Состояние каждого узла видно публично.</span>
+              </li>
+              <li>
+                <b>Минимум данных</b>
+                <span>Сервер не хранит того, что не нужно для доставки. Чего нет в базе — того нельзя ни потерять, ни выдать.</span>
+              </li>
+              <li>
+                <b>Открытый код</b>
+                <span>Клиенты, ядро и сервер опубликованы под AGPL-3.0. Проверить обещания можно самому.</span>
+              </li>
+            </ul>
+          </div>
+          <div className="routes-visual">
+            <span>Valanium</span>
+            <img src="/media/valanium-laptop.png" alt="" />
+          </div>
+        </div>
       </section>
 
-      <section className="server-section shell" id="shared">
-        <h2>Что у них общего</h2>
-        <div className="hub-shared-grid">
-          <article>
-            <h3>Свои узлы</h3>
-            <p>Инфраструктура своя, не арендованная у платформы. Состояние каждого узла видно публично.</p>
-          </article>
-          <article>
-            <h3>Минимум данных</h3>
-            <p>Сервер не хранит того, что не нужно для доставки. Чего нет в базе — того нельзя ни потерять, ни выдать.</p>
-          </article>
-          <article>
-            <h3>Открытый код</h3>
-            <p>Клиенты, ядро и сервер опубликованы под AGPL-3.0. Проверить обещания можно самому.</p>
-          </article>
-        </div>
-
-        <section className="closing">
+      <section className="hub-closing shell">
+        <div className="closing">
           <div className="closing-copy">
             <div className="closing-mark"><img src="/logos/brand.svg" alt="" /></div>
             <div>
@@ -101,7 +118,7 @@ export default function Home() {
             </div>
             <small>Бесплатно · Открытый код · AGPL-3.0</small>
           </div>
-        </section>
+        </div>
       </section>
 
       <footer className="site-footer shell">

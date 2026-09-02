@@ -2,6 +2,7 @@
 import { DynamicHeader, type HeaderPage } from './dynamic-header';
 import { SupportDialog } from './support-dialog';
 import type { Service } from '../services';
+import { ServiceIcon, type ServiceIconName } from './service-icons';
 
 /**
  * Общий каркас страницы сервиса.
@@ -12,7 +13,19 @@ import type { Service } from '../services';
  *
  * Содержимое прототипов ещё поменяется, раскладка — нет.
  */
-export type ServiceSection = { title: string; body: string };
+/**
+ * Панель раздела.
+ *
+ * `kicker` принадлежит самой панели, а не берётся по номеру из списка
+ * достоинств сервиса: списки не связаны, и подпись съезжала — «Зачем ещё одна
+ * почта» оказывалась подписана «шифрование на диске».
+ */
+export type ServiceSection = {
+  title: string;
+  body: string;
+  icon: ServiceIconName;
+  kicker: string;
+};
 
 export function ServicePage({
   service,
@@ -59,8 +72,8 @@ export function ServicePage({
           {sections.map((section, index) => (
             <article key={section.title} className={`feature-card feature-card-${service.id}`}>
               <div className="feature-title">
-                <span className="feature-icon"><img className="service-logo" src={service.logo} alt="" /></span>
-                <div><small>{service.points[index] ?? service.badge}</small><h3>{section.title}</h3></div>
+                <span className="feature-icon feature-icon-line"><ServiceIcon name={section.icon} /></span>
+                <div><small>{section.kicker}</small><h3>{section.title}</h3></div>
                 <span className="feature-number">{String(index + 1).padStart(2, '0')}</span>
               </div>
               <p className="feature-copy"><span>{section.body}</span></p>
