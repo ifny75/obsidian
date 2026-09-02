@@ -33,6 +33,9 @@ valanium-site/.git-sitebuilder/
 valanium-site/app.backup-*/
 valanium-site/dist.backup-*/
 
+# Каталоги сборки Tauri: cargo кладёт их рядом с исходниками
+valanium-windows/build-release-*/
+
 # Сборочные каталоги фронтенда
 .next/
 .vinext/
