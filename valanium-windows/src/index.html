@@ -580,6 +580,21 @@
                 </span>
               </button>
             </div>
+
+            <div class="settings-card hop-picker" id="hop-picker">
+              <div class="setting-block">
+                <b>Второй узел Multi-hop</b>
+                <small>Какой узел говорит с main. Первый выбирает Cloudflare — он ближайший, и заменить его нечем. Имена те же, что на странице состояния сети.</small>
+                <div class="setting-segment hop-segment" id="hop-segment" role="radiogroup" aria-label="Второй узел">
+                  <button data-hop="auto" type="button" role="radio" aria-checked="false">Авто</button>
+                  <button data-hop="alpha" type="button" role="radio" aria-checked="false">Alpha</button>
+                  <button data-hop="beta" type="button" role="radio" aria-checked="false">Beta</button>
+                  <button data-hop="gamma" type="button" role="radio" aria-checked="false">Gamma</button>
+                </div>
+                <p class="hop-note">Выбранный узел постоянен, а «Авто» меняет его сам. Постоянный путь заметнее: первый узел видит, что вы всегда уходите через один и тот же второй. Это выбор в пользу предсказуемости, а не анонимности.</p>
+              </div>
+            </div>
+
             <div class="settings-card routing-note">
               <div class="setting-block">
                 <b>Onion требует локальный Tor</b>

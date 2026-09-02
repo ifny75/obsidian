@@ -100,8 +100,7 @@ const DIRECT_ROUTES: [&str; 2] = [
 /// Relay-узлы держат независимые скрытые сервисы: падение одного Tor-входа
 /// не выключает onion-режим, пока доступен хотя бы один запасной. Дальше
 /// список приезжает от сервера и обновляется сам.
-const FALLBACK_ONION: [&str; 4] = [
-    "ws://5kghvwyxzmtzba4foenmg5pkhcoxv6iq2c6wf4pbg5uyjrviwkckvead.onion/ws",
+const FALLBACK_ONION: [&str; 3] = [
     "ws://ho2sji2l42eqclnmu6gtbbg5nvtrz5jvpr5nqkehbstshcmspsnfkiyd.onion/ws",
     "ws://anb5vtfi4ztizycwj6nnclo75kpjb4mhz4wmc6ax3zwy2xlz3slx26yd.onion/ws",
     "ws://5amnu2di3yhtpqcpbcoaabfbzotw3giap2lvoe5bi5juflzhzdrsq4ad.onion/ws",
@@ -3407,8 +3406,13 @@ mod tests {
         assert_eq!(routes[0], format!("ws://{fresh}/ws"), "названный сервером — первым");
         // Запасные остаются: сервер мог назвать узел, до которого именно у
         // этого человека Tor не достучится.
-        assert!(routes.iter().any(|route| route.contains("5kghvwyx")));
-        assert!(routes.iter().any(|route| route.contains("ho2sji2l")));
+        //
+        // Проверяется весь список целиком, а не отдельные адреса по строке:
+        // узлы приходят и уходят, и тест, ломающийся на выводе узла из сети,
+        // приучают чинить не глядя.
+        for spare in FALLBACK_ONION {
+            assert!(routes.iter().any(|route| route == spare), "потерян запасной {spare}");
+        }
 
         // Пустой список не стирает известное: иначе старая сборка сервера
         // отобрала бы у человека единственный работающий вход.

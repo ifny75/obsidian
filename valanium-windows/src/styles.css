@@ -3071,3 +3071,9 @@ body[data-motion="off"] *,body[data-motion="off"] *::before,body[data-motion="of
 .support-msg small { display: block; opacity: 0.6; margin-bottom: 4px; }
 /* Письмо пишет посторонний: длинная строка без пробелов не должна разрывать окно. */
 .support-msg p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+
+/* --- выбор второго узла Multi-hop ------------------------------------------
+   Сегмент тот же, что у прочих настроек, только на четыре кнопки вместо трёх. */
+.hop-segment { grid-template-columns: repeat(4, 1fr); }
+.hop-note { margin: 10px 0 0; color: var(--muted); font-size: 9.5px; line-height: 1.45; }

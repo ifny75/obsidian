@@ -13,8 +13,27 @@ const SERVER_URLS = Object.freeze({
   onion: "valanium://onion",
 });
 
+/** Узлы, из которых можно выбрать второе плечо. Имена те же, что на /status. */
+const HOP_NODES = Object.freeze(["alpha", "beta", "gamma"]);
+
+/*
+  Адрес для Multi-hop с закреплённым вторым узлом.
+
+  Первый узел выбирает Cloudflare, и повлиять на это нечем: у всех relay один
+  общий адрес, отвечает ближайший коннектор. А вот кому он передаст дальше —
+  выбирает человек.
+
+  Если Cloudflare привёл на тот самый узел, что выбран вторым, узел отвечает
+  421: двух разных плеч из одного не сделать. Ядро воспримет это как отказ
+  соединения и попробует снова — следующая попытка почти наверняка придёт на
+  другой вход.
+*/
 function serverUrl() {
-  return SERVER_URLS[preferences.transport] || SERVER_URLS.basic;
+  const mode = preferences.transport;
+  if (mode === "multihop" && HOP_NODES.includes(preferences.multihopNode)) {
+    return `wss://valanium.com/multihop/${preferences.multihopNode}/ws`;
+  }
+  return SERVER_URLS[mode] || SERVER_URLS.basic;
 }
 // Версия не хранится здесь копией: её отдаёт ядро приложения (Cargo.toml).
 // Хардкод в окне уже расходился с собранным бинарём, и клиент вечно
@@ -2838,6 +2857,10 @@ function applyPreferences() {
   document.body.classList.toggle("compact", preferences.compact);
   document.body.classList.toggle("square-avatars", preferences.squareAvatars);
   document.body.classList.toggle("tails", preferences.tails);
+  // Выбор второго узла имеет смысл только в Multi-hop: в остальных режимах
+  // второго узла нет вовсе, и показывать переключатель значило бы обещать
+  // настройку, которая ни на что не влияет.
+  $("hop-picker")?.classList.toggle("hidden", preferences.transport !== "multihop");
 
   for (const button of document.querySelectorAll("#theme-segment [data-theme]")) {
     button.classList.toggle("active", button.dataset.theme === preferences.theme);
@@ -2847,6 +2870,7 @@ function applyPreferences() {
   }
   for (const [selector, attribute, current] of [
     ["#transport-segment [data-transport]", "transport", preferences.transport],
+    ["#hop-segment [data-hop]", "hop", preferences.multihopNode ?? "auto"],
     ["#divider-segment [data-dividers]", "dividers", preferences.dividers],
     ["#wallpaper-grid [data-wallpaper]", "wallpaper", preferences.wallpaper],
     ["#font-segment [data-font]", "font", preferences.uiFont],
@@ -3604,6 +3628,20 @@ for (const button of document.querySelectorAll("#transport-segment [data-transpo
     window.setTimeout(() => submit({ type: "connect", url: serverUrl() }), 250);
     toast(mode === "onion" ? "Подключаемся через Tor…"
       : mode === "auto" ? "Выбираем доступный маршрут…" : "Меняем маршрут…");
+  });
+}
+
+for (const button of document.querySelectorAll("#hop-segment [data-hop]")) {
+  button.addEventListener("click", () => {
+    const choice = button.dataset.hop === "auto" ? null : button.dataset.hop;
+    if (choice === (preferences.multihopNode ?? null)) return;
+    preferences.multihopNode = choice;
+    savePreferences();
+    applyPreferences();
+    if (preferences.transport !== "multihop") return;
+    submit({ type: "disconnect" });
+    window.setTimeout(() => submit({ type: "connect", url: serverUrl() }), 250);
+    toast(choice ? `Второй узел: ${choice}` : "Второй узел выбирается сам");
   });
 }
 
