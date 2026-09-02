@@ -6,10 +6,11 @@ import type { Service } from '../services';
 /**
  * Общий каркас страницы сервиса.
  *
- * Почта и VPN — прототипы: содержимое ещё поменяется, а вот раскладка,
- * отступы и типографика меняться не должны. Один каркас на оба и означает,
- * что расходиться им негде; когда сервисы дозреют, наполнение заменят внутри,
- * а не рядом.
+ * Собран из тех же блоков, что страница мессенджера, и это главное в нём:
+ * почта и VPN должны читаться как тот же продукт, а не как соседний сайт.
+ * Разъехаться им негде — классы общие, правка стиля меняет все три разом.
+ *
+ * Содержимое прототипов ещё поменяется, раскладка — нет.
  */
 export type ServiceSection = { title: string; body: string };
 
@@ -27,68 +28,66 @@ export function ServicePage({
   note: string;
 }) {
   return (
-    <main className={`service-page service-page-${service.id}`} id="top">
+    <main id="top">
       <DynamicHeader page={page} />
 
-      <section className="service-hero shell">
-        <div className="service-hero-copy">
-          <span className="service-eyebrow">
-            <i aria-hidden="true">{service.letter}</i>
-            {service.badge}
-          </span>
+      <section className="hero shell">
+        <div className="hero-copy">
           <h1>{service.tagline}</h1>
           <p>{lead}</p>
 
           {/*
             Кнопки «скачать» здесь нет намеренно: скачивать пока нечего.
-            Кнопка, которая ведёт в никуда, обесценивает и остальные.
+            Кнопка, ведущая в никуда, обесценивает и остальные.
           */}
-          <div className="service-status-note">
+          <div className="service-note">
             <span className="service-dot" aria-hidden="true" />
             {note}
           </div>
+          <small>Открытый код · AGPL-3.0 · собственные узлы</small>
         </div>
 
-        <div className="service-hero-mark" aria-hidden="true">
-          {/* Место под логотип: его ещё не нарисовали. */}
-          <span>{service.letter}</span>
+        <div className="phone-stage service-stage" aria-hidden="true">
+          <span className="phone-glow" />
+          <img className="service-logo-big" src={service.logo} alt="" />
         </div>
       </section>
 
-      <section className="service-points shell" aria-label="Коротко о сервисе">
-        {service.points.map((point, index) => (
-          <article key={point}>
-            <span className="service-point-number">{String(index + 1).padStart(2, '0')}</span>
-            <h2>{point}</h2>
-          </article>
-        ))}
-      </section>
-
-      <section className="service-sections shell">
-        {sections.map((section) => (
-          <article key={section.title}>
-            <h2>{section.title}</h2>
-            <p>{section.body}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="service-cta shell">
-        <div>
-          <h2>Пока в разработке</h2>
-          <p>
-            Сервис ещё не запущен. Работающий сегодня — мессенджер: у него есть
-            клиенты, публичный статус узлов и открытый код.
-          </p>
+      <section className="feature-section shell" id="about">
+        <h2>{service.name}</h2>
+        <div className="feature-grid">
+          {sections.map((section, index) => (
+            <article key={section.title} className={`feature-card feature-card-${service.id}`}>
+              <div className="feature-title">
+                <span className="feature-icon"><img className="service-logo" src={service.logo} alt="" /></span>
+                <div><small>{service.points[index] ?? service.badge}</small><h3>{section.title}</h3></div>
+                <span className="feature-number">{String(index + 1).padStart(2, '0')}</span>
+              </div>
+              <p className="feature-copy"><span>{section.body}</span></p>
+            </article>
+          ))}
         </div>
-        <div className="service-cta-actions">
-          <a className="download-button download-button-light" href="/messenger">
-            <span><small>Открыть</small><b>Valanium Messenger</b></span>
-          </a>
-          <a className="download-button" href="/status">
-            <span><small>Посмотреть</small><b>Статус сети</b></span>
-          </a>
-        </div>
+
+        <section className="closing">
+          <div className="closing-copy">
+            <div className="closing-mark"><img src={service.logo} alt="" /></div>
+            <div>
+              <span>{service.badge}</span>
+              <h2>Пока в разработке.</h2>
+              <p>Работающий сегодня — мессенджер: клиенты, публичный статус узлов и открытый код.</p>
+            </div>
+          </div>
+          <div className="closing-actions">
+            <div className="actions actions-centered">
+              <a className="download-button download-button-light" href="/messenger">
+                <span><small>Открыть</small><b>Мессенджер</b></span>
+              </a>
+              <a className="download-button" href="/status">
+                <span><small>Посмотреть</small><b>Статус сети</b></span>
+              </a>
+            </div>
+          </div>
+        </section>
       </section>
 
       <footer className="site-footer shell">

@@ -105,7 +105,7 @@ export default function Home() {
         </div>
         <div className="phone-stage" aria-hidden="true">
           <span className="phone-glow" />
-          <img src="/media/mackbook2.png" alt="" />
+          <img src="/media/laptop.png" alt="" />
         </div>
       </section>
 
@@ -187,7 +187,7 @@ export default function Home() {
           </div>
           <div className="routes-visual">
             <span>Valanium routing</span>
-            <img src="/media/mackbook.png" alt="Ноутбук с настройками маршрутизации Valanium" />
+            <img src="/media/routing.png" alt="Ноутбук с настройками маршрутизации Valanium" />
           </div>
         </div>
       </section>

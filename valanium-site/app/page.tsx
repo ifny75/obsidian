@@ -24,54 +24,70 @@ export const metadata: Metadata = {
   twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION, images: ['/og.png'] },
 };
 
+/*
+  Главная собрана из тех же блоков, что страница мессенджера: тот же hero,
+  те же карточки `.feature-card`, тот же закрывающий блок.
+
+  Это не экономия усилий, а требование: раньше выбор сервисов был написан
+  своей вёрсткой и читался как соседний сайт. Общие классы означают, что
+  разъехаться им негде — правка стиля в одном месте меняет всё разом.
+*/
 export default function Home() {
   return (
-    <main className="hub" id="top">
+    <main id="top">
       <DynamicHeader page="hub" />
 
-      <section className="hub-hero shell">
-        <span className="hub-eyebrow">Приватные сервисы</span>
-        <h1>Одна инфраструктура.<br /><span>Три способа ей пользоваться.</span></h1>
-        <p>
-          Общие узлы, общий подход к данным и один принцип: сервер хранит
-          столько, сколько нужно для работы, и ни байтом больше.
-        </p>
-      </section>
-
-      <section className="hub-grid shell" aria-label="Сервисы Valanium">
-        {SERVICES.map((service) => (
-          <article
-            key={service.id}
-            className={`hub-card hub-card-${service.id}${service.ready ? '' : ' is-soon'}`}
-          >
-            <div className="hub-card-top">
-              <span className="hub-mark" aria-hidden="true">
-                {/* Логотипы сервисов ещё не нарисованы: пока метка из буквы. */}
-                {service.letter}
-              </span>
-              <em>{service.ready ? service.badge : 'Скоро'}</em>
-            </div>
-
-            <div className="hub-card-copy">
-              <h2>{service.name}</h2>
-              <p className="hub-tagline">{service.tagline}</p>
-              <p className="hub-about">{service.about}</p>
-            </div>
-
-            <ul className="hub-points">
-              {service.points.map((point) => <li key={point}>{point}</li>)}
-            </ul>
-
-            <a className="hub-action" href={service.href}>
-              {service.ready ? 'Открыть' : 'Подробнее'}
-              <i aria-hidden="true">→</i>
+      <section className="hero shell">
+        <div className="hero-copy">
+          <h1>Одна инфраструктура<span>три способа ей пользоваться</span></h1>
+          <p>Мессенджер, почта и VPN на общих узлах</p>
+          <div className="actions">
+            <a className="download-button download-button-light" href="/messenger">
+              <img className="platform-svg" src="/logos/messenger.svg" alt="" />
+              <span><small>Работает сейчас</small><b>Мессенджер</b></span>
             </a>
-          </article>
-        ))}
+            <a className="download-button" href="/status">
+              <span><small>Публичный</small><b>Статус сети</b></span>
+            </a>
+          </div>
+          <small>Открытый код · AGPL-3.0 · собственные relay-узлы</small>
+        </div>
+        <div className="phone-stage" aria-hidden="true">
+          <span className="phone-glow" />
+          <img src="/media/laptop.png" alt="" />
+        </div>
       </section>
 
-      <section className="hub-shared shell">
-        <h2>Что общего у всех трёх</h2>
+      <section className="feature-section shell" id="services">
+        <h2>Три сервиса.<br />Один подход к данным.</h2>
+        <div className="feature-grid">
+          {SERVICES.map((service, index) => (
+            <article
+              key={service.id}
+              className={`feature-card feature-card-${service.id}${service.ready ? '' : ' is-soon'}`}
+            >
+              <div className="feature-title">
+                <span className="feature-icon"><img className="service-logo" src={service.logo} alt="" /></span>
+                <div><small>{service.badge}</small><h3>{service.short}</h3></div>
+                <span className="feature-number">{String(index + 1).padStart(2, '0')}</span>
+              </div>
+              <p className="feature-copy">
+                <strong>{service.tagline}</strong>
+                <span>{service.about}</span>
+              </p>
+              <div className="feature-tags">
+                {service.points.map((point) => <span key={point}>{point}</span>)}
+              </div>
+              <a className="feature-link" href={service.href}>
+                {service.ready ? 'Открыть' : 'Подробнее'}<i aria-hidden="true">→</i>
+              </a>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="server-section shell" id="shared">
+        <h2>Что у них общего</h2>
         <div className="hub-shared-grid">
           <article>
             <h3>Свои узлы</h3>
@@ -86,6 +102,26 @@ export default function Home() {
             <p>Клиенты, ядро и сервер опубликованы под AGPL-3.0. Проверить обещания можно самому.</p>
           </article>
         </div>
+
+        <section className="closing">
+          <div className="closing-copy">
+            <div className="closing-mark"><img src="/logos/valanium.svg" alt="" /></div>
+            <div>
+              <span>Без номера телефона</span>
+              <h2>Начните с того,<br />что уже работает.</h2>
+              <p>Мессенджер выпущен и открыт. Почта и VPN — на подходе.</p>
+            </div>
+          </div>
+          <div className="closing-actions">
+            <div className="actions actions-centered">
+              <a className="download-button download-button-light" href="/messenger">
+                <img className="platform-svg" src="/logos/messenger.svg" alt="" />
+                <span><small>Открыть</small><b>Мессенджер</b></span>
+              </a>
+            </div>
+            <small>Бесплатно · Открытый код · AGPL-3.0</small>
+          </div>
+        </section>
       </section>
 
       <footer className="site-footer shell">

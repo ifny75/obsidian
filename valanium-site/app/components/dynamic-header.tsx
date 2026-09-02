@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { GithubIcon } from './icons';
 import { SupportDialog } from './support-dialog';
+import { SERVICES } from '../services';
 
 /**
  * Какая это страница — от этого зависит только меню.
@@ -16,11 +17,10 @@ export type HeaderPage = 'hub' | 'messenger' | 'mail' | 'vpn' | 'status';
 
 type Link = { href: string; label: string };
 
-const SERVICE_LINKS: Link[] = [
-  { href: '/messenger', label: 'Мессенджер' },
-  { href: '/mail', label: 'Почта' },
-  { href: '/vpn', label: 'VPN' },
-];
+const SERVICE_LINKS: Link[] = SERVICES.map((service) => ({
+  href: service.href,
+  label: service.short,
+}));
 
 /** Якоря есть только на странице мессенджера: снаружи они ведут на неё же. */
 const MESSENGER_LINKS: Link[] = [
