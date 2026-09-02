@@ -22,14 +22,23 @@ valanium-site-release.tar.gz
 # Нативная библиотека ядра: её собирает cargo-ndk из valanium-core
 valanium-android/app/src/main/jniLibs/
 
-# Сайт живёт в своём репозитории
-valanium-site/
+# Сайт: исходники в репозитории, сборка и зависимости — нет.
+# .git-sitebuilder — прежний вложенный репозиторий сборщика лендинга.
+# Отодвинут, чтобы главный репозиторий видел файлы; вернуть можно
+# переименованием обратно в .git.
+valanium-site/node_modules/
+valanium-site/dist/
+valanium-site/tsconfig.tsbuildinfo
+valanium-site/.git-sitebuilder/
+valanium-site/app.backup-*/
+valanium-site/dist.backup-*/
 
 # Сборочные каталоги фронтенда
 .next/
 .vinext/
 .wrangler/
-.openai/
+.openai/*
+!.openai/hosting.json
 
 # Слепки базы и архивы: в открытом репозитории им не место —
 # в них живые аккаунты, коды чатов и запечатанные посылки восстановления.
