@@ -33,12 +33,15 @@ export function ServicePage({
   lead,
   sections,
   note,
+  shot,
 }: {
   service: Service;
   page: HeaderPage;
   lead: string;
   sections: ServiceSection[];
   note: string;
+  /** Снимок приложения, если он есть. Иначе показываем знак сервиса. */
+  shot?: string;
 }) {
   return (
     <main id="top">
@@ -62,7 +65,9 @@ export function ServicePage({
 
         <div className="phone-stage service-stage" aria-hidden="true">
           <span className="phone-glow" />
-          <img className="service-logo-big" src={service.logo} alt="" />
+          {shot
+            ? <img className="service-shot" src={shot} alt="" />
+            : <img className="service-logo-big" src={service.logo} alt="" />}
         </div>
       </section>
 

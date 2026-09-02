@@ -518,46 +518,76 @@ h1, h2, h3 { text-wrap: balance; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; animation: none !important; } .reveal-item { opacity: 1; filter: none; transform: none; } }
 
 /* --- главная и страницы сервисов -------------------------------------------
-   Своего здесь минимум: раскладку страниц сервисов дают общие классы
-   мессенджера (.hero, .feature-card, .closing). Отдельно живёт только
-   витрина главной — у неё другая задача. */
+   Раскладку страниц сервисов дают общие классы мессенджера (.hero,
+   .feature-card, .closing). Отдельно живёт витрина главной — у неё своя
+   задача и своя стеклянная панель. */
 
 .nav-menu a.is-active { color: #fff; background: rgba(255,255,255,.08); }
+/* Значки в меню: цветные логотипы обесцвечивать нельзя, иначе они пропадут. */
+.nav-logo { width: 15px; height: 15px; margin-right: 6px; vertical-align: -2px; object-fit: contain; }
 
-/* Логотипы цветные, поэтому обесцвечивание кнопок к ним не применяется. */
+.feature-icon .service-logo { width: 30px; height: 30px; object-fit: contain; }
 .feature-icon .service-logo,
 .download-button .platform-svg.service-logo,
 .closing-mark img { filter: none; }
-.feature-icon .service-logo { width: 30px; height: 30px; object-fit: contain; }
 .feature-icon-line { color: rgb(var(--feature-accent)); }
 .feature-icon-line svg { width: 24px; height: 24px; }
 
-/* --- витрина главной ------------------------------------------------------ */
+/* --- стеклянная панель первого экрана -------------------------------------- */
 
-.hub-hero { padding-block: 130px 40px; text-align: center; }
-.hub-hero h1 { max-width: 900px; margin-inline: auto; font-size: clamp(40px, 4.2vw, 72px); line-height: .98; }
-.hub-hero h1 span { display: block; color: #57575a; }
-.hub-hero > p { max-width: 560px; margin: 18px auto 0; color: #77777c; font-size: clamp(14px, 1.1vw, 17px); line-height: 1.55; }
+.stage { padding-block: 96px 40px; }
+/*
+  Жидкое стекло: полупрозрачный слой, размывающий то, что под ним, плюс
+  собственный градиент и светлая грань сверху. Свечение лежит ПОД стеклом —
+  именно его размытие и делает эффект стеклом, а не просто прозрачностью.
+*/
+.glass {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 40px;
+  background: linear-gradient(180deg, rgba(20,20,24,.72) 0%, rgba(46,10,74,.55) 62%, rgba(96,24,150,.42) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.09), 0 40px 120px rgba(0,0,0,.55);
+  backdrop-filter: blur(28px) saturate(150%);
+  -webkit-backdrop-filter: blur(28px) saturate(150%);
+}
+/* Источник света под стеклом. Без него размывать нечего. */
+.glass-glow { position: absolute; z-index: 0; left: 50%; bottom: -28%; width: 78%; height: 72%; border-radius: 50%; background: radial-gradient(circle, rgba(150,40,255,.55), rgba(96,0,190,.22) 55%, transparent 72%); filter: blur(90px); transform: translateX(-50%); pointer-events: none; }
+/* Блик по верхней грани: у стекла всегда есть подсвеченный край. */
+.glass::before { content: ''; position: absolute; inset: 0 0 auto; height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,.35) 42%, rgba(255,255,255,.16) 68%, transparent); }
+.glass-inner { position: relative; z-index: 1; padding: clamp(56px, 7vw, 108px) clamp(24px, 5vw, 72px) clamp(44px, 5vw, 72px); text-align: center; }
 
-.hub-tiles { margin-top: 52px; display: flex; flex-wrap: wrap; justify-content: center; gap: 26px; }
-.hub-tile { width: 176px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.glass-inner h1 { font-size: clamp(38px, 5.4vw, 92px); line-height: .98; }
+.glass-inner h1 span { color: #a855f7; }
+.glass-inner > p { margin-top: 16px; color: #b9b9c2; font: 600 clamp(14px, 1.3vw, 21px) var(--font-unbounded), sans-serif; }
+
+.stage-actions { margin-top: 32px; display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
+.stage-button { min-height: 56px; padding: 0 34px; display: inline-flex; align-items: center; border: 1px solid rgba(255,255,255,.16); border-radius: 999px; background: rgba(255,255,255,.06); font: 600 15px var(--font-unbounded), sans-serif; transition: transform .18s ease, border-color .18s ease, background-color .18s ease; }
+.stage-button:hover { transform: translateY(-2px); border-color: rgba(255,255,255,.4); background: rgba(255,255,255,.11); }
+.stage-button-primary { border-color: rgba(168,85,247,.5); background: linear-gradient(180deg, rgba(140,40,220,.85), rgba(96,10,170,.85)); color: #fff; }
+.stage-button-primary:hover { border-color: rgba(200,140,255,.85); background: linear-gradient(180deg, rgba(158,58,238,.95), rgba(112,18,196,.95)); }
+
+.stage-tiles { margin-top: clamp(48px, 6vw, 88px); display: flex; flex-wrap: wrap; justify-content: center; gap: 22px; }
+.stage-tile { width: 128px; display: flex; flex-direction: column; align-items: center; }
 /* Форма значка приложения: человеку не нужно объяснять, что на неё нажимают. */
-.hub-tile-icon { width: 116px; height: 116px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.12); border-radius: 30px; background: linear-gradient(155deg, #17171a 0%, #0c0c0e 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 18px 44px rgba(0,0,0,.42); transition: transform .3s cubic-bezier(.22,1,.36,1), border-color .25s ease, box-shadow .25s ease; }
-.hub-tile-icon img { width: 58px; height: 58px; object-fit: contain; }
-.hub-tile:hover .hub-tile-icon { transform: translateY(-6px) scale(1.04); border-color: rgba(186,110,255,.55); box-shadow: inset 0 1px 0 rgba(255,255,255,.09), 0 26px 60px rgba(0,0,0,.5), 0 0 44px rgba(126,0,255,.22); }
-.hub-tile b { margin-top: 16px; font-size: 15px; letter-spacing: -.04em; }
-.hub-tile small { color: #6e6e75; font-size: 11px; }
-/* Невыпущенное приглушено: разница должна читаться до подписи. */
-.hub-tile.is-soon .hub-tile-icon { opacity: .58; }
-.hub-tile.is-soon:hover .hub-tile-icon { opacity: 1; }
+.stage-tile-icon { width: 96px; height: 96px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.13); border-radius: 26px; background: rgba(255,255,255,.07); box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 16px 40px rgba(0,0,0,.4); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: transform .3s cubic-bezier(.22,1,.36,1), border-color .25s ease, box-shadow .25s ease; }
+.stage-tile-icon img { width: 52px; height: 52px; object-fit: contain; }
+.stage-tile:hover .stage-tile-icon { transform: translateY(-6px) scale(1.05); border-color: rgba(200,140,255,.6); box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 26px 56px rgba(0,0,0,.5), 0 0 48px rgba(150,40,255,.3); }
+.stage-tile b { margin-top: 14px; font-size: 14px; letter-spacing: -.04em; }
+.stage-tile small { margin-top: 2px; color: #9a9aa4; font-size: 10.5px; }
+.stage-tile.is-soon .stage-tile-icon { opacity: .6; }
+.stage-tile.is-soon:hover .stage-tile-icon { opacity: 1; }
 
-/* Список без рамок: на светлой полосе коробки вокруг трёх строк только
-   утяжеляют — разделителя хватает. */
+/* --- светлая полоса и финал ------------------------------------------------ */
+
 .hub-points { margin: 34px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; }
 .hub-points li { padding: 16px 0; border-top: 1px solid rgba(0,0,0,.09); }
 .hub-points li:last-child { border-bottom: 1px solid rgba(0,0,0,.09); }
 .hub-points b { display: block; font-size: 16px; letter-spacing: -.035em; }
 .hub-points span { display: block; margin-top: 5px; max-width: 460px; color: #616164; font-size: 14px; line-height: 1.5; }
+
+/* Телефон выше ноутбука и уже: без ограничения он распирает светлую полосу. */
+.routes-visual img.routes-phone { width: min(78%, 430px); }
 
 .hub-closing { padding-block: 96px 40px; }
 
@@ -567,11 +597,14 @@ h1, h2, h3 { text-wrap: balance; }
 .feature-card-mail { --feature-accent: 134,0,251; }
 .feature-card-vpn { --feature-accent: 120,60,255; }
 
-/* Логотип сервиса вместо снимка приложения: показывать пока нечего. */
 .service-stage img.service-logo-big { width: min(58%, 300px); height: auto; animation: none; filter: drop-shadow(0 30px 60px rgba(126,0,255,.35)); transform: none; }
+/* Снимок приложения вместо логотипа: он показывает продукт, а знак — только имя. */
+.service-stage img.service-shot { width: min(96%, 460px); height: auto; animation: none; transform: none; filter: drop-shadow(0 34px 64px rgba(0,0,0,.55)); }
 
 .service-note { display: inline-flex; align-items: center; gap: 9px; margin-top: 4px; padding: 9px 15px; border: 1px solid rgba(255,196,84,.24); border-radius: 12px; background: rgba(255,176,32,.08); color: #f0c274; font-size: 12px; }
 .service-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: #f0b040; box-shadow: 0 0 10px rgba(240,176,64,.7); }
 
 @media (max-width: 1080px) {
+  .glass { border-radius: 28px; }
+  .stage { padding-block: 76px 24px; }
 }

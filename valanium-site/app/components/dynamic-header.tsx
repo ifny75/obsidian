@@ -15,11 +15,12 @@ import { SERVICES } from '../services';
  */
 export type HeaderPage = 'hub' | 'messenger' | 'mail' | 'vpn' | 'status';
 
-type Link = { href: string; label: string };
+type Link = { href: string; label: string; logo?: string };
 
 const SERVICE_LINKS: Link[] = SERVICES.map((service) => ({
   href: service.href,
   label: service.short,
+  logo: service.logo,
 }));
 
 /** Якоря есть только на странице мессенджера: снаружи они ведут на неё же. */
@@ -84,6 +85,7 @@ export function DynamicHeader({ page = 'hub' }: { page?: HeaderPage }) {
               href={link.href}
               className={link.href === `/${page}` ? 'is-active' : undefined}
             >
+              {link.logo ? <img className="nav-logo" src={link.logo} alt="" /> : null}
               {link.label}
             </a>
           ))}

@@ -25,6 +25,7 @@ export default function VpnPage() {
     <ServicePage
       service={service}
       page="vpn"
+      shot="/media/vpn-phone.png"
       lead="Те же узлы, что держат relay мессенджера, и тот же принцип: журналов подключений нет, а список серверов открыт."
       note="Прототип страницы. Подключение ещё не открыто."
       sections={[

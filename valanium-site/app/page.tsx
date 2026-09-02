@@ -25,49 +25,57 @@ export const metadata: Metadata = {
 };
 
 /*
-  Главная — витрина, а не рассказ.
+  Главная — витрина: заголовок, обещание, три значка.
 
-  Человек приходит сюда с одним вопросом: «что тут есть». Значит заголовок по
-  центру, три плитки сразу под ним, и никакого текста, который надо читать,
-  чтобы понять, куда нажать. Подробности живут на страницах сервисов — здесь
-  они только мешали бы выбору.
+  Стеклянная панель здесь не украшение. Тёмная страница во всю ширину не имеет
+  краёв, глазу не за что зацепиться; панель задаёт рамку, внутри которой живёт
+  первый экран, и отделяет его от всего, что ниже.
 
-  Плитки нарочно похожи на значки приложений: это привычная человеку форма
-  выбора, и её не нужно объяснять.
+  Кнопок «Войти» и «Зарегистрироваться» здесь нет намеренно. Учётной записи на
+  сайте не существует: профиль заводится в приложении, ключи не покидают
+  устройства, и сервер их не хранит — заводить вход в веб значило бы обещать
+  то, чего нет и по замыслу быть не должно. Поэтому кнопки ведут туда, где
+  действие действительно есть: к загрузке и к устройству сети.
 */
 export default function Home() {
   return (
     <main id="top">
       <DynamicHeader page="hub" />
 
-      <section className="hub-hero shell">
-        <h1>Одна инфраструктура<span>три способа ей пользоваться</span></h1>
-        <p>Мессенджер, почта и VPN на общих узлах</p>
+      <section className="stage shell">
+        <div className="glass">
+          <span className="glass-glow" aria-hidden="true" />
 
-        <div className="hub-tiles">
-          {SERVICES.map((service) => (
-            <a
-              key={service.id}
-              className={`hub-tile hub-tile-${service.id}${service.ready ? '' : ' is-soon'}`}
-              href={service.href}
-            >
-              <span className="hub-tile-icon">
-                <img src={service.logo} alt="" />
-              </span>
-              <b>{service.short}</b>
-              <small>{service.ready ? service.badge : 'Скоро'}</small>
-            </a>
-          ))}
+          <div className="glass-inner">
+            <h1><span>Приватность</span> начинается здесь</h1>
+            <p>Шифрование, свои узлы и открытый код</p>
+
+            <div className="stage-actions">
+              <a className="stage-button stage-button-primary" href="/messenger#download">Скачать</a>
+              <a className="stage-button" href="/messenger#server">Как устроено</a>
+            </div>
+
+            <div className="stage-tiles">
+              {SERVICES.map((service) => (
+                <a
+                  key={service.id}
+                  className={`stage-tile${service.ready ? '' : ' is-soon'}`}
+                  href={service.href}
+                >
+                  <span className="stage-tile-icon"><img src={service.logo} alt="" /></span>
+                  <b>{service.short}</b>
+                  <small>{service.ready ? service.badge : 'Скоро'}</small>
+                </a>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
       {/*
-        Светлая полоса — та же, что на странице мессенджера.
-
-        Она не украшение: тёмная страница без единого разрыва читается как
-        одно бесконечное полотно, и человек перестаёт различать, где кончился
-        один разговор и начался другой. Смена фона делает эту границу
-        очевидной, не добавляя ни слова текста.
+        Светлая полоса — та же, что на странице мессенджера. Тёмная страница без
+        разрыва читается как одно полотно, и граница между разделами теряется.
+        Смена фона обозначает её, не добавляя ни слова текста.
       */}
       <section className="routes" id="shared">
         <div className="routes-inner shell">
@@ -93,8 +101,8 @@ export default function Home() {
             </ul>
           </div>
           <div className="routes-visual">
-            <span>Valanium</span>
-            <img src="/media/valanium-laptop.png" alt="" />
+            <span>Valanium Messenger</span>
+            <img className="routes-phone" src="/media/chat-phone.png" alt="Профиль в мессенджере Valanium" />
           </div>
         </div>
       </section>
