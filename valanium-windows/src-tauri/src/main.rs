@@ -10,6 +10,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod badge;
+mod onionize;
 
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
@@ -25,7 +26,7 @@ use windows::Win32::Security::Cryptography::{
 };
 
 /// Не показывать консоль при запуске сторонней программы.
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+pub(crate) const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Канал, по которому события ядра доезжают до окна.
 const EVENT_CHANNEL: &str = "valanium:event";
@@ -935,6 +936,10 @@ fn main() {
             set_unread,
             app_version,
             verify_release,
+            onionize::onionize_status,
+            onionize::onionize_install,
+            onionize::onionize_start,
+            onionize::onionize_stop,
             unlock_with_password,
             app_lock_enabled,
             set_app_lock,

@@ -14,6 +14,9 @@ default = []
 # Платный вход через TON. Логика цела и покрыта тестами, но в сборку по
 # умолчанию не входит: пока вход только по инвайтам.
 ton = []
+# Встроенный Tor (Arti) вместо внешнего SOCKS5. Пока только проба размера и
+# времени старта: в сборку по умолчанию не входит и клиентом не используется.
+tor-embedded = ["dep:arti-client", "dep:tor-rtcompat"]
 
 [dependencies]
 ed25519-dalek = { version = "2", features = ["rand_core"] }
@@ -39,9 +42,17 @@ openmls_traits = "0.5.0"
 openmls_memory_storage = "0.5.0"
 tls_codec = "0.4.2"
 bip39 = { version = "2.2.2", default-features = false, features = ["std"] }
+arti-client = { version = "0.30.0", default-features = false, features = ["tokio", "rustls", "onion-service-client"], optional = true }
+tor-rtcompat = { version = "0.30.0", features = ["tokio", "rustls"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "net", "io-util"] }
+
+# Проба встроенного Tor. Собирается только под своим флагом, поэтому обычная
+# сборка её не видит и не тянет ничего лишнего.
+[[example]]
+name = "tor_probe"
+required-features = ["tor-embedded"]
 
 [profile.release]
 opt-level = "z"

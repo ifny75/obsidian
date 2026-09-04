@@ -22,6 +22,8 @@ windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cr
 # Обработчик запросов разрешений WebView2. Версия совпадает с той, что уже
 # тянет wry, — иначе в дереве оказались бы два несовместимых COM-слоя.
 webview2-com = "0.38"
+ureq = { version = "2", default-features = false, features = ["tls"] }
+sha2 = "0.10"
 
 [features]
 # Проброс фичи ядра: платный вход в TON по умолчанию выключен.

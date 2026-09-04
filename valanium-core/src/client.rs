@@ -22,6 +22,7 @@ use crate::error::{CoreError, Result};
 use crate::keys::Credentials;
 use crate::keys;
 use crate::mls::{Incoming, Mls};
+use crate::onion;
 #[cfg(feature = "ton")]
 use crate::proto::PayInfo;
 use crate::proto::{self, op, AuthErr, AuthOk, AuthRequest, Hello, ServerError, ID_LEN, KEY_LEN};
@@ -131,17 +132,57 @@ fn routes_for(url: &str, store: &Store) -> Vec<String> {
     }
 }
 
-/// Запоминает onion-входы, названные сервером.
+/// Где помним время выпуска последнего принятого списка.
+const ONION_ISSUED_AT_KEY: &str = "onion_hosts_issued_at";
+
+/// Время выпуска последнего принятого списка. Ничего не принимали — `i64::MIN`,
+/// то есть подойдёт любой.
+fn accepted_issued_at(store: &Store) -> i64 {
+    store
+        .load_setting(ONION_ISSUED_AT_KEY)
+        .ok()
+        .flatten()
+        .and_then(|raw| String::from_utf8(raw).ok())
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(i64::MIN)
+}
+
+/// Запоминает onion-входы, названные сервером, — если они подписаны.
 ///
 /// Пустой список не стирает известное: сервер мог ответить старой сборкой, а
 /// забыть адрес, по которому человек только и может подключиться, — худшее из
 /// возможных решений. Стирается он только явной сменой на непустой список.
-fn remember_onion_hosts(store: &Store, hosts: &[String], sink: &EventSink) {
+///
+/// Ключ передаётся, а не берётся из константы, ровно ради проверяемости: тесту
+/// нужен свой, иначе проверить приём подписанного списка было бы нечем.
+fn remember_onion_hosts(
+    store: &Store,
+    hosts: &[String],
+    signature: &str,
+    issued_at: i64,
+    public_key: &str,
+    sink: &EventSink,
+) {
     if hosts.is_empty() {
+        return;
+    }
+    // Проверяем ровно то, что прислал сервер. Очистка до проверки дала бы
+    // другое сообщение, и подпись перестала бы сходиться на ровном месте.
+    if !onion::verify(signature, hosts, issued_at, public_key) {
+        return;
+    }
+    // Откат. Подписанный список не перестаёт быть подписанным, когда
+    // устаревает: без этой проверки сервер отдал бы старый список и увёл на
+    // узел, который мы уже вывели из сети — возможно, потому что его изъяли.
+    if issued_at < accepted_issued_at(store) {
         return;
     }
     let clean: Vec<&String> = hosts.iter().filter(|host| valid_onion_host(host)).collect();
     if clean.is_empty() {
+        return;
+    }
+    if let Err(err) = store.save_setting(ONION_ISSUED_AT_KEY, issued_at.to_string().as_bytes()) {
+        fail(sink, "storage", &err.to_string());
         return;
     }
     match serde_json::to_vec(&clean) {
@@ -1716,7 +1757,14 @@ async fn connect_once(
     let mut socket = open_socket(url).await?;
 
     let hello = expect_hello(&mut socket, sink).await?;
-    remember_onion_hosts(store, &hello.onion, sink);
+    remember_onion_hosts(
+        store,
+        &hello.onion,
+        &hello.onion_sig,
+        hello.onion_issued_at,
+        onion::PUBLIC_KEY,
+        sink,
+    );
     let heartbeat = if hello.heartbeat_sec == 0 { FALLBACK_HEARTBEAT_SEC } else { hello.heartbeat_sec };
 
     let nonce = hex::decode(&hello.nonce).map_err(|_| CoreError::BadFrame)?;
@@ -3395,12 +3443,22 @@ mod tests {
         );
     }
 
+    /// Ключ владельца для тестов и подпись списка им же.
+    fn signing_key() -> (crate::keys::SecretKey, String) {
+        let key = crate::keys::SecretKey::generate();
+        let public = hex::encode(key.public());
+        (key, public)
+    }
+
     #[test]
     fn a_named_host_comes_first_and_the_spares_stay() {
         let store = TempStore::new("named");
         let sink: EventSink = Arc::new(|_| {});
+        let (key, public) = signing_key();
         let fresh = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion";
-        remember_onion_hosts(&store.0, &[fresh.to_string()], &sink);
+        let list = vec![fresh.to_string()];
+        let signature = onion::sign(&key, &list, 100);
+        remember_onion_hosts(&store.0, &list, &signature, 100, &public, &sink);
 
         let routes = routes_for(ONION_ROUTE_URL, &store.0);
         assert_eq!(routes[0], format!("ws://{fresh}/ws"), "названный сервером — первым");
@@ -3416,10 +3474,66 @@ mod tests {
 
         // Пустой список не стирает известное: иначе старая сборка сервера
         // отобрала бы у человека единственный работающий вход.
-        remember_onion_hosts(&store.0, &[], &sink);
-        // И мусор не запоминается.
-        remember_onion_hosts(&store.0, &["не-адрес".to_string()], &sink);
+        remember_onion_hosts(&store.0, &[], "", 101, &public, &sink);
+        // И мусор не запоминается, даже подписанный.
+        let junk = vec!["не-адрес".to_string()];
+        let junk_sig = onion::sign(&key, &junk, 101);
+        remember_onion_hosts(&store.0, &junk, &junk_sig, 101, &public, &sink);
         assert_eq!(routes_for(ONION_ROUTE_URL, &store.0)[0], format!("ws://{fresh}/ws"));
+    }
+
+    #[test]
+    fn an_unsigned_list_is_ignored() {
+        // Ради этого всё и делается: сервер, называющий адреса без подписи,
+        // не должен уметь увести режим Tor куда захочет.
+        let store = TempStore::new("unsigned");
+        let sink: EventSink = Arc::new(|_| {});
+        let (_, public) = signing_key();
+        let evil = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion";
+
+        remember_onion_hosts(&store.0, &[evil.to_string()], "", 1, &public, &sink);
+        let routes = routes_for(ONION_ROUTE_URL, &store.0);
+        assert!(
+            !routes.iter().any(|route| route.contains(evil)),
+            "неподписанный адрес попал в маршруты: {routes:?}",
+        );
+        // И без ключа в сборке — тоже мимо, чем бы список ни был подписан.
+        let (key, _) = signing_key();
+        let list = vec![evil.to_string()];
+        let signature = onion::sign(&key, &list, 1);
+        remember_onion_hosts(&store.0, &list, &signature, 1, "", &sink);
+        assert!(!routes_for(ONION_ROUTE_URL, &store.0).iter().any(|r| r.contains(evil)));
+    }
+
+    #[test]
+    fn an_older_signed_list_does_not_replace_a_newer_one() {
+        /*
+          Подпись не устаревает сама. Без счётчика выпуска сервер отдал бы
+          подлинный, но старый список и вернул человека на узел, который мы
+          уже вывели из сети — возможно, потому что его изъяли.
+        */
+        let store = TempStore::new("rollback");
+        let sink: EventSink = Arc::new(|_| {});
+        let (key, public) = signing_key();
+        let new_host = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccc.onion";
+        let old_host = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddd.onion";
+
+        let fresh = vec![new_host.to_string()];
+        remember_onion_hosts(&store.0, &fresh, &onion::sign(&key, &fresh, 200), 200, &public, &sink);
+        assert_eq!(routes_for(ONION_ROUTE_URL, &store.0)[0], format!("ws://{new_host}/ws"));
+
+        let stale = vec![old_host.to_string()];
+        remember_onion_hosts(&store.0, &stale, &onion::sign(&key, &stale, 199), 199, &public, &sink);
+        assert_eq!(
+            routes_for(ONION_ROUTE_URL, &store.0)[0],
+            format!("ws://{new_host}/ws"),
+            "старый список подменил новый",
+        );
+
+        // А более свежий — принимается, иначе список нельзя было бы обновить.
+        let newer = vec![old_host.to_string()];
+        remember_onion_hosts(&store.0, &newer, &onion::sign(&key, &newer, 201), 201, &public, &sink);
+        assert_eq!(routes_for(ONION_ROUTE_URL, &store.0)[0], format!("ws://{old_host}/ws"));
     }
 
     #[test]

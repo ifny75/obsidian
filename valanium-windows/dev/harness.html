@@ -22,6 +22,8 @@
 
   const bridge = {
     commands: [],
+    /** Состояние встроенного Tor: стенд ведёт его в памяти. */
+    onionize: { installed: false, running: false, socks: null },
     listeners: [],
     /** Обработчики по каналам: { "valanium:open-chat": [fn, …] }. */
     channels: {},
@@ -73,6 +75,25 @@
         // (auto_unlock, open_store) её не несут.
         if (!args || typeof args.json !== "string") {
           bridge.commands.push({ type: name });
+          // Встроенный Tor: стенд отвечает как настоящая команда, иначе
+          // карточка рисуется в выдуманном состоянии и проверять нечего.
+          if (name === "onionize_status") {
+            return Promise.resolve({ ...bridge.onionize });
+          }
+          if (name === "onionize_install") {
+            bridge.onionize.installed = true;
+            return Promise.resolve(null);
+          }
+          if (name === "onionize_start") {
+            bridge.onionize.running = true;
+            bridge.onionize.socks = "127.0.0.1:56569";
+            return Promise.resolve(bridge.onionize.socks);
+          }
+          if (name === "onionize_stop") {
+            bridge.onionize.running = false;
+            bridge.onionize.socks = null;
+            return Promise.resolve(null);
+          }
           return Promise.resolve(true);
         }
         const command = JSON.parse(args.json);

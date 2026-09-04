@@ -595,10 +595,29 @@
               </div>
             </div>
 
+            <!--
+              Встроенный Tor. Скачивается отдельным файлом и проверяется дважды:
+              подпись манифеста тем же офлайновым ключом, что и у обновлений, и
+              хеш самого файла. Первая говорит, какой файл правильный, вторая —
+              что приехал именно он.
+            -->
+            <div class="settings-card routing-note" id="onionize-card">
+              <div class="setting-block">
+                <b>Tor внутри приложения</b>
+                <small id="onionize-note">Чтобы Onion работал без Tor Browser и Orbot, нужен небольшой отдельный файл. Он подписан тем же ключом, что и обновления, и проверяется до запуска.</small>
+                <div class="setting-actions">
+                  <button id="onionize-install" class="ghost-button" type="button">Установить</button>
+                  <button id="onionize-start" class="ghost-button hidden" type="button">Включить</button>
+                  <button id="onionize-stop" class="ghost-button hidden" type="button">Выключить</button>
+                </div>
+                <p class="hop-note" id="onionize-hint">Первый запуск строит цепь Tor примерно минуту — это нормально и происходит один раз. Дальше около десяти секунд.</p>
+              </div>
+            </div>
+
             <div class="settings-card routing-note">
               <div class="setting-block">
-                <b>Onion требует локальный Tor</b>
-                <small>Запустите Tor Browser или Tor с SOCKS5 на 127.0.0.1:9050. Auto сначала пробует Relay и Multi-hop, затем Onion; DNS-запрос .onion передаётся внутрь Tor.</small>
+                <b>Свой Tor тоже подходит</b>
+                <small>Если встроенный не нужен или нужны мосты, запустите Tor Browser либо Tor с SOCKS5 на 127.0.0.1:9050 — Onion будет ходить через него. DNS-запрос .onion передаётся внутрь Tor и системному резолверу не достаётся.</small>
               </div>
             </div>
           </section>

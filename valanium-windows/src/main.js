@@ -3631,6 +3631,106 @@ for (const button of document.querySelectorAll("#transport-segment [data-transpo
   });
 }
 
+/*
+  Встроенный Tor.
+
+  Проверок две, и обе обязательны. Подпись манифеста тем же ключом, что и у
+  обновлений, говорит, какой файл правильный; хеш скачанного говорит, что
+  приехал именно он. Одна другую не заменяет.
+
+  Скачивание, сверка хеша и запуск живут в Rust намеренно: этот файл потом
+  выполняется, и решать о его подлинности во фронтенде — не то место.
+*/
+const ONIONIZE_URL = "https://valanium.com/downloads/onionize.json";
+
+async function refreshOnionize() {
+  const card = $("onionize-card");
+  if (!card) return;
+  const state = await invoke("onionize_status").catch(() => null);
+  // Именно объект: сборка без этой команды ответит чем угодно, и трогать поля
+  // у не-объекта значит показать карточку в выдуманном состоянии.
+  if (!state || typeof state !== "object") return;
+
+  const note = $("onionize-note");
+  const hint = $("onionize-hint");
+  $("onionize-install").classList.toggle("hidden", state.installed);
+  $("onionize-start").classList.toggle("hidden", !state.installed || state.running);
+  $("onionize-stop").classList.toggle("hidden", !state.running);
+
+  if (state.running) {
+    note.textContent = "Tor работает внутри приложения. Onion ходит через него, ставить ничего не нужно.";
+    hint.textContent = `Локальный вход: ${state.socks ?? "—"}`;
+  } else if (state.installed) {
+    note.textContent = "Tor установлен, но выключен. Включите — и Onion заработает без Tor Browser.";
+    hint.textContent = "Первый запуск строит цепь около минуты, дальше примерно десять секунд.";
+  } else {
+    note.textContent = "Чтобы Onion работал без Tor Browser и Orbot, нужен небольшой отдельный файл. Он подписан тем же ключом, что и обновления, и проверяется до запуска.";
+    hint.textContent = "Первый запуск строит цепь Tor примерно минуту — это нормально и происходит один раз.";
+  }
+}
+
+$("onionize-install")?.addEventListener("click", async () => {
+  const button = $("onionize-install");
+  button.disabled = true;
+  const previous = button.textContent;
+  button.textContent = "Скачиваем…";
+  try {
+    const response = await fetch(ONIONIZE_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    if (typeof payload.manifest !== "string" || typeof payload.signature !== "string") {
+      throw new Error("ответ без подписи");
+    }
+    const trusted = await invoke("verify_release", {
+      manifest: payload.manifest,
+      signature: payload.signature,
+    });
+    // Без подписи не продолжаем вовсе: скачать и запустить неподписанное —
+    // это отдать машину тому, кто подменит файл.
+    if (!trusted) throw new Error("подпись не сходится");
+
+    const build = JSON.parse(payload.manifest).windows;
+    if (!build) throw new Error("в манифесте нет сборки для Windows");
+    await invoke("onionize_install", {
+      url: build.url,
+      sha256: build.sha256,
+      bytes: build.bytes,
+    });
+    toast("Tor установлен");
+  } catch (error) {
+    toast(`Не удалось установить Tor: ${error.message ?? error}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = previous;
+    refreshOnionize();
+  }
+});
+
+$("onionize-start")?.addEventListener("click", async () => {
+  const button = $("onionize-start");
+  button.disabled = true;
+  const previous = button.textContent;
+  // Честный текст вместо крутилки: минута молчания читается как поломка.
+  button.textContent = "Строим цепь Tor…";
+  try {
+    const socks = await invoke("onionize_start");
+    toast(`Tor готов: ${socks}`);
+  } catch (error) {
+    toast(`Tor не запустился: ${error}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = previous;
+    refreshOnionize();
+  }
+});
+
+$("onionize-stop")?.addEventListener("click", async () => {
+  await invoke("onionize_stop").catch((error) => toast(`Tor: ${error}`));
+  refreshOnionize();
+});
+
+refreshOnionize();
+
 for (const button of document.querySelectorAll("#hop-segment [data-hop]")) {
   button.addEventListener("click", () => {
     const choice = button.dataset.hop === "auto" ? null : button.dataset.hop;

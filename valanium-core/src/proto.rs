@@ -89,6 +89,16 @@ pub struct Hello {
     /// остаются запасные адреса, зашитые в сборку.
     #[serde(default)]
     pub onion: Vec<String>,
+    /// Подпись списка входов офлайновым ключом и время его выпуска.
+    ///
+    /// Без них список не принимается вовсе: сервер, который может назвать любой
+    /// адрес, может увести режим Tor мимо Tor. Старый сервер этих полей не
+    /// присылает — тогда клиент остаётся на адресах из сборки, и это правильное
+    /// поведение, а не поломка. Подробности — в `onion.rs`.
+    #[serde(default, rename = "onionSig")]
+    pub onion_sig: String,
+    #[serde(default, rename = "onionIssuedAt")]
+    pub onion_issued_at: i64,
 }
 
 #[derive(Debug, Default, Deserialize)]
