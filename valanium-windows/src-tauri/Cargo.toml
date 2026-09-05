@@ -2,7 +2,7 @@
 # Версия клиента. Отсюда её берёт и Tauri (в tauri.conf.json её нет
 # намеренно), и окно — командой app_version.
 name = "valanium-windows"
-version = "0.11.0"
+version = "0.12.0"
 edition = "2021"
 rust-version = "1.80"
 publish = false
