@@ -21,6 +21,9 @@ pub mod migrate;
 pub mod mls;
 pub mod onion;
 pub mod padding;
+/// Встроенный Tor. Не входит в сборку по умолчанию: тянет всё дерево Arti.
+#[cfg(feature = "tor-embedded")]
+pub mod tor;
 pub mod passphrase;
 pub mod pins;
 pub mod privacy;

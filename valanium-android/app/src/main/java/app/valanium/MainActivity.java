@@ -65,6 +65,7 @@ import java.util.Date;
 import java.util.Calendar;
 
 import app.valanium.core.Commands;
+import app.valanium.core.Core;
 
 /** Нативный мобильный интерфейс поверх общего Rust-ядра Valanium. */
 public final class MainActivity extends Activity implements Events.Listener {
@@ -753,6 +754,9 @@ public final class MainActivity extends Activity implements Events.Listener {
             if (mode.equals(appearancePreferences.getString(TRANSPORT_KEY, "auto"))) return;
             appearancePreferences.edit().putString(TRANSPORT_KEY, mode).apply();
             showHopCard();
+            // Выбрали Onion — начинаем строить цепь немедленно, параллельно с
+            // попыткой подключиться. Иначе первая попытка упрётся в неготовый Tor.
+            if ("onion".equals(mode)) prewarmTor();
             if (!myDeviceHex.isEmpty()) {
                 submit(Commands.disconnect());
                 setStatus(getString(R.string.transport_switching));
@@ -760,6 +764,43 @@ public final class MainActivity extends Activity implements Events.Listener {
             }
         });
         configureHopPicker();
+        prewarmTor();
+    }
+
+    /** Строится ли цепь прямо сейчас. Второй запуск не нужен и вреден. */
+    private volatile boolean torWarming;
+
+    /**
+     * Фоновый прогрев цепи Tor.
+     *
+     * Замерено: первая цепь строится около минуты, последующие — секунды. Если
+     * начинать это по нажатию, человек минуту смотрит в неработающее
+     * приложение, а минута молчания читается как поломка.
+     *
+     * Греем только при выбранном Onion. Держать Tor поднятым на обычных
+     * маршрутах значило бы тратить батарею и трафик на то, чем человек не
+     * пользуется, и оставлять след там, где его не просили; Auto держит Tor
+     * запасным вариантом, а не основным.
+     *
+     * Неудача молчит: человек не просил этого прямо сейчас, а попытка
+     * подключиться через Onion скажет прямо.
+     */
+    private void prewarmTor() {
+        if (torWarming) return;
+        if (!"onion".equals(appearancePreferences.getString(TRANSPORT_KEY, "auto"))) return;
+        torWarming = true;
+        // Состояние Tor — рядом с базой, а не в общем кэше: среди него
+        // guards.json, то есть список входных узлов этого человека.
+        File dir = new File(getFilesDir(), "tor");
+        new Thread(() -> {
+            try {
+                Core.startTor(dir.getAbsolutePath());
+            } catch (Throwable ignored) {
+                // См. выше: сообщать не о чем, пока человек не выбрал Onion.
+            } finally {
+                torWarming = false;
+            }
+        }, "valanium-tor").start();
     }
 
     private void configureHopPicker() {

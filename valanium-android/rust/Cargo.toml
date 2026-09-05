@@ -14,10 +14,16 @@ crate-type = ["cdylib"]
 valanium-core = { path = "../../valanium-core" }
 jni = "0.21"
 hex = "0.4"
+# Нужен только для встроенного Tor: он поднимается в своей среде выполнения.
+tokio = { version = "1", features = ["rt-multi-thread"], optional = true }
 
 [features]
 # Проброс фичи ядра: платный вход в TON по умолчанию выключен.
 ton = ["valanium-core/ton"]
+# Встроенный Tor. На Android он обязан ехать внутри: система с Android 10
+# запрещает исполнять файлы из каталога данных приложения, поэтому модель
+# «скачать бинарь и запустить», как на Windows, здесь неприменима.
+tor-embedded = ["valanium-core/tor-embedded", "dep:tokio"]
 
 [profile.release]
 opt-level = "z"

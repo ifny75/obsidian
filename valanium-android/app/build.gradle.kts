@@ -67,6 +67,9 @@ val cargoNdk by tasks.registering(Exec::class) {
         "-t", "arm64-v8a",
         "-o", output.absolutePath,
         "build", "--release",
+        // Встроенный Tor: на Android он обязан ехать внутри библиотеки, потому
+        // что система запрещает исполнять скачанные файлы из каталога данных.
+        "--features", "tor-embedded",
     )
 }
 

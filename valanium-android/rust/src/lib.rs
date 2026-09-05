@@ -220,3 +220,53 @@ mod tests {
         assert_eq!(guard(-1, || 7), 7);
     }
 }
+
+/*
+  Встроенный Tor.
+
+  На Windows он приезжает отдельной программой, здесь — внутри библиотеки:
+  система с Android 10 запрещает исполнять файлы из каталога данных
+  приложения, и скачанный бинарь просто не запустится.
+
+  Возвращает "127.0.0.1:порт" — адрес локального SOCKS5, который ядро уже
+  умеет использовать. Пустая строка означает, что цепь не построилась;
+  различать причины наружу незачем, они все выглядят как «Tor недоступен».
+
+  Вызывать только из фонового потока: построение первой цепи занимает около
+  минуты, и на главном потоке это ANR.
+*/
+#[cfg(feature = "tor-embedded")]
+#[no_mangle]
+pub extern "system" fn Java_app_valanium_core_Core_nativeStartTor(
+    mut env: JNIEnv,
+    _class: JClass,
+    data_dir: JString,
+) -> jstring {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let Ok(dir) = env.get_string(&data_dir) else { return String::new() };
+        let dir: String = dir.into();
+
+        // Своя среда выполнения: ядро крутит свою, а Tor должен пережить
+        // переподключения клиента и не зависеть от их жизненного цикла.
+        let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+            Ok(runtime) => runtime,
+            Err(_) => return String::new(),
+        };
+        let address = runtime.block_on(valanium_core::tor::start(std::path::Path::new(&dir)));
+        match address {
+            Ok(address) => {
+                // Среду выполнения нельзя ронять: на её потоках живёт Tor.
+                // Забываем намеренно — процесс её и переживёт.
+                std::mem::forget(runtime);
+                // Ядро читает переменную в момент подключения, поэтому
+                // достаточно выставить её здесь.
+                std::env::set_var("VALANIUM_TOR_SOCKS", address.to_string());
+                address.to_string()
+            }
+            Err(_) => String::new(),
+        }
+    }))
+    .unwrap_or_default();
+
+    env.new_string(result).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+}

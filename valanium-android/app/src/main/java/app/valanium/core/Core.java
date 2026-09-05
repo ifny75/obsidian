@@ -33,6 +33,25 @@ public final class Core {
 
     private static native void nativeShutdown(long handle);
 
+    private static native String nativeStartTor(String dataDir);
+
+    /**
+     * Поднимает встроенный Tor и возвращает адрес его локального SOCKS5.
+     *
+     * На Windows Tor приезжает отдельной программой, здесь он внутри: система
+     * с Android 10 запрещает исполнять файлы из каталога данных приложения,
+     * поэтому «скачать и запустить» тут неприменимо.
+     *
+     * Пустая строка — цепь не построилась. Различать причины наружу незачем:
+     * снаружи они все выглядят как «Tor недоступен».
+     *
+     * <p><b>Только с фонового потока.</b> Первая цепь строится около минуты, и
+     * на главном потоке это ANR.
+     */
+    public static String startTor(String dataDir) {
+        return nativeStartTor(dataDir);
+    }
+
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
     /** 0 — сессии нет. Меняется только под write-замком. */
