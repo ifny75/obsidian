@@ -792,14 +792,21 @@ public final class MainActivity extends Activity implements Events.Listener {
         // Состояние Tor — рядом с базой, а не в общем кэше: среди него
         // guards.json, то есть список входных узлов этого человека.
         File dir = new File(getFilesDir(), "tor");
+        // Говорим вслух: минута молчания читается как зависшее приложение, и
+        // человек уходит раньше, чем оно заработает.
+        runOnUiThread(() -> setStatus(getString(R.string.tor_building)));
         new Thread(() -> {
+            String socks = "";
             try {
-                Core.startTor(dir.getAbsolutePath());
+                socks = Core.startTor(dir.getAbsolutePath());
             } catch (Throwable ignored) {
-                // См. выше: сообщать не о чем, пока человек не выбрал Onion.
-            } finally {
-                torWarming = false;
+                // Ниже это неотличимо от пустого ответа, и отличать незачем:
+                // снаружи всё выглядит как «Tor недоступен».
             }
+            final boolean ready = socks != null && !socks.isEmpty();
+            torWarming = false;
+            runOnUiThread(() -> setStatus(getString(
+                    ready ? R.string.tor_ready : R.string.tor_failed)));
         }, "valanium-tor").start();
     }
 

@@ -1,4 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
+
+import { refuseToLoseDatabase } from "./guard.ts";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { SCHEMA } from "./schema.ts";
@@ -86,6 +88,9 @@ export class Store {
   readonly #secrets: SecretBox;
 
   constructor(path: string) {
+    // До создания файла: пустая база выглядит работающей, и заметить подмену
+    // потом можно только по жалобам людей. См. guard.ts.
+    refuseToLoseDatabase(path);
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.#db = new DatabaseSync(path);
     this.#db.exec("PRAGMA journal_mode = WAL");

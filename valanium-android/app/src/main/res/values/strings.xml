@@ -55,7 +55,15 @@
     <string name="transport_basic">Basic Valanium · один relay → main</string>
     <string name="transport_multihop">Multi-hop Valanium · relay → relay → main</string>
     <string name="transport_onion">Onion · Tor → onion relay → main</string>
-    <string name="transport_onion_hint">Для Onion запустите Orbot с SOCKS5 на 127.0.0.1:9050. Auto пробует Relay, Multi-hop и затем Onion. Имя .onion не отправляется системному DNS.</string>
+    <string name="transport_onion_hint">Tor встроен в приложение — Orbot не нужен. Можно и свой: запустите Orbot с SOCKS5 на 127.0.0.1:9050, и Onion пойдёт через него. Имя .onion системному DNS не достаётся.</string>
+    <!--
+      Сообщения прогрева. Первая цепь строится около минуты, и молчание всё
+      это время читается как поломка: человек решает, что приложение зависло,
+      и уходит раньше, чем оно заработает.
+    -->
+    <string name="tor_building">Строю сеть Tor… первый раз это занимает около минуты</string>
+    <string name="tor_ready">Сеть Tor готова</string>
+    <string name="tor_failed">Сеть Tor не поднялась. Onion будет недоступен, остальные маршруты работают</string>
     <string name="route_device">Устройство</string>
     <string name="route_best">Лучший путь</string>
     <string name="route_relay">NL / DE</string>

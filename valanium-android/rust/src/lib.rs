@@ -246,18 +246,10 @@ pub extern "system" fn Java_app_valanium_core_Core_nativeStartTor(
         let Ok(dir) = env.get_string(&data_dir) else { return String::new() };
         let dir: String = dir.into();
 
-        // Своя среда выполнения: ядро крутит свою, а Tor должен пережить
-        // переподключения клиента и не зависеть от их жизненного цикла.
-        let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
-            Ok(runtime) => runtime,
-            Err(_) => return String::new(),
-        };
-        let address = runtime.block_on(valanium_core::tor::start(std::path::Path::new(&dir)));
-        match address {
+        // Среду выполнения заводит и держит само ядро: слушатель SOCKS живёт
+        // на её потоках и обязан пережить возврат отсюда.
+        match valanium_core::tor::start(std::path::Path::new(&dir)) {
             Ok(address) => {
-                // Среду выполнения нельзя ронять: на её потоках живёт Tor.
-                // Забываем намеренно — процесс её и переживёт.
-                std::mem::forget(runtime);
                 // Ядро читает переменную в момент подключения, поэтому
                 // достаточно выставить её здесь.
                 std::env::set_var("VALANIUM_TOR_SOCKS", address.to_string());
