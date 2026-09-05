@@ -1,6 +1,6 @@
 //! Проверка восстановления против **живого** сервера.
 //!
-//!   cargo run --example live_recovery -- wss://getobsidian.xyz/ws
+//!   cargo run --example live_recovery -- wss://valanium.com/ws
 //!
 //! Отличается от `tests/cross_language.rs` тем, что там сервер поднимается
 //! рядом из исходников, а здесь — тот, что действительно работает. Это разные
@@ -15,17 +15,17 @@ use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
 use std::sync::Arc;
 use std::time::Duration;
 
-use obsidian_core::client::Engine;
-use obsidian_core::command::Command;
+use valanium_core::client::Engine;
+use valanium_core::command::Command;
 
 fn main() {
-    let url = std::env::args().nth(1).unwrap_or_else(|| "wss://getobsidian.xyz/ws".into());
+    let url = std::env::args().nth(1).unwrap_or_else(|| "wss://valanium.com/ws".into());
     let suffix = hex::encode(random_bytes(4));
     let handle = format!("qa_{suffix}");
     let login = format!("qa-login-{suffix}");
     let password = "достаточно длинный пароль для проверки";
 
-    let workdir = std::env::temp_dir().join(format!("obsidian-live-{}", std::process::id()));
+    let workdir = std::env::temp_dir().join(format!("valanium-live-{}", std::process::id()));
     std::fs::create_dir_all(&workdir).expect("temp dir");
     println!("сервер: {url}\nимя:    {handle}\n");
 
@@ -54,7 +54,7 @@ fn main() {
     println!("2. фраза из {count} слов получена");
 
     // --- 3. Запасной вход со вторым фактором ---------------------------------
-    let secret = obsidian_core::totp::new_secret(&login).base32;
+    let secret = valanium_core::totp::new_secret(&login).base32;
     let code = totp_code(&secret).expect("не посчитать одноразовый код (нужен node)");
     first
         .submit(Command::RecoverySetup {
@@ -122,9 +122,9 @@ fn main() {
 
 // --- вспомогательное ---------------------------------------------------------
 
-fn event_sink() -> (obsidian_core::client::EventSink, Receiver<String>) {
+fn event_sink() -> (valanium_core::client::EventSink, Receiver<String>) {
     let (tx, rx) = channel();
-    let sink: obsidian_core::client::EventSink = Arc::new(move |event| {
+    let sink: valanium_core::client::EventSink = Arc::new(move |event| {
         if let Ok(json) = serde_json::to_string(&event) {
             let _ = tx.send(json);
         }
@@ -188,7 +188,7 @@ fn totp_code(secret_base32: &str) -> Option<String> {
     );
     let output = Proc::new("node")
         .args(["--input-type=module", "-e", &script])
-        .current_dir("../obsidian-server")
+        .current_dir("../valanium-server")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .output()

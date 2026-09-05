@@ -22,7 +22,7 @@ use crate::keys::{self, KEY_LEN, SIG_LEN};
 const CIPHERSUITE: Ciphersuite = Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;
 
 /// Доменный префикс подписи, связывающей MLS-ключ с устройством.
-const DOMAIN_MLS: &[u8] = b"obsidian-mls-v1";
+const DOMAIN_MLS: &[u8] = b"valanium-mls-v1";
 
 /// `[32B device_pub][64B подпись MLS-ключа этим устройством]`
 const CREDENTIAL_LEN: usize = KEY_LEN + SIG_LEN;
@@ -532,7 +532,7 @@ fn guard_no_plaintext(ciphertext: &[u8], plaintext: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// `device_pub || Ed25519_sign(device_priv, "obsidian-mls-v1" || mls_pub)`
+/// `device_pub || Ed25519_sign(device_priv, "valanium-mls-v1" || mls_pub)`
 fn bind_credential(device: &keys::SecretKey, mls_public: &[u8]) -> Vec<u8> {
     let mut identity = Vec::with_capacity(CREDENTIAL_LEN);
     identity.extend_from_slice(&device.public());

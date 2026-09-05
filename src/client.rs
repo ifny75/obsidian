@@ -22,6 +22,7 @@ use crate::error::{CoreError, Result};
 use crate::keys::Credentials;
 use crate::keys;
 use crate::mls::{Incoming, Mls};
+use crate::onion;
 #[cfg(feature = "ton")]
 use crate::proto::PayInfo;
 use crate::proto::{self, op, AuthErr, AuthOk, AuthRequest, Hello, ServerError, ID_LEN, KEY_LEN};
@@ -38,7 +39,7 @@ type Socket = WebSocketStream<MaybeTlsStream<Box<dyn NetworkStream>>>;
 ///
 /// Onion-имя никогда не резолвится системным DNS: строка назначения передаётся
 /// SOCKS-прокси как имя. По умолчанию это Tor/Orbot на `127.0.0.1:9050`;
-/// нестандартный порт можно задать `OBSIDIAN_TOR_SOCKS`.
+/// нестандартный порт можно задать `VALANIUM_TOR_SOCKS`.
 async fn open_socket(url: &str) -> Result<Socket> {
     let request = crate::edge::ws_request(url)?;
     let uri = request.uri();
@@ -48,8 +49,13 @@ async fn open_socket(url: &str) -> Result<Socket> {
         .to_owned();
     let port = uri.port_u16().unwrap_or_else(|| if uri.scheme_str() == Some("wss") { 443 } else { 80 });
 
-    let stream: Box<dyn NetworkStream> = if host.ends_with(".onion") {
-        let proxy = std::env::var("OBSIDIAN_TOR_SOCKS").unwrap_or_else(|_| "127.0.0.1:9050".into());
+    // Если строка была задумана как onion-маршрут, но URL-парсер видит другой
+    // host (userinfo/path/query), запрещаем прямой DNS/TCP вместо downgrade.
+    if url.contains(".onion") && !valid_onion_host(&host) {
+        return Err(CoreError::Transport("некорректный onion-адрес".into()));
+    }
+    let stream: Box<dyn NetworkStream> = if valid_onion_host(&host) {
+        let proxy = std::env::var("VALANIUM_TOR_SOCKS").unwrap_or_else(|_| "127.0.0.1:9050".into());
         Box::new(
             Socks5Stream::connect(proxy.as_str(), (host.as_str(), port))
                 .await
@@ -76,32 +82,38 @@ const MAX_BACKOFF_SEC: u64 = 60;
 /// Внутренний адрес, который UI передаёт для автоматического выбора пути.
 /// Он никогда не попадает в DNS или URL-парсер: `session` разворачивает его в
 /// реальные маршруты перед каждой попыткой соединения.
-const AUTO_ROUTE_URL: &str = "obsidian://auto";
+const AUTO_ROUTE_URL: &str = "valanium://auto";
 /// То же самое, но только через Tor: интерфейс просит режим, а не адрес.
 ///
 /// Адресов у onion-входа больше одного, и знать их клиенту наперёд не нужно:
 /// сервер называет свои в HELLO. Метка позволяет UI сказать «через Tor», не
 /// вписывая в себя ни одного адреса.
-const ONION_ROUTE_URL: &str = "obsidian://onion";
+const ONION_ROUTE_URL: &str = "valanium://onion";
 
 /// Постоянные маршруты: обычный relay и два relay подряд.
 const DIRECT_ROUTES: [&str; 2] = [
-    "wss://getobsidian.xyz/ws",
-    "wss://getobsidian.xyz/multihop/ws",
+    "wss://valanium.com/ws",
+    "wss://valanium.com/multihop/ws",
 ];
 
 /// Запасные onion-входы — на случай, когда HELLO ещё не получали ни разу.
 ///
-/// Оба узла держат свой скрытый сервис, и оба здесь намеренно: с одним адресом
-/// падение единственного Tor выключало бы весь onion-режим, хотя рядом стоит
-/// живой запасной. Дальше список приезжает от сервера и обновляется сам.
-const FALLBACK_ONION: [&str; 2] = [
-    "ws://5kghvwyxzmtzba4foenmg5pkhcoxv6iq2c6wf4pbg5uyjrviwkckvead.onion/ws",
+/// Relay-узлы держат независимые скрытые сервисы: падение одного Tor-входа
+/// не выключает onion-режим, пока доступен хотя бы один запасной. Дальше
+/// список приезжает от сервера и обновляется сам.
+const FALLBACK_ONION: [&str; 3] = [
     "ws://ho2sji2l42eqclnmu6gtbbg5nvtrz5jvpr5nqkehbstshcmspsnfkiyd.onion/ws",
+    "ws://anb5vtfi4ztizycwj6nnclo75kpjb4mhz4wmc6ax3zwy2xlz3slx26yd.onion/ws",
+    "ws://5amnu2di3yhtpqcpbcoaabfbzotw3giap2lvoe5bi5juflzhzdrsq4ad.onion/ws",
 ];
 
 /// Ключ настройки, где лежат onion-адреса, названные сервером.
 const ONION_HOSTS_KEY: &str = "onion_hosts";
+
+fn valid_onion_host(host: &str) -> bool {
+    let Some(label) = host.strip_suffix(".onion") else { return false };
+    label.len() == 56 && label.bytes().all(|b| b.is_ascii_lowercase() || (b'2'..=b'7').contains(&b))
+}
 
 /// Что перебирать в этом режиме.
 ///
@@ -120,17 +132,57 @@ fn routes_for(url: &str, store: &Store) -> Vec<String> {
     }
 }
 
-/// Запоминает onion-входы, названные сервером.
+/// Где помним время выпуска последнего принятого списка.
+const ONION_ISSUED_AT_KEY: &str = "onion_hosts_issued_at";
+
+/// Время выпуска последнего принятого списка. Ничего не принимали — `i64::MIN`,
+/// то есть подойдёт любой.
+fn accepted_issued_at(store: &Store) -> i64 {
+    store
+        .load_setting(ONION_ISSUED_AT_KEY)
+        .ok()
+        .flatten()
+        .and_then(|raw| String::from_utf8(raw).ok())
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(i64::MIN)
+}
+
+/// Запоминает onion-входы, названные сервером, — если они подписаны.
 ///
 /// Пустой список не стирает известное: сервер мог ответить старой сборкой, а
 /// забыть адрес, по которому человек только и может подключиться, — худшее из
 /// возможных решений. Стирается он только явной сменой на непустой список.
-fn remember_onion_hosts(store: &Store, hosts: &[String], sink: &EventSink) {
+///
+/// Ключ передаётся, а не берётся из константы, ровно ради проверяемости: тесту
+/// нужен свой, иначе проверить приём подписанного списка было бы нечем.
+fn remember_onion_hosts(
+    store: &Store,
+    hosts: &[String],
+    signature: &str,
+    issued_at: i64,
+    public_key: &str,
+    sink: &EventSink,
+) {
     if hosts.is_empty() {
         return;
     }
-    let clean: Vec<&String> = hosts.iter().filter(|host| host.ends_with(".onion")).collect();
+    // Проверяем ровно то, что прислал сервер. Очистка до проверки дала бы
+    // другое сообщение, и подпись перестала бы сходиться на ровном месте.
+    if !onion::verify(signature, hosts, issued_at, public_key) {
+        return;
+    }
+    // Откат. Подписанный список не перестаёт быть подписанным, когда
+    // устаревает: без этой проверки сервер отдал бы старый список и увёл на
+    // узел, который мы уже вывели из сети — возможно, потому что его изъяли.
+    if issued_at < accepted_issued_at(store) {
+        return;
+    }
+    let clean: Vec<&String> = hosts.iter().filter(|host| valid_onion_host(host)).collect();
     if clean.is_empty() {
+        return;
+    }
+    if let Err(err) = store.save_setting(ONION_ISSUED_AT_KEY, issued_at.to_string().as_bytes()) {
+        fail(sink, "storage", &err.to_string());
         return;
     }
     match serde_json::to_vec(&clean) {
@@ -157,7 +209,7 @@ fn load_onion_hosts(store: &Store) -> Vec<String> {
 
     let mut routes: Vec<String> = known
         .iter()
-        .filter(|host| host.ends_with(".onion"))
+        .filter(|host| valid_onion_host(host))
         .map(|host| format!("ws://{host}/ws"))
         .collect();
     for fallback in FALLBACK_ONION {
@@ -252,7 +304,7 @@ impl Engine {
         let store = Store::open(&db_path, &password)?;
 
         let thread = std::thread::Builder::new()
-            .name("obsidian-core".into())
+            .name("valanium-core".into())
             .spawn(move || {
                 let runtime = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
                     Ok(runtime) => runtime,
@@ -571,6 +623,8 @@ async fn run(mut commands: mpsc::UnboundedReceiver<Command>, store: Store, sink:
             | Command::ProfileSet { .. }
             | Command::ProfileDecor { .. }
             | Command::AdminGet { .. }
+            | Command::SupportGet { .. }
+            | Command::SupportMark { .. }
             | Command::ChannelCreate { .. }
             | Command::ChannelPublish { .. }
             | Command::ChannelList
@@ -581,6 +635,7 @@ async fn run(mut commands: mpsc::UnboundedReceiver<Command>, store: Store, sink:
             | Command::ChannelDelete { .. }
             | Command::ChannelUpdate { .. }
             | Command::ChannelAdmin { .. }
+            | Command::RevokeOtherDevices
             | Command::AdminAction { .. }
             | Command::RecoverySetup { .. }
             | Command::DeleteMessage { .. }
@@ -1702,7 +1757,14 @@ async fn connect_once(
     let mut socket = open_socket(url).await?;
 
     let hello = expect_hello(&mut socket, sink).await?;
-    remember_onion_hosts(store, &hello.onion, sink);
+    remember_onion_hosts(
+        store,
+        &hello.onion,
+        &hello.onion_sig,
+        hello.onion_issued_at,
+        onion::PUBLIC_KEY,
+        sink,
+    );
     let heartbeat = if hello.heartbeat_sec == 0 { FALLBACK_HEARTBEAT_SEC } else { hello.heartbeat_sec };
 
     let nonce = hex::decode(&hello.nonce).map_err(|_| CoreError::BadFrame)?;
@@ -2497,11 +2559,29 @@ async fn pump(
                         send(&mut socket, proto::channel_frame(op::CHANNEL_ADMIN,
                             &serde_json::json!({ "channel": channel, "who": who, "admin": admin }))?).await?;
                     }
+                    Command::RevokeOtherDevices => {
+                        let credentials = match store.load_credentials() {
+                            Ok(credentials) => credentials,
+                            Err(err) => { fail(sink, "no_identity", &err.to_string()); continue; }
+                        };
+                        let message = crate::keys::revoke_other_devices_message(
+                            &credentials.identity_pub(), &credentials.device_pub(),
+                        );
+                        let signature = credentials.identity.sign(&message);
+                        send(&mut socket, proto::json_frame(op::DEVICE_REVOKE_OTHERS,
+                            &serde_json::json!({ "signature": hex::encode(signature) }))?).await?;
+                    }
                     Command::AdminGet { offset } => {
                         send(&mut socket, proto::admin_get_frame(offset)?).await?;
                     }
                     Command::AdminAction { action, reference } => {
                         send(&mut socket, proto::admin_action_frame(&action, &reference)?).await?;
+                    }
+                    Command::SupportGet { offset, thread } => {
+                        send(&mut socket, proto::support_get_frame(offset, thread.as_deref())?).await?;
+                    }
+                    Command::SupportMark { thread, closed } => {
+                        send(&mut socket, proto::support_mark_frame(&thread, closed)?).await?;
                     }
                     Command::ProfileSet { avatar_mime, avatar_base64 } => {
                         if greeting.profiles {
@@ -2694,6 +2774,17 @@ async fn on_frame(
             let mut report: serde_json::Value = proto::parse_json(body)?;
             check_channel_report(store, sink, &mut report);
             sink(Event::ChannelPost { report });
+        }
+        op::DEVICE_OK => {
+            let report: serde_json::Value = proto::parse_json(body)?;
+            sink(Event::DevicesRevoked {
+                count: report.get("revoked").and_then(|v| v.as_u64()).unwrap_or(0),
+            });
+        }
+        op::SUPPORT_OK => {
+            // Как и ADMIN_OK: набор полей задаёт сервер, разбирать их здесь
+            // значило бы ломать клиент при каждом новом поле.
+            sink(Event::Support { report: proto::parse_json(body)? });
         }
         op::ADMIN_OK => {
             // Отчёт пересылается как есть: набор счётчиков задаёт сервер, и
@@ -3245,7 +3336,7 @@ mod tests {
             // параллельно, и общий pid однажды сведёт два из них в один файл.
             let unique = hex::encode(crate::crypto::random_bytes(8));
             let path = std::env::temp_dir()
-                .join(format!("obsidian-{name}-{unique}.db"))
+                .join(format!("valanium-{name}-{unique}.db"))
                 .to_string_lossy()
                 .into_owned();
             Self::wipe(&path);
@@ -3321,15 +3412,23 @@ mod tests {
         let store = TempStore::new("auto");
         let routes = routes_for(AUTO_ROUTE_URL, &store.0);
 
-        assert!(routes[0].ends_with("getobsidian.xyz/ws"), "первым — обычный relay");
+        assert!(routes[0].ends_with("valanium.com/ws"), "первым — обычный relay");
         assert!(routes[1].contains("/multihop/"), "вторым — два relay");
         assert!(
             routes[2..].iter().all(|route| route.contains(".onion")),
             "Tor обязан быть последним: {routes:?}",
         );
-        // Оба запасных входа на месте: с одним падение единственного Tor
+        // Все запасные входы на месте: с одним падение единственного Tor
         // выключало бы onion-режим целиком, хотя рядом стоит живой узел.
-        assert_eq!(routes.len(), 4, "{routes:?}");
+        //
+        // Считается от длины списка, а не числом: добавление узла в сеть — это
+        // обычное дело, и ронять на нём тест значит приучать его чинить не
+        // глядя.
+        assert_eq!(
+            routes.len(),
+            DIRECT_ROUTES.len() + FALLBACK_ONION.len(),
+            "{routes:?}",
+        );
     }
 
     #[test]
@@ -3344,25 +3443,113 @@ mod tests {
         );
     }
 
+    /// Ключ владельца для тестов и подпись списка им же.
+    fn signing_key() -> (crate::keys::SecretKey, String) {
+        let key = crate::keys::SecretKey::generate();
+        let public = hex::encode(key.public());
+        (key, public)
+    }
+
     #[test]
     fn a_named_host_comes_first_and_the_spares_stay() {
         let store = TempStore::new("named");
         let sink: EventSink = Arc::new(|_| {});
-        remember_onion_hosts(&store.0, &["fresh.onion".to_string()], &sink);
+        let (key, public) = signing_key();
+        let fresh = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion";
+        let list = vec![fresh.to_string()];
+        let signature = onion::sign(&key, &list, 100);
+        remember_onion_hosts(&store.0, &list, &signature, 100, &public, &sink);
 
         let routes = routes_for(ONION_ROUTE_URL, &store.0);
-        assert_eq!(routes[0], "ws://fresh.onion/ws", "названный сервером — первым");
+        assert_eq!(routes[0], format!("ws://{fresh}/ws"), "названный сервером — первым");
         // Запасные остаются: сервер мог назвать узел, до которого именно у
         // этого человека Tor не достучится.
-        assert!(routes.iter().any(|route| route.contains("5kghvwyx")));
-        assert!(routes.iter().any(|route| route.contains("ho2sji2l")));
+        //
+        // Проверяется весь список целиком, а не отдельные адреса по строке:
+        // узлы приходят и уходят, и тест, ломающийся на выводе узла из сети,
+        // приучают чинить не глядя.
+        for spare in FALLBACK_ONION {
+            assert!(routes.iter().any(|route| route == spare), "потерян запасной {spare}");
+        }
 
         // Пустой список не стирает известное: иначе старая сборка сервера
         // отобрала бы у человека единственный работающий вход.
-        remember_onion_hosts(&store.0, &[], &sink);
-        // И мусор не запоминается.
-        remember_onion_hosts(&store.0, &["не-адрес".to_string()], &sink);
-        assert_eq!(routes_for(ONION_ROUTE_URL, &store.0)[0], "ws://fresh.onion/ws");
+        remember_onion_hosts(&store.0, &[], "", 101, &public, &sink);
+        // И мусор не запоминается, даже подписанный.
+        let junk = vec!["не-адрес".to_string()];
+        let junk_sig = onion::sign(&key, &junk, 101);
+        remember_onion_hosts(&store.0, &junk, &junk_sig, 101, &public, &sink);
+        assert_eq!(routes_for(ONION_ROUTE_URL, &store.0)[0], format!("ws://{fresh}/ws"));
+    }
+
+    #[test]
+    fn an_unsigned_list_is_ignored() {
+        // Ради этого всё и делается: сервер, называющий адреса без подписи,
+        // не должен уметь увести режим Tor куда захочет.
+        let store = TempStore::new("unsigned");
+        let sink: EventSink = Arc::new(|_| {});
+        let (_, public) = signing_key();
+        let evil = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.onion";
+
+        remember_onion_hosts(&store.0, &[evil.to_string()], "", 1, &public, &sink);
+        let routes = routes_for(ONION_ROUTE_URL, &store.0);
+        assert!(
+            !routes.iter().any(|route| route.contains(evil)),
+            "неподписанный адрес попал в маршруты: {routes:?}",
+        );
+        // И без ключа в сборке — тоже мимо, чем бы список ни был подписан.
+        let (key, _) = signing_key();
+        let list = vec![evil.to_string()];
+        let signature = onion::sign(&key, &list, 1);
+        remember_onion_hosts(&store.0, &list, &signature, 1, "", &sink);
+        assert!(!routes_for(ONION_ROUTE_URL, &store.0).iter().any(|r| r.contains(evil)));
+    }
+
+    #[test]
+    fn an_older_signed_list_does_not_replace_a_newer_one() {
+        /*
+          Подпись не устаревает сама. Без счётчика выпуска сервер отдал бы
+          подлинный, но старый список и вернул человека на узел, который мы
+          уже вывели из сети — возможно, потому что его изъяли.
+        */
+        let store = TempStore::new("rollback");
+        let sink: EventSink = Arc::new(|_| {});
+        let (key, public) = signing_key();
+        let new_host = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccc.onion";
+        let old_host = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddd.onion";
+
+        let fresh = vec![new_host.to_string()];
+        remember_onion_hosts(&store.0, &fresh, &onion::sign(&key, &fresh, 200), 200, &public, &sink);
+        assert_eq!(routes_for(ONION_ROUTE_URL, &store.0)[0], format!("ws://{new_host}/ws"));
+
+        let stale = vec![old_host.to_string()];
+        remember_onion_hosts(&store.0, &stale, &onion::sign(&key, &stale, 199), 199, &public, &sink);
+        assert_eq!(
+            routes_for(ONION_ROUTE_URL, &store.0)[0],
+            format!("ws://{new_host}/ws"),
+            "старый список подменил новый",
+        );
+
+        // А более свежий — принимается, иначе список нельзя было бы обновить.
+        let newer = vec![old_host.to_string()];
+        remember_onion_hosts(&store.0, &newer, &onion::sign(&key, &newer, 201), 201, &public, &sink);
+        assert_eq!(routes_for(ONION_ROUTE_URL, &store.0)[0], format!("ws://{old_host}/ws"));
+    }
+
+    #[test]
+    fn onion_discovery_accepts_only_bare_v3_hosts() {
+        let good = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion";
+        assert!(valid_onion_host(good));
+        for bad in [
+            "attacker.example/path.onion",
+            "attacker.example?x=.onion",
+            "real.onion@attacker.example/path.onion",
+            "short.onion",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.onion",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion:80",
+        ] {
+            assert!(!valid_onion_host(bad), "accepted {bad}");
+        }
     }
 
     #[test]

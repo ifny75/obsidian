@@ -34,7 +34,7 @@ const CODE_LEN: usize = 55;
 /// По сколько символов группировать при показе.
 const GROUP: usize = 5;
 
-const DOMAIN: &[u8] = b"obsidian-recovery-v1";
+const DOMAIN: &[u8] = b"valanium-recovery-v1";
 
 /// Код для показа пользователю — группами, через пробел.
 pub fn encode(identity: &SecretKey) -> String {

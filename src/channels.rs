@@ -36,7 +36,7 @@ use crate::keys::{self, SecretKey};
 
 /// Привязка подписи к назначению: тем же ключом подписанное что-то другое
 /// постом не станет.
-const DOMAIN: &[u8] = b"obsidian-channel-post-v1";
+const DOMAIN: &[u8] = b"valanium-channel-post-v1";
 
 /// То, что подписывает автор.
 fn digest(channel: &str, post_id: &str, created_at: i64, body: &str) -> [u8; 32] {

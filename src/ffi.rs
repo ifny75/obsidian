@@ -5,7 +5,7 @@
 //! блокирующий `poll` из одного фонового Java-потока не требует ничего.
 //!
 //! [`Session`] — то же самое для Rust-вызывающих: на ней построены и пять
-//! C-функций ниже, и JNI-обвязка в `obsidian-android`. Очередь событий живёт
+//! C-функций ниже, и JNI-обвязка в `valanium-android`. Очередь событий живёт
 //! здесь в одном экземпляре, а не копируется под каждую платформу.
 
 use std::collections::VecDeque;
@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn bad_command_is_reported_to_the_ui() {
         let mut path = std::env::temp_dir();
-        path.push(format!("obsidian-ffi-{}.db", std::process::id()));
+        path.push(format!("valanium-ffi-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
 
         let session = Session::open(&path.to_string_lossy(), b"pw".to_vec()).unwrap();

@@ -37,10 +37,10 @@ use sha2::{Digest, Sha256};
 use crate::error::{CoreError, Result};
 use crate::privacy::Relation;
 
-const USERNAME_DOMAIN: &str = "obsidian-username-v1";
+const USERNAME_DOMAIN: &str = "valanium-username-v1";
 /// Соль дорогого хеша. Постоянная по необходимости — см. пояснение в шапке.
 /// Argon2id требует не меньше восьми байт.
-const USERNAME_SALT: &str = "obsidian-username-v2";
+const USERNAME_SALT: &str = "valanium-username-v2";
 
 const MIN_LEN: usize = 3;
 const MAX_LEN: usize = 20;

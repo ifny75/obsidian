@@ -55,13 +55,13 @@ impl ServiceToken {
 /// проверяются без пересборки, а готовая сборка работает без настройки.
 pub fn service_token() -> Option<ServiceToken> {
     let from_env = ServiceToken::new(
-        &std::env::var("OBSIDIAN_ACCESS_CLIENT_ID").unwrap_or_default(),
-        &std::env::var("OBSIDIAN_ACCESS_CLIENT_SECRET").unwrap_or_default(),
+        &std::env::var("VALANIUM_ACCESS_CLIENT_ID").unwrap_or_default(),
+        &std::env::var("VALANIUM_ACCESS_CLIENT_SECRET").unwrap_or_default(),
     );
     from_env.or_else(|| {
         ServiceToken::new(
-            option_env!("OBSIDIAN_ACCESS_CLIENT_ID").unwrap_or_default(),
-            option_env!("OBSIDIAN_ACCESS_CLIENT_SECRET").unwrap_or_default(),
+            option_env!("VALANIUM_ACCESS_CLIENT_ID").unwrap_or_default(),
+            option_env!("VALANIUM_ACCESS_CLIENT_SECRET").unwrap_or_default(),
         )
     })
 }
@@ -98,7 +98,7 @@ fn header_value(raw: &str) -> Result<HeaderValue> {
 mod tests {
     use super::*;
 
-    const URL: &str = "wss://getobsidian.xyz/ws";
+    const URL: &str = "wss://valanium.com/ws";
 
     #[test]
     fn without_token_headers_are_absent() {

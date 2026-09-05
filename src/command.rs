@@ -224,6 +224,8 @@ pub enum Command {
         #[serde(default = "yes")]
         admin: bool,
     },
+    /// Отозвать все прочие устройства. Подписывается identity-ключом.
+    RevokeOtherDevices,
     /// Подтвердить, что новый ключ под знакомым именем — это правда он.
     ///
     /// Спрашивается ровно один раз на смену: до подтверждения переписка с этим
@@ -257,6 +259,19 @@ pub enum Command {
     AdminAction {
         action: String,
         reference: String,
+    },
+    /// Почта поддержки: список переписок, либо одна целиком, если задан `thread`.
+    SupportGet {
+        #[serde(default)]
+        offset: u64,
+        #[serde(default)]
+        thread: Option<String>,
+    },
+    /// Пометить прочитанной, а с `closed` — закрыть либо открыть заново.
+    SupportMark {
+        thread: String,
+        #[serde(default)]
+        closed: Option<bool>,
     },
 }
 
@@ -339,6 +354,9 @@ pub enum Event {
     Channels { report: serde_json::Value },
     /// Новый пост в канале, на который подписаны.
     ChannelPost { report: serde_json::Value },
+    DevicesRevoked { count: u64 },
+    /// Ответ панели поддержки. Как и Admin, пересылается сервером как есть.
+    Support { report: serde_json::Value },
     /// Ответ панели владельца: только счётчики.
     ///
     /// Ни переписок, ни списка людей здесь нет — сервер их не хранит, и панель

@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use obsidian_core::edge::{ws_request_with, ServiceToken};
+use valanium_core::edge::{ws_request_with, ServiceToken};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 
@@ -29,7 +29,7 @@ async fn capture_handshake() -> (String, tokio::task::JoinHandle<String>) {
 #[tokio::test]
 async fn service_token_reaches_the_wire() {
     let (url, server) = capture_handshake().await;
-    let token = ServiceToken::new("obsidian.access", "s3cret-value").unwrap();
+    let token = ServiceToken::new("valanium.access", "s3cret-value").unwrap();
     let request = ws_request_with(&url, Some(&token)).expect("запрос собран");
 
     // Рукопожатие не завершится: слушатель ничего не отвечает. Нам нужны только
@@ -47,7 +47,7 @@ async fn service_token_reaches_the_wire() {
 
     let lowered = sent.to_lowercase();
     assert!(
-        lowered.contains("cf-access-client-id: obsidian.access"),
+        lowered.contains("cf-access-client-id: valanium.access"),
         "в рукопожатии нет client id:\n{sent}"
     );
     assert!(

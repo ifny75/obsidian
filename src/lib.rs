@@ -1,4 +1,4 @@
-//! obsidian-core — граница доверия клиента.
+//! valanium-core — граница доверия клиента.
 //!
 //! Всё, что выше этой библиотеки, — UI, ему можно отдавать открытый текст.
 //! Всё, что ниже, — враждебная среда: сервер, Cloudflare, сеть.
@@ -19,6 +19,7 @@ pub mod ffi;
 pub mod keys;
 pub mod migrate;
 pub mod mls;
+pub mod onion;
 pub mod padding;
 pub mod passphrase;
 pub mod pins;

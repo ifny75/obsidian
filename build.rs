@@ -6,6 +6,6 @@
 //! что проявится она не на сборке, а на живом сервере, отказом Access пускать
 //! свежий клиент.
 fn main() {
-    println!("cargo:rerun-if-env-changed=OBSIDIAN_ACCESS_CLIENT_ID");
-    println!("cargo:rerun-if-env-changed=OBSIDIAN_ACCESS_CLIENT_SECRET");
+    println!("cargo:rerun-if-env-changed=VALANIUM_ACCESS_CLIENT_ID");
+    println!("cargo:rerun-if-env-changed=VALANIUM_ACCESS_CLIENT_SECRET");
 }

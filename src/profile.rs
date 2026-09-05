@@ -30,14 +30,14 @@ use crate::error::{CoreError, Result};
 /// Нужен, чтобы отличить его от настоящей картинки, ничего не расшифровывая, —
 /// и чтобы клиент, который про шифрование не знает, показал пустой кружок с
 /// инициалами, а не сломанное изображение.
-pub const SEALED_MIME: &str = "application/vnd.obsidian.sealed-avatar";
+pub const SEALED_MIME: &str = "application/vnd.valanium.sealed-avatar";
 
 /// AAD: привязывает блоб к назначению. Тем же ключом запечатанное что-то другое
 /// этой парой не откроется.
-const AAD: &[u8] = b"obsidian-avatar-v1";
+const AAD: &[u8] = b"valanium-avatar-v1";
 /// Своя привязка для значка и цвета: аватар и украшения не должны открываться
 /// одно вместо другого, даже ключ у них общий.
-const DECOR_AAD: &[u8] = b"obsidian-decor-v1";
+const DECOR_AAD: &[u8] = b"valanium-decor-v1";
 
 /// Новый ключ профиля. Раздаётся контактам, меняется вместе с решением
 /// «показывать заново».

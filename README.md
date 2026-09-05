@@ -1,4 +1,4 @@
-# obsidian-core
+# valanium-core
 
 Граница доверия клиента. Всё выше этой библиотеки — UI, ему можно отдавать открытый текст. Всё ниже — враждебная среда: сервер, Cloudflare, сеть.
 
@@ -39,7 +39,7 @@ src/
   mls.rs      MLS через OpenMLS: группы, шифрование, привязка листа к устройству
   crypto.rs   Argon2id + XChaCha20-Poly1305, запечатывание записей
   store.rs    SQLite, где содержательное лежит только запечатанным
-  proto.rs    кадры — зеркало obsidian-server/src/proto/frames.ts
+  proto.rs    кадры — зеркало valanium-server/src/proto/frames.ts
   command.rs  словарь команд и событий, единый для Java и WebView
   client.rs   движок: одно соединение, один цикл, heartbeat, реконнект
   ffi.rs      пять C-функций
@@ -62,7 +62,7 @@ void    obs_shutdown(Handle*);
 ```java
 long h = Core.init(dbPath, password);
 new Thread(() -> { for (;;) { String e = Core.poll(h, 500); if (e != null) onEvent(e); } }).start();
-Core.send(h, "{\"type\":\"connect\",\"url\":\"wss://obsidian.example/ws\"}");
+Core.send(h, "{\"type\":\"connect\",\"url\":\"wss://valanium.example/ws\"}");
 ```
 
 ## Команды
@@ -100,7 +100,7 @@ Core.send(h, "{\"type\":\"connect\",\"url\":\"wss://obsidian.example/ws\"}");
 ## Что важно знать, если правишь код
 
 - **Подписи проверяются строго** (`verify_strict`). Нестрогий режим ZIP-215 принимает точки малого порядка: ключ из нулей с подписью из нулей проходит, а подделать такую подпись может кто угодно. Сервер настроен так же — тесты с одинаковым списком есть на обеих сторонах.
-- **Доменные префиксы** `obsidian-auth-v1` и `obsidian-device-v1` обязаны совпадать с сервером байт в байт.
+- **Доменные префиксы** `valanium-auth-v1` и `valanium-device-v1` обязаны совпадать с сервером байт в байт.
 - **ACK отправляется после попытки разбора, даже если расшифровать не удалось.** Сервер держит конверт до подтверждения, и без ACK нерасшифровываемый кадр приезжал бы заново при каждом подключении; ошибка при этом видна событием `failed`.
 - **Снимок MLS сохраняется после каждого изменения.** Пропущенная запись — это потерянная эпоха и нерасшифровываемая переписка после перезапуска.
 - **Привязка MLS-листа к устройству проверяется на каждом сообщении**, а не только при вступлении.
@@ -110,17 +110,18 @@ Core.send(h, "{\"type\":\"connect\",\"url\":\"wss://obsidian.example/ws\"}");
 
 ## Где остальное
 
-Obsidian разложен на четыре репозитория:
+Valanium разложен на репозитории:
 
 | Репозиторий | Что там | Лицензия |
 |---|---|---|
-| [obsidian](https://github.com/ifny75/obsidian) | ядро: криптография, MLS, протокол | AGPL-3.0 |
-| [obsidian_server](https://github.com/ifny75/obsidian_server) | сервер и конфиги узлов | AGPL-3.0 |
-| [obsidian_android](https://github.com/ifny75/obsidian_android) | клиент для Android | PolyForm Noncommercial 1.0.0 |
-| [obsidian_pc](https://github.com/ifny75/obsidian_pc) | клиент для Windows | PolyForm Noncommercial 1.0.0 |
+| [valanium_main](https://github.com/ifny75/valanium_main) | ядро: криптография, MLS, протокол | AGPL-3.0 |
+| [valanium_server](https://github.com/ifny75/valanium_server) | сервер и конфиги узлов | AGPL-3.0 |
+| [valanium_android](https://github.com/ifny75/valanium_android) | клиент для Android | PolyForm Noncommercial 1.0.0 |
+| [valanium_pc](https://github.com/ifny75/valanium_pc) | клиент для Windows | PolyForm Noncommercial 1.0.0 |
+| [valanium-onionize](https://github.com/valanium-project/valanium-onionize) | встроенный Tor для Onion | AGPL-3.0 |
 
 ## Лицензия
 
 **AGPL-3.0**, см. [LICENSE](LICENSE). Поднимайте у себя, меняйте, форкайте. Если запустите изменённую версию как сервис — исходники ваших правок должны быть доступны тем, кто им пользуется.
 
-Имя «Obsidian» лицензией не покрывается — см. [TRADEMARK.md](TRADEMARK.md).
+Имя «Valanium» лицензией не покрывается — см. [TRADEMARK.md](TRADEMARK.md).

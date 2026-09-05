@@ -1,4 +1,4 @@
-//! Сквозная проверка против настоящего obsidian-server: два клиента, реальный
+//! Сквозная проверка против настоящего valanium-server: два клиента, реальный
 //! сокет, реальный MLS.
 //!
 //! Юнит-тесты обеих сторон могут быть согласованно неправы: доменный префикс
@@ -18,8 +18,8 @@ use std::sync::mpsc::{channel, Receiver, RecvTimeoutError};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use obsidian_core::client::Engine;
-use obsidian_core::command::Command;
+use valanium_core::client::Engine;
+use valanium_core::command::Command;
 
 const CHAT_PORT: u16 = 18999;
 const RECOVERY_PORT: u16 = 18998;
@@ -39,13 +39,13 @@ impl Drop for Server {
 #[test]
 fn two_clients_exchange_an_encrypted_message() {
     let Some(server_dir) = server_dir() else {
-        return skip("obsidian-server рядом не найден");
+        return skip("valanium-server рядом не найден");
     };
     if !server_dir.join("node_modules").exists() {
-        return skip("в obsidian-server не установлены зависимости (npm ci)");
+        return skip("в valanium-server не установлены зависимости (npm ci)");
     }
 
-    let workdir = std::env::temp_dir().join(format!("obsidian-xlang-{}", std::process::id()));
+    let workdir = std::env::temp_dir().join(format!("valanium-xlang-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&workdir);
     std::fs::create_dir_all(&workdir).expect("temp dir");
     let server_db = workdir.join("server.db");
@@ -177,13 +177,13 @@ fn two_clients_exchange_an_encrypted_message() {
 #[test]
 fn recovery_restores_identity_on_a_new_device() {
     let Some(server_dir) = server_dir() else {
-        return skip("obsidian-server рядом не найден");
+        return skip("valanium-server рядом не найден");
     };
     if !server_dir.join("node_modules").exists() {
-        return skip("в obsidian-server не установлены зависимости (npm ci)");
+        return skip("в valanium-server не установлены зависимости (npm ci)");
     }
 
-    let workdir = std::env::temp_dir().join(format!("obsidian-recovery-{}", std::process::id()));
+    let workdir = std::env::temp_dir().join(format!("valanium-recovery-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&workdir);
     std::fs::create_dir_all(&workdir).expect("temp dir");
     let server_db = workdir.join("server.db");
@@ -280,13 +280,13 @@ fn recovery_restores_identity_on_a_new_device() {
 #[test]
 fn a_password_restores_identity_and_the_server_never_sees_the_key() {
     let Some(server_dir) = server_dir() else {
-        return skip("obsidian-server рядом не найден");
+        return skip("valanium-server рядом не найден");
     };
     if !server_dir.join("node_modules").exists() {
-        return skip("в obsidian-server не установлены зависимости (npm ci)");
+        return skip("в valanium-server не установлены зависимости (npm ci)");
     }
 
-    let workdir = std::env::temp_dir().join(format!("obsidian-password-{}", std::process::id()));
+    let workdir = std::env::temp_dir().join(format!("valanium-password-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&workdir);
     std::fs::create_dir_all(&workdir).expect("temp dir");
     let server_db = workdir.join("server.db");
@@ -403,7 +403,7 @@ fn a_password_restores_identity_and_the_server_never_sees_the_key() {
     // Код считает сам сервер — его реализация сверена с эталонными векторами
     // RFC 6238. Считать его здесь второй раз значило бы проверять свою же
     // арифметику против неё самой.
-    let secret = obsidian_core::totp::new_secret(LOGIN).base32;
+    let secret = valanium_core::totp::new_secret(LOGIN).base32;
     let Some(code) = totp_code(&server_dir, &secret) else {
         return skip("не удалось посчитать одноразовый код (нет node?)");
     };
@@ -539,7 +539,7 @@ fn skip(reason: &str) {
 }
 
 fn server_dir() -> Option<PathBuf> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).parent()?.join("obsidian-server");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).parent()?.join("valanium-server");
     dir.join("src/index.ts").exists().then_some(dir)
 }
 
@@ -551,9 +551,9 @@ fn node(server_dir: &Path, script: &str, db: &Path, port: u16) -> Proc {
     let mut proc = Proc::new(if cfg!(windows) { "node.exe" } else { "node" });
     proc.current_dir(server_dir)
         .arg(script)
-        .env("OBSIDIAN_DB", db)
-        .env("OBSIDIAN_PORT", port.to_string())
-        .env("OBSIDIAN_LOG", "error");
+        .env("VALANIUM_DB", db)
+        .env("VALANIUM_PORT", port.to_string())
+        .env("VALANIUM_LOG", "error");
     proc
 }
 
@@ -570,7 +570,7 @@ fn issue_invite(server_dir: &Path, db: &Path, port: u16) -> Option<String> {
 
 fn start_server(server_dir: &Path, db: &Path, workdir: &Path, port: u16) -> Option<Child> {
     node(server_dir, "src/index.ts", db, port)
-        .env("OBSIDIAN_BLOBS", workdir.join("blobs"))
+        .env("VALANIUM_BLOBS", workdir.join("blobs"))
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
         .spawn()
@@ -606,7 +606,7 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|window| window == needle)
 }
 
-type Sink = Arc<dyn Fn(obsidian_core::command::Event) + Send + Sync>;
+type Sink = Arc<dyn Fn(valanium_core::command::Event) + Send + Sync>;
 
 /// События приходят из потока ядра — складываем их в канал как JSON.
 fn event_sink(who: &'static str) -> (Sink, Receiver<String>) {

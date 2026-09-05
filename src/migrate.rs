@@ -22,11 +22,11 @@ use crate::error::{CoreError, Result};
 
 /// Метка формата в начале файла: по ней видно, что подсунули не тот файл,
 /// ещё до того, как пароль будет признан неверным.
-const MAGIC: &[u8] = b"OBSIDIAN-ACCOUNT-1\n";
+const MAGIC: &[u8] = b"VALANIUM-ACCOUNT-1\n";
 
 /// AAD архива. Привязывает шифротекст к назначению: тот же пароль не откроет
 /// им что-то другое, запечатанное этим же ключом.
-const AAD: &[u8] = b"obsidian-account-v1";
+const AAD: &[u8] = b"valanium-account-v1";
 
 #[derive(Serialize, Deserialize)]
 pub struct ArchiveMls {
@@ -87,7 +87,7 @@ pub fn seal(password: &str, archive: &Archive) -> Result<Vec<u8>> {
 
 pub fn open(password: &str, file: &[u8]) -> Result<Archive> {
     if file.len() <= MAGIC.len() + SALT_LEN || !file.starts_with(MAGIC) {
-        return Err(CoreError::Transport("это не файл переноса Obsidian".into()));
+        return Err(CoreError::Transport("это не файл переноса Valanium".into()));
     }
     let salt = &file[MAGIC.len()..MAGIC.len() + SALT_LEN];
     let key = MasterKey::derive(password.as_bytes(), salt)?;

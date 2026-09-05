@@ -2,7 +2,7 @@
 //!
 //! Ядро его только **создаёт и показывает**: считать и проверять коды здесь
 //! незачем, это делает сервер, когда решает, отдавать ли запечатанную посылку
-//! (`obsidian-server/src/auth/totp.ts`).
+//! (`valanium-server/src/auth/totp.ts`).
 //!
 //! **Секрет — не ключ от переписки.** Он не участвует ни в шифровании, ни в
 //! расшифровке: посылку с identity-ключом по-прежнему открывает только пароль.
@@ -41,7 +41,7 @@ pub fn new_secret(label: &str) -> Secret {
 
     let base32 = encode_base32(&raw);
     let url = format!(
-        "otpauth://totp/Obsidian:{}?secret={}&issuer=Obsidian&algorithm=SHA1&digits=6&period=30",
+        "otpauth://totp/Valanium:{}?secret={}&issuer=Valanium&algorithm=SHA1&digits=6&period=30",
         percent_encode(label),
         base32,
     );
@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn the_url_carries_what_the_app_needs() {
         let secret = new_secret("alice");
-        assert!(secret.url.starts_with("otpauth://totp/Obsidian:alice?"));
+        assert!(secret.url.starts_with("otpauth://totp/Valanium:alice?"));
         assert!(secret.url.contains(&format!("secret={}", secret.base32)));
         assert!(secret.url.contains("digits=6"));
         assert!(secret.url.contains("period=30"));

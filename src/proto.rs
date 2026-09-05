@@ -1,4 +1,4 @@
-//! Wire-протокол. Зеркало `obsidian-server/src/proto/frames.ts` — ARCHITECTURE.md §7.
+//! Wire-протокол. Зеркало `valanium-server/src/proto/frames.ts` — ARCHITECTURE.md §7.
 //!
 //! Любое расхождение здесь ловится тестом `tests/cross_language.rs`, который
 //! гоняет настоящий сервер.
@@ -32,6 +32,8 @@ pub mod op {
     pub const ADMIN_OK: u8 = 0x2c;
     pub const CHANNEL_OK: u8 = 0x32;
     pub const CHANNEL_POST: u8 = 0x33;
+    pub const DEVICE_OK: u8 = 0x3f;
+    pub const SUPPORT_OK: u8 = 0x40;
     // клиент → сервер
     pub const AUTH: u8 = 0x02;
     pub const PAY_REQUEST: u8 = 0x05;
@@ -66,6 +68,9 @@ pub mod op {
     pub const CHANNEL_DELETE: u8 = 0x3b;
     pub const CHANNEL_UPDATE: u8 = 0x3c;
     pub const CHANNEL_ADMIN: u8 = 0x3d;
+    pub const DEVICE_REVOKE_OTHERS: u8 = 0x3e;
+    pub const SUPPORT_GET: u8 = 0x41;
+    pub const SUPPORT_MARK: u8 = 0x43;
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,6 +89,16 @@ pub struct Hello {
     /// остаются запасные адреса, зашитые в сборку.
     #[serde(default)]
     pub onion: Vec<String>,
+    /// Подпись списка входов офлайновым ключом и время его выпуска.
+    ///
+    /// Без них список не принимается вовсе: сервер, который может назвать любой
+    /// адрес, может увести режим Tor мимо Tor. Старый сервер этих полей не
+    /// присылает — тогда клиент остаётся на адресах из сборки, и это правильное
+    /// поведение, а не поломка. Подробности — в `onion.rs`.
+    #[serde(default, rename = "onionSig")]
+    pub onion_sig: String,
+    #[serde(default, rename = "onionIssuedAt")]
+    pub onion_issued_at: i64,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -373,6 +388,21 @@ pub fn channel_frame(opcode: u8, body: &serde_json::Value) -> Result<Vec<u8>> {
 
 pub fn admin_get_frame(offset: u64) -> Result<Vec<u8>> {
     json_frame(op::ADMIN_GET, &serde_json::json!({ "offset": offset }))
+}
+
+/// Список переписок поддержки либо одна переписка целиком.
+pub fn support_get_frame(offset: u64, thread: Option<&str>) -> Result<Vec<u8>> {
+    match thread {
+        Some(id) => json_frame(op::SUPPORT_GET, &serde_json::json!({ "thread": id })),
+        None => json_frame(op::SUPPORT_GET, &serde_json::json!({ "offset": offset })),
+    }
+}
+
+pub fn support_mark_frame(thread: &str, closed: Option<bool>) -> Result<Vec<u8>> {
+    match closed {
+        Some(value) => json_frame(op::SUPPORT_MARK, &serde_json::json!({ "thread": thread, "closed": value })),
+        None => json_frame(op::SUPPORT_MARK, &serde_json::json!({ "thread": thread })),
+    }
 }
 
 pub fn admin_action_frame(action: &str, reference: &str) -> Result<Vec<u8>> {

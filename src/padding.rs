@@ -86,7 +86,7 @@ mod tests {
     fn everything_small_becomes_the_same_size() {
         // Ради этого всё и делается: «да», «нет» и сигнал «печатает» обязаны
         // выглядеть на проводе одинаково.
-        for body in ["да", "нет, давай завтра", "\u{2063}OBSCTL1:{\"typing\":true}"] {
+        for body in ["да", "нет, давай завтра", "\u{2063}VALCTL1:{\"typing\":true}"] {
             assert_eq!(pad(body.as_bytes()).len(), 256, "не сошлось на {body:?}");
         }
     }

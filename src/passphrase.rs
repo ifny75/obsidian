@@ -50,9 +50,9 @@ const DERIVED_LEN: usize = 64;
 pub const TOKEN_LEN: usize = 32;
 pub const ID_LEN: usize = 32;
 
-const SALT_DOMAIN: &str = "obsidian-recovery-salt-v1";
-const LOGIN_DOMAIN: &str = "obsidian-recovery-login-v1";
-const VERIFIER_DOMAIN: &str = "obsidian-recovery-verifier-v1";
+const SALT_DOMAIN: &str = "valanium-recovery-salt-v1";
+const LOGIN_DOMAIN: &str = "valanium-recovery-login-v1";
+const VERIFIER_DOMAIN: &str = "valanium-recovery-verifier-v1";
 
 /// Минимум для пароля. Не «сложность» с обязательной цифрой и заглавной —
 /// такие правила гонят людей к `Password1!`, который перебирается первым.

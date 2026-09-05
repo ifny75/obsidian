@@ -31,7 +31,7 @@ use sha2::{Digest, Sha256};
 
 use crate::crypto::random_bytes;
 
-const PASS_DOMAIN: &str = "obsidian-pass-v1";
+const PASS_DOMAIN: &str = "valanium-pass-v1";
 pub const PASS_LEN: usize = 32;
 
 /// Кому позволено писать.
@@ -63,7 +63,7 @@ pub struct Invite {
 impl Invite {
     /// Ссылка в том виде, в каком её передают человеку.
     pub fn link(&self) -> String {
-        format!("obsidian://invite/{}", self.pass)
+        format!("valanium://invite/{}", self.pass)
     }
 }
 
@@ -133,7 +133,7 @@ impl Access {
 /// Префикс отличается от того, которым пользуется интерфейс, поэтому такое
 /// сообщение до него не доходит и в переписке не появляется. Ядро разбирает его
 /// само и наружу не отдаёт — человеку показывать нечего.
-const CONTROL_PREFIX: &str = "\u{2063}OBSCTL1:";
+const CONTROL_PREFIX: &str = "\u{2063}VALCTL1:";
 
 pub fn pass_gift(pass: &str) -> String {
     format!("{CONTROL_PREFIX}{{\"pass\":\"{pass}\"}}")
@@ -192,6 +192,27 @@ pub fn presence_signal() -> String {
 pub fn group_signal(title: &str, kind: &str, owner: &str) -> String {
     let body = serde_json::json!({ "group": { "title": title, "kind": kind, "owner": owner } });
     format!("{CONTROL_PREFIX}{body}")
+}
+
+/// Название группы приходит от собеседника, а показывается в нашем окне.
+///
+/// Управляющие символы и переключатели направления письма выбрасываются, длина
+/// обрезается: имя в экран длиной или с U+202E внутри — это уже не название, а
+/// способ выдать чужую группу за системное окно. Разметку здесь не экранируем:
+/// это работа того, кто рисует, и клиенты её делают. Здесь — только то, что
+/// осмысленно для любого получателя, чем бы он ни рисовал.
+pub const MAX_GROUP_TITLE: usize = 64;
+
+fn clean_title(raw: &str) -> String {
+    let cleaned: String = raw
+        .chars()
+        .filter(|c| {
+            !c.is_control()
+                && !matches!(*c,
+                    '\u{200e}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+        })
+        .collect();
+    cleaned.trim().chars().take(MAX_GROUP_TITLE).collect()
 }
 
 /// Что было в служебном сообщении.
@@ -255,7 +276,7 @@ pub fn parse_signal(body: &str) -> Option<Control> {
     }
     if let Some(group) = value.get("group") {
         return Some(Control::Group {
-            title: group.get("title")?.as_str()?.to_string(),
+            title: clean_title(group.get("title")?.as_str()?),
             kind: group.get("kind")?.as_str()?.to_string(),
             owner: group.get("owner")?.as_str()?.to_string(),
         });
@@ -270,6 +291,29 @@ pub fn is_control(body: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_group_title_from_a_peer_cannot_forge_the_window() {
+        // Название рисуют в заголовке рядом с нашими собственными надписями.
+        // Перевод строки, U+202E и длина в экран — не имя, а подделка окна.
+        let hostile = format!("Совет\u{202e}\n\u{7}безопасности {}", "и".repeat(200));
+        let signal = group_signal(&hostile, "group", "me");
+        let Some(Control::Group { title, .. }) = parse_signal(&signal) else {
+            panic!("сигнал о группе обязан разбираться");
+        };
+        assert!(title.chars().count() <= MAX_GROUP_TITLE, "длина не обрезана: {title:?}");
+        assert!(!title.contains('\u{202e}'), "переключатель направления уцелел");
+        assert!(!title.chars().any(char::is_control), "управляющие символы уцелели");
+    }
+
+    #[test]
+    fn an_ordinary_group_title_survives_untouched() {
+        let signal = group_signal("  Разработка  ", "group", "me");
+        let Some(Control::Group { title, .. }) = parse_signal(&signal) else {
+            panic!("сигнал о группе обязан разбираться");
+        };
+        assert_eq!(title, "Разработка");
+    }
 
     #[test]
     fn a_profile_key_travels_and_comes_back_whole() {
@@ -380,7 +424,7 @@ mod tests {
 
     #[test]
     fn ordinary_text_is_not_control() {
-        for body in ["привет", "", "OBSCTL1:{}", "\u{2063}OBS1:{\"type\":\"text\"}"] {
+        for body in ["привет", "", "VALCTL1:{}", "\u{2063}OBS1:{\"type\":\"text\"}"] {
             assert!(!is_control(body), "принято за служебное: {body}");
             assert!(parse_signal(body).is_none());
         }
@@ -390,10 +434,10 @@ mod tests {
     #[test]
     fn a_malformed_gift_is_refused() {
         for bad in [
-            "\u{2063}OBSCTL1:не json",
-            "\u{2063}OBSCTL1:{\"pass\":\"коротко\"}",
-            "\u{2063}OBSCTL1:{\"pass\":\"ZZ\"}",
-            "\u{2063}OBSCTL1:{}",
+            "\u{2063}VALCTL1:не json",
+            "\u{2063}VALCTL1:{\"pass\":\"коротко\"}",
+            "\u{2063}VALCTL1:{\"pass\":\"ZZ\"}",
+            "\u{2063}VALCTL1:{}",
         ] {
             assert!(is_control(bad), "префикс обязан распознаваться: {bad}");
             assert!(parse_signal(bad).is_none(), "принят мусор: {bad}");
@@ -411,7 +455,7 @@ mod tests {
             ttl_sec: 3600,
             created_at: 0,
         };
-        assert_eq!(invite.link(), format!("obsidian://invite/{pass}"));
+        assert_eq!(invite.link(), format!("valanium://invite/{pass}"));
     }
 
     /// Запись прошлой версии обязана подниматься с безопасным значением.

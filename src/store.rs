@@ -638,7 +638,7 @@ mod tests {
     impl TempDb {
         fn new(name: &str) -> Self {
             let mut path = std::env::temp_dir();
-            path.push(format!("obsidian-core-{name}-{}.db", std::process::id()));
+            path.push(format!("valanium-core-{name}-{}.db", std::process::id()));
             let path = path.to_string_lossy().into_owned();
             Self::cleanup(&path);
             Self(path)
