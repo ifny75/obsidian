@@ -3628,6 +3628,9 @@ for (const button of document.querySelectorAll("#transport-segment [data-transpo
     window.setTimeout(() => submit({ type: "connect", url: serverUrl() }), 250);
     toast(mode === "onion" ? "Подключаемся через Tor…"
       : mode === "auto" ? "Выбираем доступный маршрут…" : "Меняем маршрут…");
+    // Выбрали Onion — начинаем строить цепь немедленно, параллельно с
+    // попыткой подключиться. Иначе первая попытка упрётся в неподнятый Tor.
+    if (mode === "onion") prewarmOnionize();
   });
 }
 
@@ -3654,10 +3657,13 @@ async function refreshOnionize() {
   const note = $("onionize-note");
   const hint = $("onionize-hint");
   $("onionize-install").classList.toggle("hidden", state.installed);
-  $("onionize-start").classList.toggle("hidden", !state.installed || state.running);
+  $("onionize-start").classList.toggle("hidden", !state.installed || state.running || onionizeWarming);
   $("onionize-stop").classList.toggle("hidden", !state.running);
 
-  if (state.running) {
+  if (onionizeWarming) {
+    note.textContent = "Строим цепь Tor заранее, чтобы Onion не заставлял ждать.";
+    hint.textContent = "Первый раз это занимает около минуты. Приложением можно пользоваться.";
+  } else if (state.running) {
     note.textContent = "Tor работает внутри приложения. Onion ходит через него, ставить ничего не нужно.";
     hint.textContent = `Локальный вход: ${state.socks ?? "—"}`;
   } else if (state.installed) {
@@ -3666,6 +3672,40 @@ async function refreshOnionize() {
   } else {
     note.textContent = "Чтобы Onion работал без Tor Browser и Orbot, нужен небольшой отдельный файл. Он подписан тем же ключом, что и обновления, и проверяется до запуска.";
     hint.textContent = "Первый запуск строит цепь Tor примерно минуту — это нормально и происходит один раз.";
+  }
+}
+
+/*
+  Фоновый прогрев.
+
+  Замерено: первая цепь строится около пятидесяти секунд, последующие — около
+  трёх. Начинать это по нажатию «Onion» значит показать человеку минуту
+  неработающего приложения, а минута молчания читается как поломка. Поэтому
+  цепь строится заранее — как только видно, что она понадобится.
+
+  Греем только при выбранном Onion. Держать Tor поднятым на обычных маршрутах
+  значило бы тратить батарею и трафик на то, чем человек не пользуется, и
+  оставлять след там, где его не просили.
+*/
+let onionizeWarming = false;
+
+async function prewarmOnionize() {
+  if (onionizeWarming || preferences.transport !== "onion") return;
+  const state = await invoke("onionize_status").catch(() => null);
+  if (!state || typeof state !== "object") return;
+  if (!state.installed || state.running) return;
+
+  onionizeWarming = true;
+  refreshOnionize();
+  try {
+    await invoke("onionize_start");
+  } catch {
+    // Молча. Человек не просил этого прямо сейчас, и всплывающая жалоба при
+    // запуске — худший способ сообщить о необязательной неудаче. Состояние
+    // видно в карточке, а попытка подключиться через Onion скажет прямо.
+  } finally {
+    onionizeWarming = false;
+    refreshOnionize();
   }
 }
 
@@ -3703,6 +3743,9 @@ $("onionize-install")?.addEventListener("click", async () => {
     button.disabled = false;
     button.textContent = previous;
     refreshOnionize();
+    // Поставили при выбранном Onion — греем сразу, не дожидаясь, пока человек
+    // упрётся в минуту ожидания.
+    prewarmOnionize();
   }
 });
 
@@ -3730,6 +3773,7 @@ $("onionize-stop")?.addEventListener("click", async () => {
 });
 
 refreshOnionize();
+prewarmOnionize();
 
 for (const button of document.querySelectorAll("#hop-segment [data-hop]")) {
   button.addEventListener("click", () => {
