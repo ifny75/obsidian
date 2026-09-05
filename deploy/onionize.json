@@ -1,0 +1,4 @@
+{
+  "manifest": "{\"v\":1,\"kind\":\"onionize\",\"version\":\"0.1.0\",\"publishedAt\":\"2026-09-05T09:20:23.507Z\",\"windows\":{\"sha256\":\"c01ffd3e7dc224d2ba55e60329ac9f07c759bc09e7b892c4dba1b75924ff5061\",\"bytes\":6235136,\"url\":\"https://github.com/valanium-project/valanium-onionize/releases/download/v0.1.0/valanium-onionize-windows-x64.exe\"}}",
+  "signature": "74e49997ba3f11d9bd76adfa802cbb00f63d0940dbb31aa06dd601b5bac4ce6e68e92b62a4c1789a3336cde9f388d475eab73d03b09e93f50591138acde60003"
+}
